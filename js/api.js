@@ -1,6 +1,5 @@
-/* SDAI Bosch Manager v5 — API client para GitHub Pages + Apps Script
-   Usa JSONP para evitar bloqueio CORS do Apps Script em GitHub Pages. */
-
+/* SDAI Bosch Manager — API GitHub Pages + Apps Script
+   Leitura usa JSONP. Salvamento usa POST por formulário oculto para evitar CORS. */
 const API_URL = 'https://script.google.com/macros/s/AKfycby45dTdw4g-pkcvY9sys3_gmvVcmnSyf6PZzJbRsbSFjhtuWbV1D5XSBEc-J1UtOBYftA/exec';
 
 function apiJsonp(action, payload = {}) {
@@ -42,15 +41,59 @@ function apiJsonp(action, payload = {}) {
   });
 }
 
+function postNoCors(action, payload = {}) {
+  return new Promise((resolve, reject) => {
+    const iframeName = 'sdai_post_' + Date.now();
+    const iframe = document.createElement('iframe');
+    iframe.name = iframeName;
+    iframe.style.display = 'none';
+    document.body.appendChild(iframe);
+
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = API_URL;
+    form.target = iframeName;
+    form.style.display = 'none';
+
+    const add = (name, value) => {
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = name;
+      input.value = value;
+      form.appendChild(input);
+    };
+
+    add('action', action);
+    Object.entries(payload || {}).forEach(([k, v]) => {
+      add(k, typeof v === 'object' ? JSON.stringify(v) : String(v ?? ''));
+    });
+
+    document.body.appendChild(form);
+
+    let done = false;
+    const timer = setTimeout(() => {
+      if (done) return;
+      done = true;
+      cleanup();
+      resolve({ ok: true, mode: 'posted' });
+    }, 2500);
+
+    function cleanup() {
+      clearTimeout(timer);
+      try { form.remove(); } catch(e) {}
+      try { iframe.remove(); } catch(e) {}
+    }
+
+    try { form.submit(); }
+    catch(e) { cleanup(); reject(e); }
+  });
+}
+
 window.SDAI_API = {
   ping: () => apiJsonp('ping'),
   setupDatabase: (name = 'Banco - SDAI Bosch Manager') => apiJsonp('setupDatabase', { name }),
   getDatabaseInfo: () => apiJsonp('getDatabaseInfo'),
   getAll: () => apiJsonp('getAll'),
-
-  // Atenção: saveAll com muitos dados pode ultrapassar limite de URL do JSONP.
-  // Para bases grandes, vamos salvar por tabela/lote ou usar Apps Script como host do front.
-  saveAll: (data) => apiJsonp('saveAll', { data }),
-  appendRows: (table, rows) => apiJsonp('appendRows', { table, rows }),
+  saveAll: (data) => postNoCors('saveAll', { data: btoa(unescape(encodeURIComponent(JSON.stringify(data)))) }),
   clearDatabase: () => apiJsonp('clearDatabase')
 };
