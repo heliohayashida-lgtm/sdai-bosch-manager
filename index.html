@@ -58,7 +58,11 @@
 </div>
 <div class="modal" id="modal"><div class="drawer" id="drawer"></div></div>
 <script>
-const KEY='sdai_bosch_manager_v4_flm_portas';
+const KEY='sdai_bosch_manager_v5_cloud';
+const API_URL='https://script.google.com/macros/s/AKfycby45dTdw4g-pkcvY9sys3_gmvVcmnSyf6PZzJbRsbSFjhtuWbV1D5XSBEc-J1UtOBYftA/exec';
+let cloudReady=false;
+let cloudSyncTimer=null;
+let cloudBusy=false;
 const emptyDB=()=>({empreendimento:{nome:'Empreendimento',cliente:'Cliente'},paineis:[],lacos:[],flms:[],portas:[],locais:[],equipamentos:[],falhas:[],planos:[],inconsistencias:[],imports:[]});
 let db=load(); let currentView='dashboard'; let filters={};
 let searchRenderTimer=null;
@@ -91,7 +95,49 @@ function restoreSearchFocus(){
 }
 
 function load(){try{return normalizeAllStatuses(Object.assign(emptyDB(),JSON.parse(localStorage.getItem(KEY))||{}))}catch(e){return emptyDB()}}
-function save(){localStorage.setItem(KEY,JSON.stringify(db));render()}
+function save(){
+  localStorage.setItem(KEY,JSON.stringify(db));
+  render();
+  queueCloudSave();
+}
+async function apiCall(action,payload={}){
+  if(!API_URL)return {ok:false,error:'API_URL não configurada'};
+  const r=await fetch(API_URL,{
+    method:'POST',
+    headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body:JSON.stringify({action,payload})
+  });
+  const txt=await r.text();
+  try{return JSON.parse(txt)}catch(e){throw new Error('Resposta inválida do Apps Script: '+txt.slice(0,160))}
+}
+function setCloudMsg(text,cls='warn'){
+  let el=document.getElementById('cloudStatus');
+  if(el){el.className='pill '+cls;el.textContent=text}
+}
+async function setupCloudDB(){
+  try{setCloudMsg('Configurando banco...','warn'); const res=await apiCall('setupDB',{}); if(!res.ok)throw new Error(res.error||'Erro ao configurar banco'); setCloudMsg('Banco Google conectado','ok'); await cloudLoad(true); alert('Banco Google configurado com sucesso.\nPlanilha: '+(res.spreadsheetUrl||''));}
+  catch(e){setCloudMsg('Erro no banco','bad'); alert(e.message)}
+}
+async function cloudLoad(force=false){
+  try{setCloudMsg('Carregando Google...','warn'); const res=await apiCall('getDB',{}); if(!res.ok)throw new Error(res.error||'Erro ao carregar banco'); if(res.db && Object.keys(res.db).length){db=normalizeAllStatuses(Object.assign(emptyDB(),res.db)); localStorage.setItem(KEY,JSON.stringify(db));}
+    cloudReady=true; setCloudMsg('Google sincronizado','ok'); render();
+  }catch(e){setCloudMsg('Modo local','bad'); console.warn('Falha no carregamento Google:',e)}
+}
+function queueCloudSave(){
+  if(!cloudReady||cloudBusy)return;
+  clearTimeout(cloudSyncTimer);
+  cloudSyncTimer=setTimeout(async()=>{
+    try{cloudBusy=true; setCloudMsg('Salvando Google...','warn'); const res=await apiCall('saveDB',{db}); if(!res.ok)throw new Error(res.error||'Erro ao salvar'); setCloudMsg('Google sincronizado','ok');}
+    catch(e){setCloudMsg('Erro ao salvar','bad'); console.warn('Falha ao salvar Google:',e)}
+    finally{cloudBusy=false}
+  },700);
+}
+async function cloudSaveNow(){
+  try{cloudBusy=true; setCloudMsg('Salvando Google...','warn'); const res=await apiCall('saveDB',{db}); if(!res.ok)throw new Error(res.error||'Erro ao salvar'); setCloudMsg('Google sincronizado','ok'); alert('Base salva no Google Sheets.');}
+  catch(e){setCloudMsg('Erro ao salvar','bad'); alert(e.message)}
+  finally{cloudBusy=false}
+}
+
 const id=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
 const n=s=>String(s??'').trim(); const up=s=>n(s).toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
 function normalizeStatus(st){const raw=n(st); const x=up(raw); if(!x||x==='ATIVO'||x==='OK'||x==='NORMAL'||x.includes('OPERACAO')||x.includes('FUNCION'))return 'Em operação'; if(x.includes('LOGISTA'))return 'Falha logista'; if(x.includes('SISTEMA'))return 'Falha sistema'; if(x.includes('FALHA'))return raw||'Falha sistema'; if(x.includes('DESATIV')||x==='INATIVO')return 'Desativada'; if(x.includes('TESTE'))return 'Em teste'; return raw||'Em operação'}
@@ -469,6 +515,7 @@ function exportEntity(e){download(toCsv(flat(e)),e+'.csv','text/csv;charset=utf-
 function exportAllCsv(){let chunks=[];['paineis','lacos','flms','portas','locais','equipamentos','falhas','planos','inconsistencias'].forEach(e=>{chunks.push('### '+e+' ###\n'+toCsv(flat(e))) }); download(chunks.join('\n\n'),'base_sdai_bosch_completa.csv','text/csv;charset=utf-8')}
 function download(content,name,type){let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([content],{type}));a.download=name;a.click()}
 render();
+cloudLoad(true);
 </script>
 </body>
 </html>

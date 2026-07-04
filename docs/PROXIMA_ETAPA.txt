@@ -1,0 +1,22 @@
+ETAPA FINAL — SUBIR ARQUIVOS NO GITHUB PAGES
+
+1. No GitHub, abra o repositório sdai-bosch-manager.
+2. Clique em Add file > Upload files.
+3. Arraste TODOS os arquivos deste pacote para a raiz do repositório.
+4. Quando perguntar se deseja substituir arquivos existentes, mantenha os novos.
+5. Clique em Commit changes.
+6. Aguarde o GitHub Pages atualizar.
+7. Abra: https://heliohayashida-lgtm.github.io/sdai-bosch-manager/
+8. No sistema, clique em Configurar Banco Google.
+9. Depois clique em Salvar agora.
+
+IMPORTANTE:
+- O link do sistema pode ser salvo no Google Drive como atalho.
+- Quem abrir o link acessa a interface web.
+- O banco central fica no Google Sheets criado pelo Apps Script.
+- O Apps Script já está configurado no index.html com a URL informada.
+
+SE NÃO SALVAR NO GOOGLE:
+- Verifique se o Apps Script está implantado como App da Web.
+- Executar como: Eu.
+- Quem pode acessar: Qualquer pessoa com o link ou usuários autorizados.
