@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SDAI Bosch Manager v5.1.2 - GitHub Pages + Google Sheets</title>
+<title>SDAI Bosch Manager v5.1.4 - GitHub Pages + Google Sheets</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 :root{--bg:#eef3f8;--panel:#071a2d;--panel2:#0d2942;--card:#fff;--line:#d5deea;--text:#071426;--muted:#61728a;--blue:#0f5795;--blue2:#0b3d6b;--ok:#0f7a3b;--bad:#b42318;--warn:#b7791f;--chip:#e8f1fb}
@@ -54,7 +54,7 @@
     </div>
   </aside>
   <main class="main">
-    <header class="top"><div class="topLeft"><button class="menuBtn" onclick="toggleSidebar()" title="Recolher/abrir menu">☰</button><div><h1 id="pageTitle">Dashboard</h1><p>Base técnica estruturada para diagnóstico SDAI Bosch</p></div></div><div class="topActions"><span class="pill">v5.1.3</span><div id="clock"></div></div></header>
+    <header class="top"><div class="topLeft"><button class="menuBtn" onclick="toggleSidebar()" title="Recolher/abrir menu">☰</button><div><h1 id="pageTitle">Dashboard</h1><p>Base técnica estruturada para diagnóstico SDAI Bosch</p></div></div><div class="topActions"><span class="pill">v5.1.4</span><div id="clock"></div></div></header>
     <div class="content">
       <section id="dashboard" class="view active"></section>
       <section id="paineis" class="view"></section>
@@ -75,7 +75,7 @@
 <div class="syncBar warn" id="syncBar"><b>Banco Google</b><small>Abra Sistema → Banco de Dados</small></div>
 <div class="modal" id="modal"><div class="drawer" id="drawer"></div></div>
 <script>
-const APP_VERSION='5.1.3';
+const APP_VERSION='5.1.4';
 const KEY='sdai_bosch_manager_v4_flm_portas';
 const emptyDB=()=>({empreendimento:{nome:'Empreendimento',cliente:'Cliente'},paineis:[],lacos:[],flms:[],portas:[],locais:[],equipamentos:[],falhas:[],planos:[],inconsistencias:[],imports:[]});
 let db=load(); let currentView='dashboard'; let filters={};
@@ -117,7 +117,7 @@ function restoreSearchFocus(){
 
 const API_URL='https://script.google.com/macros/s/AKfycby45dTdw4g-pkcvY9sys3_gmvVcmnSyf6PZzJbRsbSFjhtuWbV1D5XSBEc-J1UtOBYftA/exec';
 const SYNC_KEY='sdai_bosch_manager_sync_state';
-function loadSyncState(){try{return Object.assign({configured:false,spreadsheetId:'',spreadsheetUrl:'',dirty:false,lastSync:'',saving:false,queue:0,error:''},JSON.parse(localStorage.getItem(SYNC_KEY))||{})}catch(e){return {configured:false,spreadsheetId:'',spreadsheetUrl:'',dirty:false,lastSync:'',saving:false,queue:0,error:''}}}
+function loadSyncState(){try{return Object.assign({configured:false,spreadsheetId:'',spreadsheetUrl:'',dirty:false,lastSync:'',saving:false,queue:0,error:'',syncIntervalSec:30},JSON.parse(localStorage.getItem(SYNC_KEY))||{})}catch(e){return {configured:false,spreadsheetId:'',spreadsheetUrl:'',dirty:false,lastSync:'',saving:false,queue:0,error:'',syncIntervalSec:30}}}
 function persistSyncState(){try{localStorage.setItem(SYNC_KEY,JSON.stringify({...syncState,saving:false,error:syncState.error||''}))}catch(e){}}
 let syncState=loadSyncState();
 let autoSyncTimer=null;
@@ -126,6 +126,9 @@ function localSave(){localStorage.setItem(KEY,JSON.stringify(db));}
 function save(){localSave();markDirty('Alteração local');render()}
 function markDirty(reason='Alteração pendente'){syncState.dirty=true;syncState.queue=1;syncState.error='';updateSyncBar('warn',reason);scheduleAutoSync();}
 function scheduleAutoSync(){clearTimeout(autoSyncTimer);autoSyncTimer=setTimeout(()=>syncSave(false),3000)}
+let periodicSyncTimer=null;
+function startPeriodicAutoSync(){clearInterval(periodicSyncTimer); const sec=Math.max(10,Number(syncState.syncIntervalSec||30)); periodicSyncTimer=setInterval(()=>{if(syncState.dirty&&!syncState.saving)syncSave(false)},sec*1000)}
+function updateSyncInterval(){const el=document.getElementById('syncIntervalSec'); const v=Math.max(10,Number(el?.value||30)); syncState.syncIntervalSec=v; persistSyncState(); startPeriodicAutoSync(); updateSyncBar('ok','Intervalo de autosync ajustado para '+v+'s'); renderSistema();}
 async function apiCall(action,payload={}){
   // Apps Script publicado em outro domínio: usar JSONP para leitura/configuração
   // e POST por formulário oculto para gravação pesada, evitando bloqueio CORS.
@@ -148,32 +151,40 @@ function apiJsonp(action,payload={}){
     document.body.appendChild(script);
   });
 }
-function apiFormPost(action,payload={}){
-  return new Promise((resolve)=>{
-    const iframe=document.createElement('iframe');
-    iframe.name='sdai_hidden_'+Date.now();
-    iframe.style.display='none';
-    const form=document.createElement('form');
-    form.method='POST';
-    form.action=API_URL;
-    form.target=iframe.name;
-    form.style.display='none';
-    [['action',action],['payload',JSON.stringify(payload||{})]].forEach(([k,v])=>{const input=document.createElement('input');input.name=k;input.value=v;form.appendChild(input)});
-    document.body.appendChild(iframe);document.body.appendChild(form);
-    setTimeout(()=>{try{form.remove();iframe.remove()}catch(e){} resolve({ok:true})},3500);
-    form.submit();
-  });
+async function apiFormPost(action,payload={}){
+  // Envio sem CORS, mas com formulário simples. O Apps Script grava nas abas e a resposta é opaca no navegador.
+  const body = new URLSearchParams();
+  body.append('action', action);
+  body.append('payload', JSON.stringify(payload||{}));
+  try{
+    await fetch(API_URL, {method:'POST', mode:'no-cors', body});
+    await new Promise(r=>setTimeout(r,1800));
+    return {ok:true};
+  }catch(e){
+    // Fallback por iframe caso o navegador bloqueie fetch no-cors.
+    return new Promise((resolve)=>{
+      const iframe=document.createElement('iframe');
+      iframe.name='sdai_hidden_'+Date.now();
+      iframe.style.display='none';
+      const form=document.createElement('form');
+      form.method='POST'; form.action=API_URL; form.target=iframe.name; form.style.display='none';
+      [['action',action],['payload',JSON.stringify(payload||{})]].forEach(([k,v])=>{const input=document.createElement('input');input.name=k;input.value=v;form.appendChild(input)});
+      document.body.appendChild(iframe);document.body.appendChild(form);
+      setTimeout(()=>{try{form.remove();iframe.remove()}catch(e){} resolve({ok:true})},3000);
+      form.submit();
+    });
+  }
 }
 function updateSyncBar(cls='warn',msg=''){
   const el=document.getElementById('syncBar'); if(!el)return;
   el.className='syncBar '+cls;
   const status=cls==='ok'?'🟢 Sincronizado':cls==='bad'?'🔴 Falha de sincronização':'🟡 Pendente / sincronizando';
-  el.innerHTML=`<b>${status}</b><small>${esc(msg||syncState.lastSync||'Aguardando sincronização')} • Fila: ${syncState.queue||0} • v5.1.2</small>`;
+  el.innerHTML=`<b>${status}</b><small>${esc(msg||syncState.lastSync||'Aguardando sincronização')} • Fila: ${syncState.queue||0} • v5.1.4</small>`;
 }
 async function setupGoogleDatabase(){try{updateSyncBar('warn','Configurando banco...');const r=await apiCall('setup',{name:'Banco SDAI Bosch Manager'});syncState.configured=true;syncState.spreadsheetId=r.spreadsheetId;syncState.spreadsheetUrl=r.url;syncState.lastSync=now();persistSyncState();updateSyncBar('ok','Banco configurado');renderSistema();alert('Banco Google configurado/validado. Agora use Sincronizar agora para enviar a base local ao Google.')}catch(e){syncState.error=e.message;persistSyncState();updateSyncBar('bad',e.message);alert(e.message)}}
 async function syncSave(showAlert=true){try{syncState.saving=true;updateSyncBar('warn','Salvando no Google...');localSave();const r=await apiCall('saveDb',{db});syncState.configured=true;syncState.spreadsheetId=r.spreadsheetId||syncState.spreadsheetId;syncState.spreadsheetUrl=r.url||syncState.spreadsheetUrl;syncState.dirty=false;syncState.queue=0;syncState.lastSync=now();persistSyncState();updateSyncBar('ok','Última sincronização: '+syncState.lastSync);if(showAlert)alert('Base sincronizada com Google Sheets.')}catch(e){syncState.error=e.message;syncState.queue=1;persistSyncState();updateSyncBar('bad',e.message);if(showAlert)alert('Erro ao salvar Google: '+e.message)}finally{syncState.saving=false;renderSistema()}}
 async function syncLoad(force=false){try{updateSyncBar('warn','Carregando do Google...');const r=await apiCall('getDb',{});const remote=Object.assign(emptyDB(),r.db||{});const remoteCount=Object.keys(remote).reduce((a,k)=>a+(Array.isArray(remote[k])?remote[k].length:0),0);const localCount=Object.keys(db).reduce((a,k)=>a+(Array.isArray(db[k])?db[k].length:0),0);if(remoteCount===0 && localCount>0 && !force){updateSyncBar('warn','Google vazio. Base local preservada. Use Sincronizar agora.');alert('O Google está vazio. A base local foi preservada. Clique em Sincronizar agora para enviar esses dados ao Google.');return}db=normalizeAllStatuses(remote);localSave();syncState.dirty=false;syncState.queue=0;syncState.lastSync=now();persistSyncState();updateSyncBar('ok','Carregado do Google: '+syncState.lastSync);render();}catch(e){syncState.error=e.message;persistSyncState();updateSyncBar('bad',e.message);alert('Erro ao carregar Google: '+e.message)}}
-setInterval(()=>{if(syncState.dirty&&!syncState.saving)syncSave(false)},30000);
+startPeriodicAutoSync();
 const id=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
 const n=s=>String(s??'').trim(); const up=s=>n(s).toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
 function normalizeStatus(st){const raw=n(st); const x=up(raw); if(!x||x==='ATIVO'||x==='OK'||x==='NORMAL'||x.includes('OPERACAO')||x.includes('FUNCION'))return 'Em operação'; if(x.includes('LOGISTA'))return 'Falha logista'; if(x.includes('SISTEMA'))return 'Falha sistema'; if(x.includes('FALHA'))return raw||'Falha sistema'; if(x.includes('DESATIV')||x==='INATIVO')return 'Desativada'; if(x.includes('TESTE'))return 'Em teste'; return raw||'Em operação'}
@@ -411,24 +422,28 @@ function renderPlano(){
 
 function renderSistema(){
   const el=document.getElementById('sistema'); if(!el)return;
+  const sec=Number(syncState.syncIntervalSec||30);
   el.innerHTML=`<div class="card"><h3 class="sectionTitle">Banco de Dados Google</h3>
     <div class="dbInfo">
       <b>Status</b><span>${syncState.error?'<span class="pill bad">Falha</span>':syncState.configured?'<span class="pill ok">Conectado</span>':'<span class="pill warn">Não configurado</span>'}</span>
       <b>Planilha</b><span>${syncState.spreadsheetUrl?`<a href="${syncState.spreadsheetUrl}" target="_blank">Abrir Google Sheets</a>`:'Ainda não vinculada'}</span>
       <b>Última sincronização</b><span>${esc(syncState.lastSync||'Nunca')}</span>
-      <b>Sincronização</b><span>Automática a cada 30 segundos e após alterações relevantes</span>
+      <b>Sincronização</b><span>Automática após alterações e a cada <b>${sec}</b> segundos quando houver pendência</span>
       <b>Fila pendente</b><span>${syncState.queue||0}</span>
       <b>Erro</b><span>${esc(syncState.error||'-')}</span>
     </div>
     <div class="toolbar">
+      <div class="field"><label>Intervalo da gravação automática</label><select id="syncIntervalSec" onchange="updateSyncInterval()">
+        ${[10,15,30,60,120,300].map(v=>`<option value="${v}" ${v===sec?'selected':''}>${v} segundos</option>`).join('')}
+      </select></div>
       <button class="btn" onclick="setupGoogleDatabase()">Configurar / validar banco</button>
       <button class="btn secondary" onclick="syncSave(true)">Sincronizar agora</button>
       <button class="btn secondary" onclick="if(confirm('Carregar do Google substitui a base local pela base central. Deseja continuar?'))syncLoad(false)">Carregar do Google</button>
       ${syncState.spreadsheetUrl?`<button class="btn secondary" onclick="window.open('${syncState.spreadsheetUrl}','_blank')">Abrir Planilha</button>`:''}
     </div>
-    <p class="msg warn">A configuração do banco é feita apenas uma vez. Depois disso, o sistema salva automaticamente. O carregamento do Google é recurso de emergência para substituir a base local pela base central.</p>
+    <p class="msg warn"><b>Uso correto:</b> configure o banco uma única vez. Depois importe/cadastre normalmente; o sistema salva local e sincroniza automaticamente. O botão "Carregar do Google" é apenas para abrir a base central em outro computador.</p>
   </div>
-  <div class="card"><h3 class="sectionTitle">Abas que o Apps Script cria no Google Sheets</h3>
+  <div class="card"><h3 class="sectionTitle">Abas estruturadas no Google Sheets</h3>
     <div class="diag">
       ${['Configuracoes','Paineis','Lacos','FLMs','Portas','Locais','Equipamentos','Falhas','Plano_Acao','Historico','Importacoes','Usuarios','Relatorios'].map(x=>`<div class="diagItem"><b>${x}</b><small>Banco estruturado</small></div>`).join('')}
     </div>

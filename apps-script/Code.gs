@@ -1,5 +1,5 @@
 /*******************************************************
- * SDAI Bosch Manager API v5.1.2
+ * SDAI Bosch Manager API v5.1.4
  * Backend Google Apps Script + Google Sheets estruturado
  * Compatível com GitHub Pages: POST + JSONP fallback
  *******************************************************/
@@ -35,7 +35,7 @@ function doGet(e){
       }
       return json_(out);
     }
-    return HtmlService.createHtmlOutput('<h2>SDAI Bosch Manager API</h2><p>Backend ativo.</p><p>Versão 5.1.3</p>');
+    return HtmlService.createHtmlOutput('<h2>SDAI Bosch Manager API</h2><p>Backend ativo.</p><p>Versão 5.1.4</p>');
   }catch(err){
     const out = {ok:false,error:String(err && err.message ? err.message : err)};
     const cb = e && e.parameter && e.parameter.callback;
@@ -49,16 +49,40 @@ function doGet(e){
 function doPost(e){
   try{
     let body = {};
-    if(e && e.postData && e.postData.contents){
-      body = JSON.parse(e.postData.contents || '{}');
-    } else if(e && e.parameter){
+
+    // 1) Form POST / no-cors / iframe: este é o padrão usado pelo GitHub Pages.
+    if(e && e.parameter && e.parameter.action){
       body = { action:e.parameter.action, payload:parsePayload_(e.parameter.payload) };
     }
+    // 2) JSON POST: usado em testes diretos ou integrações futuras.
+    else if(e && e.postData && e.postData.contents){
+      const raw = e.postData.contents || '{}';
+      try{
+        body = JSON.parse(raw);
+      }catch(jsonErr){
+        // 3) x-www-form-urlencoded manual.
+        const params = parseFormEncoded_(raw);
+        body = { action:params.action, payload:parsePayload_(params.payload) };
+      }
+    }
+
     const result = route_(body.action, body.payload || {});
     return json_({ok:true, ...result});
   }catch(err){
     return json_({ok:false, error:String(err && err.message ? err.message : err)});
   }
+}
+
+function parseFormEncoded_(raw){
+  const out = {};
+  String(raw || '').split('&').forEach(part => {
+    const idx = part.indexOf('=');
+    if(idx < 0) return;
+    const k = decodeURIComponent(part.slice(0, idx).replace(/\+/g,' '));
+    const v = decodeURIComponent(part.slice(idx + 1).replace(/\+/g,' '));
+    out[k] = v;
+  });
+  return out;
 }
 
 function parsePayload_(s){
@@ -71,7 +95,7 @@ function route_(action, payload){
   if(action === 'setup' || action === 'setupDatabase' || action === 'configurarBanco' || action === 'configurarBancoGoogle') return setupDatabase(payload || {});
   if(action === 'getDb' || action === 'loadDb' || action === 'carregarBanco' || action === 'carregarGoogle') return getDb();
   if(action === 'saveDb' || action === 'saveDatabase' || action === 'salvarBanco' || action === 'salvarGoogle') return saveDb((payload && payload.db) || payload || {});
-  if(action === 'ping') return {message:'pong', version:'5.1.3'};
+  if(action === 'ping') return {message:'pong', version:'5.1.4'};
   throw new Error('Ação não reconhecida: ' + action);
 }
 
@@ -91,7 +115,7 @@ function setupDatabase(payload){
   ensureAllSheets(ss);
   writeConfig(ss, 'databaseId', ss.getId());
   writeConfig(ss, 'databaseUrl', ss.getUrl());
-  writeConfig(ss, 'version', '5.1.3');
+  writeConfig(ss, 'version', '5.1.4');
   writeConfig(ss, 'updatedAt', new Date().toISOString());
   return {spreadsheetId:ss.getId(), url:ss.getUrl(), tables:Object.keys(TABLES)};
 }
