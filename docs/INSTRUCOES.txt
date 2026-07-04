@@ -1,0 +1,14 @@
+SUBIR NO GITHUB:
+- Substitua todos os arquivos.
+- Faça commit.
+
+APPS SCRIPT:
+- Copie apps-script/Code.gs completo.
+- Cole no Código.gs.
+- Salve.
+- Implante nova versão.
+
+USO:
+- Ctrl+F5 no GitHub Pages.
+- Sistema > Banco de Dados > Configurar / validar banco.
+- Sincronizar agora.

@@ -1,232 +1,176 @@
-/*******************************************************
- * SDAI Bosch Manager API v5.1.4
- * Backend Google Apps Script + Google Sheets estruturado
- * Compatível com GitHub Pages: POST + JSONP fallback
- *******************************************************/
-const PROP_DB_ID = 'SDAI_DB_SPREADSHEET_ID';
 
-const TABLES = {
-  Configuracoes: ['chave','valor','updatedAt'],
+const APP_NAME = 'SDAI Bosch Manager';
+const PROP_KEY = 'SDAI_MANAGER_SPREADSHEET_ID';
+
+const SCHEMA = {
+  Configuracoes: ['chave','valor','atualizadoEm'],
   Paineis: ['id','nome','modelo','localizacao','obs'],
   Lacos: ['id','painelId','nome','piso','obs'],
   FLMs: ['id','painelId','lacoId','endereco','modelo','piso','status','ultimaAlteracao','obs'],
   Portas: ['id','flmId','numero','localId','ligacao','obs'],
-  Locais: ['id','nome','tipo','painelId','lacoId','piso','flmId','portaId','status','ultimaAlteracao','obs'],
+  Lojas_Areas: ['id','nome','tipo','painelId','lacoId','piso','flmId','portaId','status','ultimaAlteracao','obs'],
   Equipamentos: ['id','painelId','lacoId','piso','tipo','endereco','modelo','fabricante','localId','flmId','portaId','status','ultimaAlteracao','obs'],
   Falhas: ['id','data','painelId','lacoId','piso','tipo','itemId','itemNome','localId','status','statusAnterior','responsavel','origem','motivo','obs','resolvidaEm'],
   Plano_Acao: ['id','falhaId','criadoEm','atualizadoEm','concluidoEm','categoria','prioridade','responsavel','situacao','prazo','necessitaCompra','material','justificativa','providencia','painel','laco','piso','local','item','statusFalha'],
-  Historico: ['id','dataHora','usuario','entidade','entidadeId','acao','descricao'],
-  Importacoes: ['id','data','statsJson','errorsJson','romannelJson'],
-  Usuarios: ['email','nome','perfil','ativo','updatedAt'],
-  Relatorios: ['id','data','tipo','periodo','painel','metadadosJson']
+  Inconsistencias: ['linha','motivo','registro'],
+  Importacoes: ['id','data','stats','errors','romannel'],
+  Historico: ['id','data','usuario','entidade','entidadeId','acao','descricao'],
+  Usuarios: ['email','nome','perfil','ativo','criadoEm']
+};
+
+const MAP = {
+  Paineis:'paineis', Lacos:'lacos', FLMs:'flms', Portas:'portas', Lojas_Areas:'locais', Equipamentos:'equipamentos', Falhas:'falhas', Plano_Acao:'planos', Inconsistencias:'inconsistencias', Importacoes:'imports'
 };
 
 function doGet(e){
+  const p = e && e.parameter ? e.parameter : {};
+  const callback = p.callback || '';
+  let out;
   try{
-    const p = e && e.parameter ? e.parameter : {};
-    if(p.action){
-      const payload = parsePayload_(p.payload);
-      const result = route_(p.action, payload);
-      const out = {ok:true, ...result};
-      if(p.callback){
-        return ContentService
-          .createTextOutput(String(p.callback) + '(' + JSON.stringify(out) + ');')
-          .setMimeType(ContentService.MimeType.JAVASCRIPT);
-      }
-      return json_(out);
-    }
-    return HtmlService.createHtmlOutput('<h2>SDAI Bosch Manager API</h2><p>Backend ativo.</p><p>Versão 5.1.4</p>');
+    const action = p.action || 'ping';
+    if(action === 'setup' || action === 'setupDatabase') out = setupDatabase_();
+    else if(action === 'load') out = loadDatabase_();
+    else if(action === 'ping') out = {ok:true, app:APP_NAME, time:new Date().toISOString()};
+    else out = {ok:false, error:'Ação GET inválida: '+action};
   }catch(err){
-    const out = {ok:false,error:String(err && err.message ? err.message : err)};
-    const cb = e && e.parameter && e.parameter.callback;
-    if(cb){
-      return ContentService.createTextOutput(String(cb) + '(' + JSON.stringify(out) + ');').setMimeType(ContentService.MimeType.JAVASCRIPT);
-    }
-    return json_(out);
+    out = {ok:false, error:String(err && err.message ? err.message : err)};
   }
+  const json = JSON.stringify(out);
+  if(callback){
+    return ContentService.createTextOutput(callback + '(' + json + ');').setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+  return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
 }
 
 function doPost(e){
+  let out;
   try{
     let body = {};
-
-    // 1) Form POST / no-cors / iframe: este é o padrão usado pelo GitHub Pages.
-    if(e && e.parameter && e.parameter.action){
-      body = { action:e.parameter.action, payload:parsePayload_(e.parameter.payload) };
+    if(e && e.postData && e.postData.contents){
+      try{ body = JSON.parse(e.postData.contents); }catch(_){ body = {}; }
     }
-    // 2) JSON POST: usado em testes diretos ou integrações futuras.
-    else if(e && e.postData && e.postData.contents){
-      const raw = e.postData.contents || '{}';
-      try{
-        body = JSON.parse(raw);
-      }catch(jsonErr){
-        // 3) x-www-form-urlencoded manual.
-        const params = parseFormEncoded_(raw);
-        body = { action:params.action, payload:parsePayload_(params.payload) };
-      }
-    }
-
-    const result = route_(body.action, body.payload || {});
-    return json_({ok:true, ...result});
+    const action = body.action || (e.parameter && e.parameter.action) || '';
+    if(action === 'save') out = saveDatabase_(body.payload && body.payload.db ? body.payload.db : body.db || {});
+    else if(action === 'setup' || action === 'setupDatabase') out = setupDatabase_();
+    else out = {ok:false, error:'Ação POST inválida: '+action};
   }catch(err){
-    return json_({ok:false, error:String(err && err.message ? err.message : err)});
+    out = {ok:false, error:String(err && err.message ? err.message : err)};
   }
+  return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
 }
 
-function parseFormEncoded_(raw){
-  const out = {};
-  String(raw || '').split('&').forEach(part => {
-    const idx = part.indexOf('=');
-    if(idx < 0) return;
-    const k = decodeURIComponent(part.slice(0, idx).replace(/\+/g,' '));
-    const v = decodeURIComponent(part.slice(idx + 1).replace(/\+/g,' '));
-    out[k] = v;
-  });
-  return out;
+function setupDatabase_(){
+  const ss = getOrCreateSpreadsheet_();
+  ensureSchema_(ss);
+  PropertiesService.getScriptProperties().setProperty(PROP_KEY, ss.getId());
+  return {ok:true, spreadsheetId:ss.getId(), sheetUrl:ss.getUrl(), sheets:Object.keys(SCHEMA)};
 }
 
-function parsePayload_(s){
-  if(!s) return {};
-  if(typeof s === 'object') return s;
-  try{return JSON.parse(s);}catch(e){return {};}
-}
-
-function route_(action, payload){
-  if(action === 'setup' || action === 'setupDatabase' || action === 'configurarBanco' || action === 'configurarBancoGoogle') return setupDatabase(payload || {});
-  if(action === 'getDb' || action === 'loadDb' || action === 'carregarBanco' || action === 'carregarGoogle') return getDb();
-  if(action === 'saveDb' || action === 'saveDatabase' || action === 'salvarBanco' || action === 'salvarGoogle') return saveDb((payload && payload.db) || payload || {});
-  if(action === 'ping') return {message:'pong', version:'5.1.4'};
-  throw new Error('Ação não reconhecida: ' + action);
-}
-
-function json_(obj){
-  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
-}
-
-function setupDatabase(payload){
+function getOrCreateSpreadsheet_(){
   const props = PropertiesService.getScriptProperties();
-  let id = props.getProperty(PROP_DB_ID);
-  let ss;
-  if(id){ try{ ss = SpreadsheetApp.openById(id); }catch(e){ ss = null; } }
-  if(!ss){
-    ss = SpreadsheetApp.create((payload && payload.name) || 'Banco SDAI Bosch Manager');
-    props.setProperty(PROP_DB_ID, ss.getId());
+  const existing = props.getProperty(PROP_KEY);
+  if(existing){
+    try{return SpreadsheetApp.openById(existing)}catch(e){}
   }
-  ensureAllSheets(ss);
-  writeConfig(ss, 'databaseId', ss.getId());
-  writeConfig(ss, 'databaseUrl', ss.getUrl());
-  writeConfig(ss, 'version', '5.1.4');
-  writeConfig(ss, 'updatedAt', new Date().toISOString());
-  return {spreadsheetId:ss.getId(), url:ss.getUrl(), tables:Object.keys(TABLES)};
+  const ss = SpreadsheetApp.create('Banco SDAI Bosch Manager');
+  props.setProperty(PROP_KEY, ss.getId());
+  return ss;
 }
 
-function getDb(){
-  const ss = getSpreadsheet();
-  ensureAllSheets(ss);
-  return {
-    spreadsheetId:ss.getId(),
-    url:ss.getUrl(),
-    db:{
-      empreendimento:{nome:'Empreendimento',cliente:'Cliente'},
-      paineis: readSheet(ss,'Paineis'),
-      lacos: readSheet(ss,'Lacos'),
-      flms: readSheet(ss,'FLMs'),
-      portas: readSheet(ss,'Portas'),
-      locais: readSheet(ss,'Locais'),
-      equipamentos: readSheet(ss,'Equipamentos'),
-      falhas: readSheet(ss,'Falhas'),
-      planos: readSheet(ss,'Plano_Acao'),
-      inconsistencias: [],
-      imports: readSheet(ss,'Importacoes')
-    }
-  };
-}
-
-function saveDb(db){
-  const ss = getOrCreateSpreadsheet();
-  ensureAllSheets(ss);
-  writeSheet(ss,'Paineis', db.paineis || []);
-  writeSheet(ss,'Lacos', db.lacos || []);
-  writeSheet(ss,'FLMs', db.flms || []);
-  writeSheet(ss,'Portas', db.portas || []);
-  writeSheet(ss,'Locais', db.locais || []);
-  writeSheet(ss,'Equipamentos', db.equipamentos || []);
-  writeSheet(ss,'Falhas', db.falhas || []);
-  writeSheet(ss,'Plano_Acao', db.planos || []);
-  writeSheet(ss,'Importacoes', normalizeImports_(db.imports || []));
-  appendHistorico(ss, 'sync', 'all', 'saveDb', 'Base sincronizada pelo frontend');
-  writeConfig(ss, 'updatedAt', new Date().toISOString());
-  return {spreadsheetId:ss.getId(), url:ss.getUrl(), savedAt:new Date().toISOString()};
-}
-
-function normalizeImports_(rows){
-  return (rows || []).map(x => ({
-    id: x.id || Utilities.getUuid(),
-    data: x.data || new Date().toISOString(),
-    statsJson: x.statsJson || JSON.stringify(x.stats || {}),
-    errorsJson: x.errorsJson || JSON.stringify(x.errors || []),
-    romannelJson: x.romannelJson || JSON.stringify(x.romannel || {})
-  }));
-}
-
-function getSpreadsheet(){
-  const id = PropertiesService.getScriptProperties().getProperty(PROP_DB_ID);
-  if(!id) throw new Error('Banco Google ainda não configurado. Acesse Sistema > Banco de Dados > Configurar Banco Google.');
-  return SpreadsheetApp.openById(id);
-}
-function getOrCreateSpreadsheet(){
-  try{return getSpreadsheet();}catch(e){return SpreadsheetApp.openById(setupDatabase({}).spreadsheetId);}
-}
-function ensureAllSheets(ss){
-  Object.keys(TABLES).forEach(name => {
+function ensureSchema_(ss){
+  Object.keys(SCHEMA).forEach(name=>{
     let sh = ss.getSheetByName(name);
     if(!sh) sh = ss.insertSheet(name);
-    const headers = TABLES[name];
-    const lastCol = Math.max(headers.length, sh.getLastColumn() || 1);
-    const current = sh.getRange(1,1,1,lastCol).getValues()[0].slice(0,headers.length);
-    if(current.join('|') !== headers.join('|')){
+    const header = SCHEMA[name];
+    const current = sh.getRange(1,1,1,Math.max(header.length,1)).getValues()[0].filter(String);
+    if(current.join('|') !== header.join('|')){
       sh.clear();
-      sh.getRange(1,1,1,headers.length).setValues([headers]).setFontWeight('bold').setBackground('#eaf1f9');
+      sh.getRange(1,1,1,header.length).setValues([header]);
       sh.setFrozenRows(1);
     }
   });
+  const defaultSheet = ss.getSheetByName('Sheet1') || ss.getSheetByName('Página1') || ss.getSheetByName('Planilha1');
+  if(defaultSheet && Object.keys(SCHEMA).length > 1){
+    try{ ss.deleteSheet(defaultSheet); }catch(e){}
+  }
 }
-function readSheet(ss,name){
-  const sh = ss.getSheetByName(name); if(!sh) return [];
-  const headers = TABLES[name];
-  const last = sh.getLastRow(); if(last < 2) return [];
-  const values = sh.getRange(2,1,last-1,headers.length).getValues();
-  return values.filter(r => r.some(v => v !== '')).map(row => {
+
+function loadDatabase_(){
+  const ss = getOrCreateSpreadsheet_();
+  ensureSchema_(ss);
+  const db = {empreendimento:{nome:'Empreendimento',cliente:'Cliente'},paineis:[],lacos:[],flms:[],portas:[],locais:[],equipamentos:[],falhas:[],planos:[],inconsistencias:[],imports:[]};
+  Object.keys(MAP).forEach(sheetName=>{
+    const key = MAP[sheetName];
+    db[key] = readSheetObjects_(ss.getSheetByName(sheetName));
+  });
+  return {ok:true, db:db, sheetUrl:ss.getUrl(), spreadsheetId:ss.getId(), loadedAt:new Date().toISOString()};
+}
+
+function saveDatabase_(db){
+  const ss = getOrCreateSpreadsheet_();
+  ensureSchema_(ss);
+  writeSheetObjects_(ss.getSheetByName('Paineis'), SCHEMA.Paineis, db.paineis || []);
+  writeSheetObjects_(ss.getSheetByName('Lacos'), SCHEMA.Lacos, db.lacos || []);
+  writeSheetObjects_(ss.getSheetByName('FLMs'), SCHEMA.FLMs, db.flms || []);
+  writeSheetObjects_(ss.getSheetByName('Portas'), SCHEMA.Portas, db.portas || []);
+  writeSheetObjects_(ss.getSheetByName('Lojas_Areas'), SCHEMA.Lojas_Areas, db.locais || []);
+  writeSheetObjects_(ss.getSheetByName('Equipamentos'), SCHEMA.Equipamentos, db.equipamentos || []);
+  writeSheetObjects_(ss.getSheetByName('Falhas'), SCHEMA.Falhas, db.falhas || []);
+  writeSheetObjects_(ss.getSheetByName('Plano_Acao'), SCHEMA.Plano_Acao, db.planos || []);
+  writeSheetObjects_(ss.getSheetByName('Inconsistencias'), SCHEMA.Inconsistencias, db.inconsistencias || []);
+  writeSheetObjects_(ss.getSheetByName('Importacoes'), SCHEMA.Importacoes, db.imports || []);
+  writeConfig_(ss, db);
+  appendHistorico_(ss, 'Sistema', '', 'sync', 'Base sincronizada pelo SDAI Manager');
+  return {ok:true, savedAt:new Date().toISOString(), sheetUrl:ss.getUrl()};
+}
+
+function readSheetObjects_(sh){
+  if(!sh) return [];
+  const values = sh.getDataRange().getValues();
+  if(values.length < 2) return [];
+  const header = values[0].map(String);
+  return values.slice(1).filter(row=>row.some(v=>v !== '')).map(row=>{
     const o = {};
-    headers.forEach((h,i)=> o[h] = row[i]);
+    header.forEach((h,i)=>{
+      let v = row[i];
+      if(typeof v === 'string' && (v.startsWith('{') || v.startsWith('['))){
+        try{ v = JSON.parse(v); }catch(e){}
+      }
+      o[h] = v;
+    });
     return o;
   });
 }
-function writeSheet(ss,name,rows){
-  const sh = ss.getSheetByName(name); const headers = TABLES[name];
+
+function writeSheetObjects_(sh, header, rows){
   sh.clear();
-  sh.getRange(1,1,1,headers.length).setValues([headers]).setFontWeight('bold').setBackground('#eaf1f9');
+  sh.getRange(1,1,1,header.length).setValues([header]);
   sh.setFrozenRows(1);
-  if(rows && rows.length){
-    const values = rows.map(o => headers.map(h => serializeCell(o[h])));
-    sh.getRange(2,1,values.length,headers.length).setValues(values);
-  }
-  sh.autoResizeColumns(1, headers.length);
+  if(!rows || !rows.length) return;
+  const values = rows.map(o=>header.map(h=>{
+    const v = o && o[h] !== undefined ? o[h] : '';
+    if(v && typeof v === 'object') return JSON.stringify(v);
+    return v;
+  }));
+  sh.getRange(2,1,values.length,header.length).setValues(values);
+  try{ sh.autoResizeColumns(1, header.length); }catch(e){}
 }
-function serializeCell(v){
-  if(v === undefined || v === null) return '';
-  if(typeof v === 'object') return JSON.stringify(v);
-  return v;
-}
-function writeConfig(ss,chave,valor){
+
+function writeConfig_(ss, db){
   const sh = ss.getSheetByName('Configuracoes');
-  const data = sh.getDataRange().getValues();
-  for(let i=1;i<data.length;i++){
-    if(data[i][0] === chave){ sh.getRange(i+1,2,1,2).setValues([[valor,new Date().toISOString()]]); return; }
-  }
-  sh.appendRow([chave,valor,new Date().toISOString()]);
+  const rows = [
+    ['versao','5.2.0',new Date().toISOString()],
+    ['atualizadoEm',new Date().toISOString(),new Date().toISOString()],
+    ['empreendimento',JSON.stringify(db.empreendimento || {}),new Date().toISOString()]
+  ];
+  sh.clear();
+  sh.getRange(1,1,1,SCHEMA.Configuracoes.length).setValues([SCHEMA.Configuracoes]);
+  sh.getRange(2,1,rows.length,SCHEMA.Configuracoes.length).setValues(rows);
 }
-function appendHistorico(ss, entidade, entidadeId, acao, descricao){
+
+function appendHistorico_(ss, entidade, entidadeId, acao, descricao){
+  const sh = ss.getSheetByName('Historico');
+  if(!sh) return;
   const email = Session.getActiveUser().getEmail() || 'usuario';
-  ss.getSheetByName('Historico').appendRow([Utilities.getUuid(), new Date().toISOString(), email, entidade, entidadeId, acao, descricao]);
+  sh.appendRow([Utilities.getUuid(), new Date().toISOString(), email, entidade, entidadeId, acao, descricao]);
 }

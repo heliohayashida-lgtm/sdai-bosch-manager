@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SDAI Bosch Manager v5.1.4 - GitHub Pages + Google Sheets</title>
+<title>SDAI Bosch Manager v5.2 - Google Sync</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 :root{--bg:#eef3f8;--panel:#071a2d;--panel2:#0d2942;--card:#fff;--line:#d5deea;--text:#071426;--muted:#61728a;--blue:#0f5795;--blue2:#0b3d6b;--ok:#0f7a3b;--bad:#b42318;--warn:#b7791f;--chip:#e8f1fb}
@@ -15,24 +15,16 @@
 .reportCover,.metric,.chartPanel,.chartTrack i,.donut,.pill,.dot{ -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 .hidePrint{}@media(max-width:1000px){.app{grid-template-columns:1fr}.side{position:relative;height:auto}.grid,.diag,.miniChart{grid-template-columns:1fr 1fr}.formGrid{grid-template-columns:1fr}}@media print{*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}.side,.top,.hidePrint,.modal{display:none!important}.app{display:block}.content{padding:0}.card{box-shadow:none;border:0}.view{display:block}.view:not(.printTarget){display:none!important}body{background:#fff;color:#0f172a}.reportCover{border-radius:0;margin:-8mm -8mm 8mm -8mm;padding:22mm 12mm 18mm}.reportCover h2{font-size:25px}.grid{grid-template-columns:repeat(4,1fr);gap:8px}.metric{padding:10px;border-radius:10px}.metric strong{font-size:20px}.chartGrid{grid-template-columns:1fr 1fr;gap:8px}.chartPanel{break-inside:avoid;padding:10px}.reportBlock{break-inside:avoid;border-radius:10px;padding:10px;margin:8px 0}table{min-width:0;font-size:9px}th,td{font-size:9px;padding:5px}.reportFooter{font-size:10px}}
 
-.syncBar{position:fixed;right:18px;bottom:16px;z-index:60;background:#fff;border:1px solid var(--line);border-left:5px solid var(--blue);border-radius:14px;padding:10px 14px;box-shadow:0 12px 30px rgba(18,38,63,.18);font-size:12px;color:#22384f;min-width:230px}.syncBar b{display:block;font-size:12px}.syncBar small{color:var(--muted)}.syncBar.ok{border-left-color:var(--ok)}.syncBar.warn{border-left-color:var(--warn)}.syncBar.bad{border-left-color:var(--bad)}.dbInfo{display:grid;grid-template-columns:180px 1fr;gap:8px;font-size:13px}.dbInfo b{color:#24384f}.note{font-size:12px;color:var(--muted)}
-
-
-/* ===== Responsividade e menu recolhível v5.1.2 ===== */
-.menuBtn{border:1px solid var(--line);background:#fff;color:var(--blue2);border-radius:10px;padding:8px 10px;font-weight:900;margin-right:10px}
-.topLeft{display:flex;align-items:center;gap:8px;min-width:0}.topLeft>div{min-width:0}.topActions{display:flex;align-items:center;gap:10px}.app.collapsed{grid-template-columns:84px 1fr}.app.collapsed .side{padding:14px 8px}.app.collapsed .brand{justify-content:center;padding:8px 4px 16px}.app.collapsed .brand div:last-child,.app.collapsed .navTitle,.app.collapsed .nav button span{display:none}.app.collapsed .nav button{text-align:center;padding:12px 6px;font-size:0}.app.collapsed .nav button::first-letter{font-size:18px}.mobileShade{display:none;position:fixed;inset:0;background:rgba(7,20,45,.45);z-index:70}.mobileShade.show{display:block}
-@media(max-width:900px){
-  .app{display:block}.side{position:fixed;left:0;top:0;bottom:0;width:286px;height:100vh;z-index:80;transform:translateX(-102%);transition:.22s ease;box-shadow:20px 0 40px rgba(0,0,0,.22)}
-  .side.open{transform:translateX(0)}.main{width:100%}.top{height:auto;min-height:64px;padding:12px 14px;gap:8px}.top h1{font-size:18px}.top p{font-size:12px}.content{padding:14px 10px 74px}.grid,.diag,.chartGrid,.miniChart,.formGrid{grid-template-columns:1fr!important}.toolbar{display:grid;grid-template-columns:1fr;gap:8px}.field{min-width:0}.tableWrap{border-radius:12px}table{min-width:760px}.syncBar{left:10px;right:10px;bottom:10px;min-width:0}.drawer{width:100%}.dbInfo{grid-template-columns:1fr}.barrow,.chartLine{grid-template-columns:1fr;gap:5px}.reportFooter{display:block}.metric strong{font-size:24px}
-}
-@media(min-width:901px){.side{transition:.18s ease}.mobileOnly{display:none!important}}
+/* ===== V5.2 Google Sync / Responsivo ===== */
+.syncFooter{position:fixed;right:14px;bottom:14px;z-index:60;background:#fff;border:1px solid var(--line);border-radius:999px;padding:8px 12px;box-shadow:0 10px 26px rgba(18,38,63,.16);font-size:12px;color:#31445b;display:flex;gap:10px;align-items:center}.syncDot{width:9px;height:9px;border-radius:50%;background:#94a3b8}.syncDot.ok{background:var(--ok)}.syncDot.warn{background:var(--warn)}.syncDot.bad{background:var(--bad)}.menuToggle{display:none;border:0;background:var(--blue);color:#fff;border-radius:10px;padding:9px 12px;font-weight:900}.sideToggle{border:0;background:#18364f;color:#fff;border-radius:10px;padding:8px 10px;margin:12px 8px 0;width:calc(100% - 16px);font-weight:800}.app.sideCollapsed{grid-template-columns:76px 1fr}.app.sideCollapsed .brand div:not(.logo),.app.sideCollapsed .navTitle,.app.sideCollapsed .nav button span{display:none}.app.sideCollapsed .side{padding-left:8px;padding-right:8px}.app.sideCollapsed .nav button{text-align:center;font-size:0}.app.sideCollapsed .nav button::first-letter{font-size:18px}.systemStatusGrid{display:grid;grid-template-columns:repeat(3,minmax(160px,1fr));gap:12px}.systemBox{border:1px solid var(--line);background:#fff;border-radius:14px;padding:14px}.systemBox b{display:block;font-size:20px}.systemBox small{color:var(--muted);font-weight:800;text-transform:uppercase;font-size:11px}.note{color:var(--muted);font-size:12px}.check{display:inline-flex;gap:7px;align-items:center;background:#f5f8fc;border:1px solid var(--line);border-radius:999px;padding:8px 10px;font-weight:800;font-size:12px}
+@media(max-width:900px){.app{display:block}.menuToggle{display:inline-block}.side{position:fixed;left:0;top:0;bottom:0;width:290px;height:100vh;transform:translateX(-105%);transition:.25s;z-index:80}.side.open{transform:translateX(0)}.top{padding:0 14px}.top h1{font-size:16px}.content{padding:16px 12px 60px}.grid,.diag,.chartGrid,.systemStatusGrid{grid-template-columns:1fr!important}.toolbar{display:grid;grid-template-columns:1fr}.field{min-width:0}.formGrid{grid-template-columns:1fr}.syncFooter{left:10px;right:10px;bottom:8px;justify-content:center}.barrow,.chartLine{grid-template-columns:1fr}.drawer{width:100%}table{min-width:760px}}
 
 </style>
 </head>
 <body>
 <div class="app">
   <aside class="side">
-    <div class="brand"><div class="logo">S</div><div><b>SDAI Bosch</b><span>FLM físico • portas • histórico</span></div></div>
+    <div class="brand"><div class="logo">S</div><div><b>SDAI Bosch</b><span>FLM físico • portas • histórico</span></div></div><button class="sideToggle" id="sideCollapseBtn">⇄ Menu</button>
     <div class="nav">
       <div class="navTitle">Gestão</div>
       <button class="active" data-view="dashboard">📊 Dashboard</button>
@@ -48,13 +40,13 @@
       <div class="navTitle">Dados</div>
       <button data-view="relatorios">📄 Relatórios</button>
       <div class="navTitle">Sistema</div>
-      <button data-view="sistema">🗄️ Banco de Dados</button>
       <button data-view="importacao">⬆️ Importação</button>
       <button data-view="exportacao">⬇️ Exportação</button>
+      <button data-view="sistema">⚙️ Banco de Dados</button>
     </div>
   </aside>
   <main class="main">
-    <header class="top"><div class="topLeft"><button class="menuBtn" onclick="toggleSidebar()" title="Recolher/abrir menu">☰</button><div><h1 id="pageTitle">Dashboard</h1><p>Base técnica estruturada para diagnóstico SDAI Bosch</p></div></div><div class="topActions"><span class="pill">v5.1.4</span><div id="clock"></div></div></header>
+    <header class="top"><div style="display:flex;align-items:center;gap:12px"><button class="menuToggle" id="mobileMenuBtn">☰</button><div><h1 id="pageTitle">Dashboard</h1><p>Base técnica estruturada para diagnóstico SDAI Bosch</p></div></div><div id="clock"></div></header>
     <div class="content">
       <section id="dashboard" class="view active"></section>
       <section id="paineis" class="view"></section>
@@ -64,30 +56,23 @@
       <section id="equipamentos" class="view"></section>
       <section id="falhas" class="view"></section>
       <section id="plano" class="view"></section>
-      <section id="sistema" class="view"></section>
       <section id="importacao" class="view"></section>
       <section id="exportacao" class="view"></section>
       <section id="relatorios" class="view printTarget"></section>
+      <section id="sistema" class="view"></section>
     </div>
   </main>
 </div>
-<div class="mobileShade" id="mobileShade" onclick="closeSidebarMobile()"></div>
-<div class="syncBar warn" id="syncBar"><b>Banco Google</b><small>Abra Sistema → Banco de Dados</small></div>
+<div class="syncFooter" id="syncFooter"><span class="syncDot warn" id="syncDot"></span><span id="syncText">Banco local</span></div>
 <div class="modal" id="modal"><div class="drawer" id="drawer"></div></div>
 <script>
-const APP_VERSION='5.1.4';
 const KEY='sdai_bosch_manager_v4_flm_portas';
+const API_URL='https://script.google.com/macros/s/AKfycby45dTdw4g-pkcvY9sys3_gmvVcmnSyf6PZzJbRsbSFjhtuWbV1D5XSBEc-J1UtOBYftA/exec';
+const SYNC_KEY=KEY+':syncConfig';
 const emptyDB=()=>({empreendimento:{nome:'Empreendimento',cliente:'Cliente'},paineis:[],lacos:[],flms:[],portas:[],locais:[],equipamentos:[],falhas:[],planos:[],inconsistencias:[],imports:[]});
 let db=load(); let currentView='dashboard'; let filters={};
 let searchRenderTimer=null;
 let lastSearchFocus=null;
-function toggleSidebar(){
-  const app=document.querySelector('.app'); const side=document.querySelector('.side'); const shade=document.getElementById('mobileShade');
-  if(window.innerWidth<=900){side.classList.toggle('open'); shade.classList.toggle('show',side.classList.contains('open'));}
-  else{app.classList.toggle('collapsed');}
-}
-function closeSidebarMobile(){document.querySelector('.side')?.classList.remove('open');document.getElementById('mobileShade')?.classList.remove('show')}
-
 function onSearchInput(el){
   const val=el.value;
   const group=el.dataset.filterGroup;
@@ -115,76 +100,22 @@ function restoreSearchFocus(){
   },0);
 }
 
-const API_URL='https://script.google.com/macros/s/AKfycby45dTdw4g-pkcvY9sys3_gmvVcmnSyf6PZzJbRsbSFjhtuWbV1D5XSBEc-J1UtOBYftA/exec';
-const SYNC_KEY='sdai_bosch_manager_sync_state';
-function loadSyncState(){try{return Object.assign({configured:false,spreadsheetId:'',spreadsheetUrl:'',dirty:false,lastSync:'',saving:false,queue:0,error:'',syncIntervalSec:30},JSON.parse(localStorage.getItem(SYNC_KEY))||{})}catch(e){return {configured:false,spreadsheetId:'',spreadsheetUrl:'',dirty:false,lastSync:'',saving:false,queue:0,error:'',syncIntervalSec:30}}}
-function persistSyncState(){try{localStorage.setItem(SYNC_KEY,JSON.stringify({...syncState,saving:false,error:syncState.error||''}))}catch(e){}}
-let syncState=loadSyncState();
-let autoSyncTimer=null;
 function load(){try{return normalizeAllStatuses(Object.assign(emptyDB(),JSON.parse(localStorage.getItem(KEY))||{}))}catch(e){return emptyDB()}}
-function localSave(){localStorage.setItem(KEY,JSON.stringify(db));}
-function save(){localSave();markDirty('Alteração local');render()}
-function markDirty(reason='Alteração pendente'){syncState.dirty=true;syncState.queue=1;syncState.error='';updateSyncBar('warn',reason);scheduleAutoSync();}
-function scheduleAutoSync(){clearTimeout(autoSyncTimer);autoSyncTimer=setTimeout(()=>syncSave(false),3000)}
-let periodicSyncTimer=null;
-function startPeriodicAutoSync(){clearInterval(periodicSyncTimer); const sec=Math.max(10,Number(syncState.syncIntervalSec||30)); periodicSyncTimer=setInterval(()=>{if(syncState.dirty&&!syncState.saving)syncSave(false)},sec*1000)}
-function updateSyncInterval(){const el=document.getElementById('syncIntervalSec'); const v=Math.max(10,Number(el?.value||30)); syncState.syncIntervalSec=v; persistSyncState(); startPeriodicAutoSync(); updateSyncBar('ok','Intervalo de autosync ajustado para '+v+'s'); renderSistema();}
-async function apiCall(action,payload={}){
-  // Apps Script publicado em outro domínio: usar JSONP para leitura/configuração
-  // e POST por formulário oculto para gravação pesada, evitando bloqueio CORS.
-  if(action==='setup'||action==='getDb'||action==='ping') return apiJsonp(action,payload);
-  if(action==='saveDb'){
-    await apiFormPost(action,payload);
-    return {ok:true,savedAt:new Date().toISOString(),url:syncState.spreadsheetUrl,spreadsheetId:syncState.spreadsheetId,warning:'Sincronização enviada ao Apps Script.'};
-  }
-  throw new Error('Ação não suportada no cliente: '+action);
-}
-function apiJsonp(action,payload={}){
-  return new Promise((resolve,reject)=>{
-    const cb='sdai_cb_'+Date.now()+'_'+Math.random().toString(36).slice(2);
-    const script=document.createElement('script');
-    const timer=setTimeout(()=>{cleanup();reject(new Error('Tempo esgotado na API Google.'))},20000);
-    function cleanup(){clearTimeout(timer);delete window[cb];script.remove()}
-    window[cb]=(out)=>{cleanup(); if(!out||!out.ok)reject(new Error((out&&out.error)||'Erro na API')); else resolve(out)};
-    script.onerror=()=>{cleanup();reject(new Error('Falha ao acessar Apps Script via JSONP.'))};
-    script.src=API_URL+'?action='+encodeURIComponent(action)+'&payload='+encodeURIComponent(JSON.stringify(payload||{}))+'&callback='+encodeURIComponent(cb)+'&_='+(Date.now());
-    document.body.appendChild(script);
-  });
-}
-async function apiFormPost(action,payload={}){
-  // Envio sem CORS, mas com formulário simples. O Apps Script grava nas abas e a resposta é opaca no navegador.
-  const body = new URLSearchParams();
-  body.append('action', action);
-  body.append('payload', JSON.stringify(payload||{}));
-  try{
-    await fetch(API_URL, {method:'POST', mode:'no-cors', body});
-    await new Promise(r=>setTimeout(r,1800));
-    return {ok:true};
-  }catch(e){
-    // Fallback por iframe caso o navegador bloqueie fetch no-cors.
-    return new Promise((resolve)=>{
-      const iframe=document.createElement('iframe');
-      iframe.name='sdai_hidden_'+Date.now();
-      iframe.style.display='none';
-      const form=document.createElement('form');
-      form.method='POST'; form.action=API_URL; form.target=iframe.name; form.style.display='none';
-      [['action',action],['payload',JSON.stringify(payload||{})]].forEach(([k,v])=>{const input=document.createElement('input');input.name=k;input.value=v;form.appendChild(input)});
-      document.body.appendChild(iframe);document.body.appendChild(form);
-      setTimeout(()=>{try{form.remove();iframe.remove()}catch(e){} resolve({ok:true})},3000);
-      form.submit();
-    });
-  }
-}
-function updateSyncBar(cls='warn',msg=''){
-  const el=document.getElementById('syncBar'); if(!el)return;
-  el.className='syncBar '+cls;
-  const status=cls==='ok'?'🟢 Sincronizado':cls==='bad'?'🔴 Falha de sincronização':'🟡 Pendente / sincronizando';
-  el.innerHTML=`<b>${status}</b><small>${esc(msg||syncState.lastSync||'Aguardando sincronização')} • Fila: ${syncState.queue||0} • v5.1.4</small>`;
-}
-async function setupGoogleDatabase(){try{updateSyncBar('warn','Configurando banco...');const r=await apiCall('setup',{name:'Banco SDAI Bosch Manager'});syncState.configured=true;syncState.spreadsheetId=r.spreadsheetId;syncState.spreadsheetUrl=r.url;syncState.lastSync=now();persistSyncState();updateSyncBar('ok','Banco configurado');renderSistema();alert('Banco Google configurado/validado. Agora use Sincronizar agora para enviar a base local ao Google.')}catch(e){syncState.error=e.message;persistSyncState();updateSyncBar('bad',e.message);alert(e.message)}}
-async function syncSave(showAlert=true){try{syncState.saving=true;updateSyncBar('warn','Salvando no Google...');localSave();const r=await apiCall('saveDb',{db});syncState.configured=true;syncState.spreadsheetId=r.spreadsheetId||syncState.spreadsheetId;syncState.spreadsheetUrl=r.url||syncState.spreadsheetUrl;syncState.dirty=false;syncState.queue=0;syncState.lastSync=now();persistSyncState();updateSyncBar('ok','Última sincronização: '+syncState.lastSync);if(showAlert)alert('Base sincronizada com Google Sheets.')}catch(e){syncState.error=e.message;syncState.queue=1;persistSyncState();updateSyncBar('bad',e.message);if(showAlert)alert('Erro ao salvar Google: '+e.message)}finally{syncState.saving=false;renderSistema()}}
-async function syncLoad(force=false){try{updateSyncBar('warn','Carregando do Google...');const r=await apiCall('getDb',{});const remote=Object.assign(emptyDB(),r.db||{});const remoteCount=Object.keys(remote).reduce((a,k)=>a+(Array.isArray(remote[k])?remote[k].length:0),0);const localCount=Object.keys(db).reduce((a,k)=>a+(Array.isArray(db[k])?db[k].length:0),0);if(remoteCount===0 && localCount>0 && !force){updateSyncBar('warn','Google vazio. Base local preservada. Use Sincronizar agora.');alert('O Google está vazio. A base local foi preservada. Clique em Sincronizar agora para enviar esses dados ao Google.');return}db=normalizeAllStatuses(remote);localSave();syncState.dirty=false;syncState.queue=0;syncState.lastSync=now();persistSyncState();updateSyncBar('ok','Carregado do Google: '+syncState.lastSync);render();}catch(e){syncState.error=e.message;persistSyncState();updateSyncBar('bad',e.message);alert('Erro ao carregar Google: '+e.message)}}
-startPeriodicAutoSync();
+function syncCfg(){try{return Object.assign({configured:false,auto:true,intervalSec:30,lastSync:'',sheetUrl:'',dirty:false},JSON.parse(localStorage.getItem(SYNC_KEY)||'{}'))}catch(e){return {configured:false,auto:true,intervalSec:30,lastSync:'',sheetUrl:'',dirty:false}}}
+function setSyncCfg(o){localStorage.setItem(SYNC_KEY,JSON.stringify(Object.assign(syncCfg(),o))); updateSyncFooter()}
+function persistLocal(){localStorage.setItem(KEY,JSON.stringify(db))}
+function markDirty(reason='alteração'){persistLocal(); setSyncCfg({dirty:true,lastReason:reason}); scheduleAutoSync(1500)}
+function save(){markDirty('salvamento');render()}
+function updateSyncFooter(status){const c=syncCfg(); const dot=document.getElementById('syncDot'), txt=document.getElementById('syncText'); if(!dot||!txt)return; dot.className='syncDot '+(status==='saving'?'warn':status==='error'?'bad':(!c.configured?'warn':c.dirty?'warn':'ok')); txt.textContent=status==='saving'?'Sincronizando...':status==='error'?'Falha ao sincronizar':(!c.configured?'Banco Google não configurado':c.dirty?'Alterações pendentes':'Sincronizado '+(c.lastSync||''));}
+let autoSyncTimer=null; function scheduleAutoSync(ms){const c=syncCfg(); if(!c.configured||!c.auto)return; clearTimeout(autoSyncTimer); autoSyncTimer=setTimeout(()=>syncNow(false),ms||((c.intervalSec||30)*1000));}
+function jsonp(action, params={}){return new Promise((resolve,reject)=>{const cb='cb_'+Date.now()+'_'+Math.random().toString(36).slice(2); window[cb]=(data)=>{delete window[cb]; s.remove(); resolve(data)}; const q=new URLSearchParams({action,callback:cb,...params}); const s=document.createElement('script'); s.src=API_URL+'?'+q.toString(); s.onerror=()=>{delete window[cb]; s.remove(); reject(new Error('Falha de comunicação com Apps Script'))}; document.body.appendChild(s); setTimeout(()=>{if(window[cb]){delete window[cb]; try{s.remove()}catch(e){} reject(new Error('Tempo esgotado na API'))}},30000)})}
+async function apiPost(action,payload){return fetch(API_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action,payload})})}
+async function setupGoogle(){try{updateSyncFooter('saving'); const r=await jsonp('setup'); if(!r.ok)throw new Error(r.error||'Erro ao configurar banco'); setSyncCfg({configured:true,sheetUrl:r.sheetUrl||'',dirty:true}); renderSistema(); updateSyncFooter(); alert('Banco Google configurado/validado.');}catch(e){updateSyncFooter('error'); alert('Falha ao configurar banco: '+e.message)}}
+async function loadGoogle(){try{updateSyncFooter('saving'); const r=await jsonp('load'); if(!r.ok)throw new Error(r.error||'Erro ao carregar'); if(r.db && Object.keys(r.db).length){ db=normalizeAllStatuses(Object.assign(emptyDB(),r.db)); persistLocal(); setSyncCfg({configured:true,dirty:false,lastSync:new Date().toLocaleTimeString('pt-BR')}); render(); } else { alert('Banco Google vazio. Dados locais preservados. Use Sincronizar agora para enviar sua base.'); setSyncCfg({configured:true}); renderSistema(); }}catch(e){updateSyncFooter('error'); alert('Falha ao carregar Google: '+e.message)}}
+async function syncNow(showAlert=true){const c=syncCfg(); if(!c.configured){ if(showAlert) alert('Configure/valide o banco Google primeiro.'); return; } try{updateSyncFooter('saving'); persistLocal(); await apiPost('save',{db}); setSyncCfg({dirty:false,lastSync:new Date().toLocaleTimeString('pt-BR')}); if(showAlert) alert('Sincronização enviada ao Google.'); renderSistema();}catch(e){updateSyncFooter('error'); if(showAlert) alert('Falha ao sincronizar: '+e.message)}}
+function setAutoInterval(sec){setSyncCfg({intervalSec:Number(sec)||30,dirty:syncCfg().dirty}); scheduleAutoSync((Number(sec)||30)*1000); renderSistema()}
+function setAutoEnabled(v){setSyncCfg({auto:!!v}); if(v) scheduleAutoSync(1000); renderSistema()}
+
 const id=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
 const n=s=>String(s??'').trim(); const up=s=>n(s).toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
 function normalizeStatus(st){const raw=n(st); const x=up(raw); if(!x||x==='ATIVO'||x==='OK'||x==='NORMAL'||x.includes('OPERACAO')||x.includes('FUNCION'))return 'Em operação'; if(x.includes('LOGISTA'))return 'Falha logista'; if(x.includes('SISTEMA'))return 'Falha sistema'; if(x.includes('FALHA'))return raw||'Falha sistema'; if(x.includes('DESATIV')||x==='INATIVO')return 'Desativada'; if(x.includes('TESTE'))return 'Em teste'; return raw||'Em operação'}
@@ -216,13 +147,13 @@ function ensurePorta(flmId,numero,localId='',ligacao=''){return findOrCreate(db.
 function ensureLocal(nome,tipo,painelId,lacoId,piso,flmId,portaId){let r=findOrCreate(db.locais,x=>up(x.nome)===up(nome),{nome,tipo:tipo||localClass(nome),painelId,lacoId,piso,flmId,portaId,status:'Em operação',ultimaAlteracao:isoNow(),obs:'Importado'}); Object.assign(r.obj,{painelId:r.obj.painelId||painelId,lacoId:r.obj.lacoId||lacoId,piso:r.obj.piso||piso,flmId:r.obj.flmId||flmId,portaId:r.obj.portaId||portaId}); return r.obj}
 function deviceKey(d){return [d.painelId,d.lacoId,up(d.tipo),up(d.endereco),up(d.modelo),d.flmId||''].join('|')}
 function ensureEquip(obj,mode='diff'){obj.status=normalizeStatus(obj.status); let key=deviceKey(obj); let ex=db.equipamentos.find(e=>deviceKey(e)===key); if(ex){ ex.status=normalizeStatus(ex.status||obj.status); if(mode==='overwrite')Object.assign(ex,{...obj,id:ex.id,status:normalizeStatus(ex.status||obj.status),ultimaAlteracao:ex.ultimaAlteracao||obj.ultimaAlteracao}); return {obj:ex,created:false,updated:mode==='overwrite'} } obj.id=id(); db.equipamentos.push(obj); return {obj,created:true}}
-function clearAll(){db=emptyDB();localSave();markDirty('Base local limpa');render()}
+function clearAll(){db=emptyDB();persistLocal();markDirty('limpeza');render()}
 function counts(){let tipos=unique(db.equipamentos.map(e=>e.tipo).concat(['Módulo'])); let c={paineis:db.paineis.length,lacos:db.lacos.length,flms:db.flms.length,portas:db.portas.length,locais:db.locais.length,equipamentos:db.equipamentos.length,totalDispositivos:db.equipamentos.length+db.flms.length,tipos:{},status:{}}; tipos.forEach(t=>c.tipos[t]=0); db.flms.forEach(()=>c.tipos['Módulo']=(c.tipos['Módulo']||0)+1); db.equipamentos.forEach(e=>{c.tipos[e.tipo]=(c.tipos[e.tipo]||0)+1;{let st=normalizeStatus(e.status); c.status[st]=(c.status[st]||0)+1}}); db.flms.forEach(f=>{{let st=normalizeStatus(f.status||'Em operação'); c.status[st]=(c.status[st]||0)+1}}); return c}
 function table(rows,cols,actions){if(!rows.length)return '<p class="msg warn">Sem registros.</p>';return `<div class="tableWrap"><table><thead><tr>${cols.map(c=>`<th>${c[0]}</th>`).join('')}${actions?'<th>Ações</th>':''}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${c[2]?c[2](r):esc(r[c[1]])}</td>`).join('')}${actions?`<td>${actions(r)}</td>`:''}</tr>`).join('')}</tbody></table></div>`}
 function selectOpts(vals,sel=''){return '<option value="">Todos</option>'+vals.map(v=>`<option ${v===sel?'selected':''}>${esc(v)}</option>`).join('')}
 function kpi(label,val){return `<div class="metric"><small>${esc(label)}</small><strong>${esc(val)}</strong></div>`}
-function render(){document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));document.getElementById(currentView).classList.add('active'); document.getElementById('pageTitle').textContent={dashboard:'Dashboard',paineis:'Painéis',lacos:'Laços',flms:'FLMs / Portas',locais:'Lojas / Áreas',equipamentos:'Equipamentos',falhas:'Falhas',plano:'Plano de Ação',sistema:'Banco de Dados',importacao:'Importação',exportacao:'Exportação',relatorios:'Relatórios'}[currentView]||'SDAI'; renderDashboard();renderPaineis();renderLacos();renderFlms();renderLocais();renderEquipamentos();renderFalhas();renderPlano();renderSistema();renderImportacao();renderExportacao();renderRelatorios();attachSearchInputs();restoreSearchFocus();}
-document.querySelectorAll('.nav button').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.nav button').forEach(x=>x.classList.remove('active'));b.classList.add('active');currentView=b.dataset.view;closeSidebarMobile();render()})); setInterval(()=>document.getElementById('clock').textContent=now(),1000);
+function render(){document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));document.getElementById(currentView).classList.add('active'); document.getElementById('pageTitle').textContent={dashboard:'Dashboard',paineis:'Painéis',lacos:'Laços',flms:'FLMs / Portas',locais:'Lojas / Áreas',equipamentos:'Equipamentos',falhas:'Falhas',plano:'Plano de Ação',importacao:'Importação',exportacao:'Exportação',relatorios:'Relatórios',sistema:'Banco de Dados'}[currentView]||'SDAI'; renderDashboard();renderPaineis();renderLacos();renderFlms();renderLocais();renderEquipamentos();renderFalhas();renderPlano();renderImportacao();renderExportacao();renderRelatorios();renderSistema();attachSearchInputs();restoreSearchFocus();updateSyncFooter();}
+document.querySelectorAll('.nav button').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.nav button').forEach(x=>x.classList.remove('active'));b.classList.add('active');currentView=b.dataset.view;render()})); setInterval(()=>document.getElementById('clock').textContent=now(),1000);
 function isOperacaoStatus(st){st=up(normalizeStatus(st||'Em operação'));return st.includes('OPER')}
 function isFalhaStatus(st){st=up(normalizeStatus(st||''));return st.includes('FALHA')}
 function isDesativadoStatus(st){st=up(normalizeStatus(st||''));return st.includes('DESATIV')}
@@ -419,37 +350,6 @@ function renderPlano(){
   ['plBuscaPlano','plCat','plPrio','plSit','plResp','plIni','plFim'].forEach(id=>{let el=document.getElementById(id); if(el)el.onchange=renderPlano});
 }
 
-
-function renderSistema(){
-  const el=document.getElementById('sistema'); if(!el)return;
-  const sec=Number(syncState.syncIntervalSec||30);
-  el.innerHTML=`<div class="card"><h3 class="sectionTitle">Banco de Dados Google</h3>
-    <div class="dbInfo">
-      <b>Status</b><span>${syncState.error?'<span class="pill bad">Falha</span>':syncState.configured?'<span class="pill ok">Conectado</span>':'<span class="pill warn">Não configurado</span>'}</span>
-      <b>Planilha</b><span>${syncState.spreadsheetUrl?`<a href="${syncState.spreadsheetUrl}" target="_blank">Abrir Google Sheets</a>`:'Ainda não vinculada'}</span>
-      <b>Última sincronização</b><span>${esc(syncState.lastSync||'Nunca')}</span>
-      <b>Sincronização</b><span>Automática após alterações e a cada <b>${sec}</b> segundos quando houver pendência</span>
-      <b>Fila pendente</b><span>${syncState.queue||0}</span>
-      <b>Erro</b><span>${esc(syncState.error||'-')}</span>
-    </div>
-    <div class="toolbar">
-      <div class="field"><label>Intervalo da gravação automática</label><select id="syncIntervalSec" onchange="updateSyncInterval()">
-        ${[10,15,30,60,120,300].map(v=>`<option value="${v}" ${v===sec?'selected':''}>${v} segundos</option>`).join('')}
-      </select></div>
-      <button class="btn" onclick="setupGoogleDatabase()">Configurar / validar banco</button>
-      <button class="btn secondary" onclick="syncSave(true)">Sincronizar agora</button>
-      <button class="btn secondary" onclick="if(confirm('Carregar do Google substitui a base local pela base central. Deseja continuar?'))syncLoad(false)">Carregar do Google</button>
-      ${syncState.spreadsheetUrl?`<button class="btn secondary" onclick="window.open('${syncState.spreadsheetUrl}','_blank')">Abrir Planilha</button>`:''}
-    </div>
-    <p class="msg warn"><b>Uso correto:</b> configure o banco uma única vez. Depois importe/cadastre normalmente; o sistema salva local e sincroniza automaticamente. O botão "Carregar do Google" é apenas para abrir a base central em outro computador.</p>
-  </div>
-  <div class="card"><h3 class="sectionTitle">Abas estruturadas no Google Sheets</h3>
-    <div class="diag">
-      ${['Configuracoes','Paineis','Lacos','FLMs','Portas','Locais','Equipamentos','Falhas','Plano_Acao','Historico','Importacoes','Usuarios','Relatorios'].map(x=>`<div class="diagItem"><b>${x}</b><small>Banco estruturado</small></div>`).join('')}
-    </div>
-  </div>`;
-}
-
 function renderImportacao(){document.getElementById('importacao').innerHTML=`<div class="card"><h3 class="sectionTitle">Importar CSV / XLS / XLSX</h3><div class="toolbar"><div class="field"><label>Arquivo</label><input type="file" id="fileImp" accept=".csv,.xls,.xlsx"></div><div class="field"><label>Modo</label><select id="modeImp"><option value="diff">Somente diferença</option><option value="overwrite">Sobrescrever iguais preservando histórico</option><option value="replace">Apagar dados atuais e importar do zero</option></select></div></div><p class="msg warn"><b>Colunas esperadas:</b> Painel, Laço, Piso, Endereço FLM, Porta, Loja, Tipo, Modelo, Endereço, Fabricante, Status, Observação. O sistema valida antes de importar.</p><button class="btn secondary" onclick="previewImport()">Pré-visualizar / validar</button> <button class="btn" onclick="importFile()">Importar</button><div id="impMsg"></div><div id="previewBox"></div></div><div class="card"><h3 class="sectionTitle">Último diagnóstico de importação</h3>${lastImportHtml()}</div>`}
 function lastImportHtml(){let r=db.imports.at(-1); if(!r)return '<p class="msg warn">Nenhuma importação executada.</p>'; let cards=Object.entries(r.stats).map(([k,v])=>`<div class="diagItem"><small>${esc(k)}</small><b>${esc(v)}</b></div>`).join(''); let rom=r.romannel?`<div class="msg ${r.romannel.ok?'ok':'err'}">ROMANNEL: ${esc(r.romannel.msg)}</div>`:''; return `${rom}<div class="diag">${cards}</div><h4>Erros / ignorados</h4>${table(r.errors||[],[['Linha','linha'],['Motivo','motivo'],['Registro','registro']])}`}
 function renderExportacao(){document.getElementById('exportacao').innerHTML=`<div class="card"><h3 class="sectionTitle">Exportações</h3><div class="toolbar"><button class="btn" onclick="exportJson()">Base completa JSON</button><button class="btn" onclick="exportAllCsv()">Base completa CSV</button><button class="btn secondary" onclick="exportEntity('locais')">Lojas / Áreas</button><button class="btn secondary" onclick="exportEntity('flms')">FLMs</button><button class="btn secondary" onclick="exportEntity('equipamentos')">Equipamentos</button><button class="btn secondary" onclick="exportEntity('planos')">Plano de ação</button><button class="btn secondary" onclick="exportEntity('inconsistencias')">Inconsistências</button><button class="btn danger" onclick="if(confirm('Apagar toda base local?'))clearAll()">Limpar base local</button></div></div>`}
@@ -462,13 +362,49 @@ function donutChart(ok,bad){let total=ok+bad,deg=total?Math.round((bad/total)*36
 function reportPlanoBlock(r){let ini=r.ini||'',fim=r.fim||'';let plans=(db.planos||[]).filter(p=>(!r.painel||p.painel===r.painel)&&(!ini||String(p.criadoEm||p.atualizadoEm)>=ini)&&(!fim||String(p.criadoEm||p.atualizadoEm)<=fim+'T23:59'));let ab=plans.filter(p=>p.situacao!=='Concluído').length, co=plans.filter(p=>p.situacao==='Concluído').length;let cat=planoCategorias().map(c=>({label:c,value:plans.filter(p=>p.categoria===c).length})).filter(x=>x.value);let pend=plans.filter(p=>p.situacao!=='Concluído').sort((a,b)=>prioridadePeso(a.prioridade)-prioridadePeso(b.prioridade)||String(a.criadoEm).localeCompare(String(b.criadoEm))).slice(0,20);return `<div class="reportBlock"><h3>Plano de Ação</h3><div class="grid">${kpi('Planos criados',plans.length)}${kpi('Planos concluídos',co)}${kpi('Planos em aberto',ab)}${kpi('Pendências críticas',plans.filter(p=>p.prioridade==='Crítica'&&p.situacao!=='Concluído').length)}</div><div class="chartGrid"><div class="chartPanel"><h4>Plano por categoria</h4>${chartBarRows(cat,Math.max(1,...cat.map(x=>x.value)))}</div><div class="chartPanel"><h4>Situação dos planos</h4>${chartBarRows([{label:'Aberto',value:plans.filter(p=>p.situacao==='Aberto').length},{label:'Em andamento',value:plans.filter(p=>p.situacao==='Em andamento').length},{label:'Concluído',value:co,cls:'ok'}],Math.max(1,plans.length))}</div></div><h4>Pendências abertas</h4>${table(pend,[['Prioridade','prioridade'],['Local','local'],['Item','item'],['Categoria','categoria'],['Responsável','responsavel'],['Situação','situacao'],['Criado em','criadoEm']])}</div>`}
 
 function drawReport(){let r=reportData(); let geral=Object.values(r.byPainel).reduce((a,d)=>{a.op+=d.op;a.falha+=d.falha;Object.entries(d.tipos).forEach(([t,v])=>{a.tipos[t]=a.tipos[t]||{op:0,falha:0};a.tipos[t].op+=(v.op||0);a.tipos[t].falha+=(v.falha||0)});return a},{op:0,falha:0,tipos:{}});let maxPain=Math.max(1,...Object.values(r.byPainel).map(d=>d.op+d.falha));let painelChart=chartBarRows(Object.entries(r.byPainel).map(([pn,d])=>({label:pn,value:d.op+d.falha})),maxPain);let tipoRows=Object.entries(geral.tipos).map(([t,v])=>({label:t,value:(v.op||0)+(v.falha||0)}));let tipoChart=chartBarRows(tipoRows,Math.max(1,...tipoRows.map(x=>x.value)));let painBlocks=Object.entries(r.byPainel).map(([pn,d])=>{let lacos=db.lacos.filter(l=>paiName(l.painelId)===pn).map(l=>{let eq=db.equipamentos.filter(e=>e.lacoId===l.id);let fl=db.flms.filter(f=>f.lacoId===l.id);let tipos={}; eq.forEach(e=>{tipos[e.tipo]=tipos[e.tipo]||{op:0,falha:0}; tipos[e.tipo][up(e.status).includes('FALHA')?'falha':'op']++}); fl.forEach(f=>{tipos['Módulo']=tipos['Módulo']||{op:0,falha:0}; tipos['Módulo'][up(f.status).includes('FALHA')?'falha':'op']++});let totalL=Object.values(tipos).reduce((a,v)=>a+(v.op||0)+(v.falha||0),0);let falhaL=Object.values(tipos).reduce((a,v)=>a+(v.falha||0),0);return `<div class="reportBlock"><b>${esc(l.nome)} — ${totalL} itens / ${falhaL} em falha</b><div class="premiumTable">${table(Object.entries(tipos).map(([t,v])=>({tipo:t,operacao:v.op||0,falha:v.falha||0,total:(v.op||0)+(v.falha||0)})),[['Tipo','tipo'],['Em operação','operacao'],['Falha','falha'],['Total','total']])}</div></div>`}).join('');let rowsTipo=Object.entries(d.tipos).map(([t,v])=>({tipo:t,operacao:v.op||0,falha:v.falha||0,total:(v.op||0)+(v.falha||0)}));return `<div class="reportBlock"><h3>${esc(pn)}</h3><div class="miniChart"><div class="chartCard"><h4>Em operação</h4><b>${d.op}</b></div><div class="chartCard"><h4>Em falha</h4><b>${d.falha}</b></div><div class="chartCard"><h4>Disponibilidade</h4><b>${pct(d.op,d.op+d.falha)}%</b></div></div><div class="chartPanel"><h4>Status do painel</h4>${donutChart(d.op,d.falha)}</div><h4>Compilado por tipo</h4><div class="premiumTable">${table(rowsTipo,[['Tipo','tipo'],['Em operação','operacao'],['Falha','falha'],['Total','total']])}</div><h4>Por laço</h4>${lacos}</div>`}).join('');document.getElementById('reportOut').innerHTML=`<div class="card"><div class="reportCover"><h2>Relatório Técnico SDAI Bosch</h2><p>Setup Soluções Integradas • Diagnóstico operacional do sistema de detecção e alarme de incêndio</p><div class="reportMeta"><span>Período: ${esc(r.ini||'início')} até ${esc(r.fim||'atual')}</span><span>Painel: ${esc(r.painel||'Todos')}</span><span>Gerado em: ${now()}</span></div></div><div class="grid">${kpi('Falhas lançadas no período',r.lanc)}${kpi('Falhas resolvidas no período',r.resol)}${kpi('Itens em operação',geral.op)}${kpi('Itens em falha',geral.falha)}${kpi('Disponibilidade',pct(geral.op,geral.op+geral.falha)+'%')}${kpi('Total avaliado',geral.op+geral.falha)}</div><div class="chartGrid"><div class="chartPanel"><h4>Status geral do sistema</h4>${donutChart(geral.op,geral.falha)}</div><div class="chartPanel"><h4>Dispositivos por tipo</h4>${tipoChart}</div><div class="chartPanel"><h4>Total por painel</h4>${painelChart}</div><div class="chartPanel"><h4>Movimentação no período</h4>${chartBarRows([{label:'Falhas lançadas',value:r.lanc,cls:'bad'},{label:'Falhas resolvidas',value:r.resol,cls:'ok'}],Math.max(1,r.lanc,r.resol))}</div></div><div class="reportBlock"><h3>Compilado geral por tipo</h3><div class="premiumTable">${table(Object.entries(geral.tipos).map(([t,v])=>({tipo:t,operacao:v.op||0,falha:v.falha||0,total:(v.op||0)+(v.falha||0)})),[['Tipo','tipo'],['Em operação','operacao'],['Falha','falha'],['Total','total']])}</div></div>${painBlocks}${reportPlanoBlock(r)}<div class="reportBlock"><h3>Conclusão técnica</h3><p>Relatório compilado sem listagem nominal de todas as lojas, priorizando indicadores por painel, laço, tipo de dispositivo e status operacional. A base segue a estrutura Empreendimento → Painel → Laço → FLM físico → Porta → Loja/Área → Equipamentos → Histórico de falhas.</p></div><div class="reportFooter"><span>Setup Soluções Integradas</span><span>Documento técnico gerado pelo SDAI Bosch Manager</span></div></div>`}
+
+function renderSistema(){
+  const el=document.getElementById('sistema'); if(!el)return;
+  const c=syncCfg();
+  el.innerHTML=`
+  <div class="card">
+    <h3 class="sectionTitle">Banco de Dados Google</h3>
+    <div class="systemStatusGrid">
+      <div class="systemBox"><small>Status</small><b>${c.configured?'Conectado':'Não configurado'}</b></div>
+      <div class="systemBox"><small>Última sincronização</small><b>${esc(c.lastSync||'Nunca')}</b></div>
+      <div class="systemBox"><small>Fila local</small><b>${c.dirty?'Pendente':'0'}</b></div>
+    </div>
+    <p class="msg warn">As informações ficam salvas localmente e são sincronizadas com o Google Sheets. O banco é estruturado por abas: Painéis, Laços, FLMs, Portas, Lojas/Áreas, Equipamentos, Falhas, Plano de Ação, Histórico e Importações.</p>
+    <div class="toolbar">
+      <button class="btn" onclick="setupGoogle()">Configurar / validar banco</button>
+      <button class="btn secondary" onclick="syncNow(true)">Sincronizar agora</button>
+      <button class="btn secondary" onclick="loadGoogle()">Carregar do Google</button>
+      ${c.sheetUrl?`<a class="btn secondary" href="${esc(c.sheetUrl)}" target="_blank" style="text-decoration:none">Abrir planilha</a>`:''}
+    </div>
+  </div>
+  <div class="card">
+    <h3 class="sectionTitle">Sincronização automática</h3>
+    <div class="toolbar">
+      <div class="field"><label>Ativar autosync</label><select onchange="setAutoEnabled(this.value==='sim')"><option value="sim" ${c.auto?'selected':''}>Sim</option><option value="nao" ${!c.auto?'selected':''}>Não</option></select></div>
+      <div class="field"><label>Intervalo de gravação</label><select onchange="setAutoInterval(this.value)">
+        ${[15,30,60,120,300].map(s=>`<option value="${s}" ${Number(c.intervalSec)===s?'selected':''}>${s<60?s+' segundos':(s/60)+' minuto(s)'}</option>`).join('')}
+      </select></div>
+    </div>
+    <p class="note">Também sincroniza automaticamente alguns segundos após cadastros, importações e alterações de falhas/plano de ação.</p>
+  </div>
+  <div class="card">
+    <h3 class="sectionTitle">Backup local</h3>
+    <div class="toolbar"><button class="btn secondary" onclick="exportJson()">Exportar JSON local</button><button class="btn secondary" onclick="exportAllCsv()">Exportar CSV local</button></div>
+  </div>`
+}
+
 async function readRows(){let f=document.getElementById('fileImp').files[0]; if(!f)throw new Error('Selecione um arquivo.'); let ext=f.name.split('.').pop().toLowerCase(); let data=await f.arrayBuffer(); if(ext==='csv'){let txt=new TextDecoder('utf-8').decode(data); return parseCSV(txt)} if(typeof XLSX==='undefined')throw new Error('Biblioteca XLSX não carregada. Para XLS/XLSX, abra com internet ou use CSV.'); let wb=XLSX.read(data,{type:'array'}); let rows=[]; wb.SheetNames.forEach(sn=>{rows=rows.concat(XLSX.utils.sheet_to_json(wb.Sheets[sn],{defval:''}))}); return rows}
 function parseCSV(txt){let sep=(txt.split('\n')[0].match(/;/g)||[]).length>=(txt.split('\n')[0].match(/,/g)||[]).length?';':','; let lines=txt.split(/\r?\n/).filter(x=>x.trim()); if(!lines.length)return []; let headers=splitCSV(lines[0],sep); return lines.slice(1).map(l=>{let vals=splitCSV(l,sep),o={};headers.forEach((h,i)=>o[h]=vals[i]||'');return o})}
 function splitCSV(line,sep){let out=[],cur='',q=false; for(let i=0;i<line.length;i++){let ch=line[i]; if(ch==='"'){if(q&&line[i+1]==='"'){cur+='"';i++}else q=!q}else if(ch===sep&&!q){out.push(cur);cur=''}else cur+=ch} out.push(cur); return out}
 async function previewImport(){try{let rows=await readRows(); let v=validateRows(rows); document.getElementById('previewBox').innerHTML=`<div class="msg ${v.ok?'ok':'err'}">${v.ok?'Arquivo validado':'Arquivo com inconsistências'}: ${rows.length} registros lidos.</div>${table(rows.slice(0,20),Object.keys(rows[0]||{}).map(k=>[k,k]))}${v.errors.length?table(v.errors,[['Linha','linha'],['Motivo','motivo'],['Registro','registro']]):''}`}catch(e){document.getElementById('impMsg').innerHTML=`<div class="msg err">${esc(e.message)}</div>`}}
 function validateRows(rows){let errors=[]; if(!rows.length)errors.push({linha:0,motivo:'Arquivo vazio',registro:''}); let cols=Object.keys(rows[0]||{}).map(normKey); ['PAINEL','LACO','TIPO','MODELO'].forEach(c=>{if(!cols.some(x=>x.includes(c)))errors.push({linha:1,motivo:'Coluna obrigatória ausente: '+c,registro:Object.keys(rows[0]||{}).join(', ')})}); return {ok:!errors.length,errors}}
 async function importFile(){try{let rows=await readRows(); let mode=document.getElementById('modeImp').value; let v=validateRows(rows); if(!v.ok)throw new Error(v.errors.map(e=>e.motivo).join(' | ')); if(mode==='replace')db=emptyDB(); let stats={registrosLidos:rows.length,paineis:0,lacos:0,flms:0,portas:0,lojasCriadas:0,areasTecnicas:0,areasComuns:0,detectores:0,acionadores:0,modulos:0,ignorados:0}; let errors=[],rom={ok:false,msg:'Não localizada no arquivo.'}; rows.forEach((r,i)=>{let linha=i+2; try{let painel=get(r,['Painel','Central']); let laco=get(r,['Laço','Laco','Loop']); let piso=get(r,['Piso','Pavimento']); let endFlm=get(r,['Endereço FLM','Endereco FLM','FLM','Módulo','Modulo']); let porta=get(r,['Porta','Canal','Porta / Ligação','Porta Ligação']); let loja=get(r,['Loja','Local','Área','Area','Ambiente']); let tipo=get(r,['Tipo','Classificação','Classificacao']); let modelo=get(r,['Modelo','Dispositivo','Nome do dispositivo']); let endereco=get(r,['Endereço','Endereco','Zona','Endereço Equipamento']); let fab=get(r,['Fabricante']); let status=normalizeStatus(get(r,['Status'])||'Em operação'); let obs=get(r,['Observação','Observacao','Obs']); if(!painel||!laco){stats.ignorados++; errors.push({linha,motivo:'Painel ou laço ausente',registro:JSON.stringify(r)}); return} let p0=db.paineis.length,l0=db.lacos.length,f0=db.flms.length,pt0=db.portas.length,loc0=db.locais.length; let p=ensurePanel(painel); let l=ensureLaco(p.id,laco,piso); stats.paineis+=db.paineis.length>p0?1:0; stats.lacos+=db.lacos.length>l0?1:0; let classe=classifyDevice(modelo,tipo,loja); let isModulo=classe==='Módulo'; let flm=null,portaObj=null,local=null; if(isModulo||endFlm){flm=ensureFlm(p.id,l.id,endFlm||endereco||modelo,modelo||'FLM',piso); stats.flms+=db.flms.length>f0?1:0; stats.modulos+=db.flms.length>f0?1:0; if(porta||loja){portaObj=ensurePorta(flm.id,porta||'1'); stats.portas+=db.portas.length>pt0?1:0} if(loja){local=ensureLocal(loja,localClass(loja),p.id,l.id,piso,flm.id,portaObj?.id); if(portaObj)local.portaId=portaObj.id, portaObj.localId=local.id; let created=db.locais.length>loc0; if(created){if(local.tipo==='Loja')stats.lojasCriadas++; if(local.tipo==='Área Técnica')stats.areasTecnicas++; if(local.tipo==='Área Comum')stats.areasComuns++} if(up(loja).includes('ROMANNEL'))rom={ok:true,msg:`Importada/vinculada ao ${painel} • ${laco} • FLM ${flm.endereco} • Porta ${portaObj?.numero||porta||'1'}.`}} } else { if(loja){local=db.locais.find(x=>up(x.nome)===up(loja)); if(!local){let areaTipo=equipAreaClass(loja,modelo,tipo); if(areaTipo){local=ensureLocal(loja,areaTipo,p.id,l.id,piso,'',''); if(up(loja).includes('ROMANNEL'))rom={ok:false,msg:'ROMANNEL apareceu em registro de equipamento/área. Não foi criada como loja; foi tratada como '+areaTipo+'.'} } else { if(up(loja).includes('ROMANNEL'))rom={ok:false,msg:'ROMANNEL apareceu em registro de equipamento, mas loja só é criada por porta de FLM. Registro não criou loja.'}; errors.push({linha,motivo:'Equipamento não cria loja. Loja informada não existe por porta de FLM: '+loja,registro:JSON.stringify(r)}) }}} let res=ensureEquip({painelId:p.id,lacoId:l.id,piso,tipo:classe,endereco:endereco||get(r,['Zona'])||'',modelo,fabricante:fab,localId:local?.id||'',flmId:flm?.id||'',portaId:portaObj?.id||'',status,ultimaAlteracao:isoNow(),obs},mode); if(res.created){if(classe.includes('Detector'))stats.detectores++; else if(classe.includes('Acionador'))stats.acionadores++;} }
-      }catch(e){stats.ignorados++; errors.push({linha,motivo:e.message,registro:JSON.stringify(r)})}}); stats.lojasCriadas=db.locais.filter(x=>x.tipo==='Loja').length; stats.areasTecnicas=db.locais.filter(x=>x.tipo==='Área Técnica').length; stats.areasComuns=db.locais.filter(x=>x.tipo==='Área Comum').length; stats.detectores=db.equipamentos.filter(x=>x.tipo.includes('Detector')).length; stats.acionadores=db.equipamentos.filter(x=>x.tipo.includes('Acionador')).length; stats.modulos=db.flms.length; stats.flms=db.flms.length; stats.portas=db.portas.length; stats.paineis=db.paineis.length; stats.lacos=db.lacos.length; stats.ignorados=errors.length; db.inconsistencias=errors; db.imports.push({data:isoNow(),stats,errors,romannel:rom}); localSave(); markDirty('Importação pendente de sincronização'); render(); document.getElementById('impMsg').innerHTML=`<div class="msg ok">Importação concluída. DFO/FAP/ACM/DM210/SM210/FMC são importados como equipamentos vinculados a Área Comum/Técnica, sem criar loja.</div>`}catch(e){document.getElementById('impMsg').innerHTML=`<div class="msg err">${esc(e.message)}</div>`}}
+      }catch(e){stats.ignorados++; errors.push({linha,motivo:e.message,registro:JSON.stringify(r)})}}); stats.lojasCriadas=db.locais.filter(x=>x.tipo==='Loja').length; stats.areasTecnicas=db.locais.filter(x=>x.tipo==='Área Técnica').length; stats.areasComuns=db.locais.filter(x=>x.tipo==='Área Comum').length; stats.detectores=db.equipamentos.filter(x=>x.tipo.includes('Detector')).length; stats.acionadores=db.equipamentos.filter(x=>x.tipo.includes('Acionador')).length; stats.modulos=db.flms.length; stats.flms=db.flms.length; stats.portas=db.portas.length; stats.paineis=db.paineis.length; stats.lacos=db.lacos.length; stats.ignorados=errors.length; db.inconsistencias=errors; db.imports.push({data:isoNow(),stats,errors,romannel:rom}); persistLocal(); markDirty('importação'); render(); document.getElementById('impMsg').innerHTML=`<div class="msg ok">Importação concluída. DFO/FAP/ACM/DM210/SM210/FMC são importados como equipamentos vinculados a Área Comum/Técnica, sem criar loja.</div>`}catch(e){document.getElementById('impMsg').innerHTML=`<div class="msg err">${esc(e.message)}</div>`}}
 function openModal(html){document.getElementById('drawer').innerHTML=html;document.getElementById('modal').classList.add('show')} function closeModal(){document.getElementById('modal').classList.remove('show')} document.getElementById('modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal()})
 function formPainel(i=''){let o=db.paineis.find(x=>x.id===i)||{};openModal(`<h2>${i?'Editar':'Novo'} Painel</h2><div class="formGrid"><div class="field"><label>Nome</label><input id="mNome" value="${esc(o.nome)}"></div><div class="field"><label>Modelo</label><input id="mModelo" value="${esc(o.modelo)}"></div><div class="field"><label>Localização</label><input id="mLoc" value="${esc(o.localizacao)}"></div><div class="field"><label>Observação</label><input id="mObs" value="${esc(o.obs)}"></div></div><br><button class="btn" onclick="savePainel('${i}')">Salvar</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`)}
 function savePainel(i){let o=i?db.paineis.find(x=>x.id===i):{id:id()}; o.nome=n(mNome.value);o.modelo=n(mModelo.value);o.localizacao=n(mLoc.value);o.obs=n(mObs.value); if(!i)db.paineis.push(o); closeModal(); save()}
@@ -592,7 +528,11 @@ function toCsv(rows){if(!rows.length)return '';let keys=Object.keys(rows[0]);ret
 function exportEntity(e){download(toCsv(flat(e)),e+'.csv','text/csv;charset=utf-8')}
 function exportAllCsv(){let chunks=[];['paineis','lacos','flms','portas','locais','equipamentos','falhas','planos','inconsistencias'].forEach(e=>{chunks.push('### '+e+' ###\n'+toCsv(flat(e))) }); download(chunks.join('\n\n'),'base_sdai_bosch_completa.csv','text/csv;charset=utf-8')}
 function download(content,name,type){let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([content],{type}));a.download=name;a.click()}
-render();updateSyncBar('warn','Base local carregada. Sincronização automática pronta.');
+document.getElementById('sideCollapseBtn')?.addEventListener('click',()=>document.querySelector('.app').classList.toggle('sideCollapsed'));
+document.getElementById('mobileMenuBtn')?.addEventListener('click',()=>document.querySelector('.side').classList.toggle('open'));
+document.querySelectorAll('.nav button').forEach(b=>b.addEventListener('click',()=>document.querySelector('.side').classList.remove('open')));
+setInterval(()=>scheduleAutoSync(0),30000);
+render();
 </script>
 </body>
 </html>
