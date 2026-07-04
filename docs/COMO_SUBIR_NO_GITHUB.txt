@@ -1,0 +1,16 @@
+O QUE SUBIR NO GITHUB:
+
+- index.html
+- netlify.toml
+- README.md
+- pasta apps-script
+- pasta docs
+
+PASSO A PASSO:
+1. Abra o repositório no GitHub.
+2. Clique em Add file > Upload files.
+3. Arraste TODOS os arquivos e pastas deste pacote para a tela.
+4. Confirme se index.html ficou na raiz do repositório, junto com README.md e netlify.toml.
+5. Clique em Commit changes.
+
+Depois disso, conectar o repositório ao Netlify.
