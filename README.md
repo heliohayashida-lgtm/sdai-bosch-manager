@@ -1,17 +1,15 @@
-# Contratos L3A / SDAI Bosch Manager v5.4
+# Contratos L3A — SDAI Manager v6.0
 
-Ajustes desta versão:
-- Menu lateral reorganizado: Importação/Exportação em Dados; Banco, Usuários, Configurações, Backup, Logs e Sobre em Sistema.
-- Tela Configurações com nome do sistema, subtítulo, logotipo e dados do cliente/empreendimento.
-- Upload de logotipo para substituir o ícone do menu.
-- Menu lateral mais corporativo, recolhível no desktop e tipo gaveta no celular.
-- Cabeçalho com usuário/perfil ativo.
-- Backup local com opção de restauração JSON.
-- Mantida integração Google Sheets via Apps Script.
+Build com refresh visual premium, tela de login, logout e usuários com senha.
 
-Instalação:
-1. Subir todos os arquivos no GitHub.
-2. Substituir o Código.gs no Apps Script pelo arquivo apps-script/Code.gs.
-3. Salvar e implantar nova versão do Web App.
-4. Abrir o GitHub Pages com Ctrl+F5.
-5. Acessar Sistema > Banco de Dados e validar/sincronizar.
+## Primeiro acesso
+- Usuário: admin@local
+- Senha: 1234
+
+Após entrar, acesse Sistema > Usuários e Acessos para criar usuários reais.
+
+## Publicação
+1. Suba todos os arquivos no GitHub.
+2. Substitua o Código.gs no Apps Script pelo arquivo apps-script/Code.gs.
+3. Implante nova versão.
+4. Abra o GitHub Pages com Ctrl+F5.

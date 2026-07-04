@@ -14,7 +14,7 @@ const SCHEMA = {
   Plano_Acao: ['id','falhaId','criadoEm','atualizadoEm','concluidoEm','categoria','prioridade','responsavel','situacao','prazo','necessitaCompra','material','justificativa','providencia','painel','laco','piso','local','item','statusFalha'],
   Inconsistencias: ['linha','motivo','registro'],
   Importacoes: ['id','data','stats','errors','romannel'],
-  Usuarios: ['id','nome','email','perfil','ativo','criadoEm'],
+  Usuarios: ['id','nome','email','perfil','senha','ativo','criadoEm'],
   Historico: ['id','data','usuario','entidade','entidadeId','acao','descricao']
 };
 
@@ -165,7 +165,7 @@ function writeSheetObjects_(sh, header, rows){
 function writeConfig_(ss, db){
   const sh = ss.getSheetByName('Configuracoes');
   const rows = [
-    ['versao','5.3.0',new Date().toISOString()],
+    ['versao','6.0.0',new Date().toISOString()],
     ['atualizadoEm',new Date().toISOString(),new Date().toISOString()],
     ['empreendimento',JSON.stringify(db.empreendimento || {}),new Date().toISOString()],
     ['config',JSON.stringify(db.config || {}),new Date().toISOString()]
