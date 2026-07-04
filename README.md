@@ -1,11 +1,24 @@
 # SDAI Bosch Manager
 
-Sistema web para gestão operacional SDAI Bosch, com cadastro técnico, FLMs/portas, lojas/áreas, equipamentos, falhas, plano de ação, importação/exportação e relatórios.
+Sistema web para gestão operacional do SDAI Bosch.
 
-## Publicação
-1. Suba os arquivos deste pacote na raiz do repositório GitHub.
-2. Conecte o repositório ao Netlify.
-3. O arquivo principal é `index.html`.
+## Publicação recomendada
 
-## Observação
-Esta versão é a base web atual para publicação no Netlify/GitHub. A pasta `apps-script` contém o backend Google Apps Script para a próxima etapa de integração com Google Sheets.
+Frontend: GitHub Pages  
+Backend: Google Apps Script  
+Banco: Google Sheets
+
+## Estrutura
+
+- `index.html` — interface web do sistema.
+- `apps-script/Code.gs` — backend para Google Apps Script.
+- `docs/COMO_PUBLICAR_GITHUB_PAGES.txt` — passo a passo para publicar.
+- `.nojekyll` — evita processamento Jekyll no GitHub Pages.
+
+## Fluxo esperado
+
+1. Subir este pacote no GitHub.
+2. Ativar GitHub Pages.
+3. Configurar o Apps Script como Web App.
+4. Conectar o frontend ao Apps Script na próxima etapa.
+

@@ -1,0 +1,25 @@
+PASSO A PASSO — PUBLICAR NO GITHUB PAGES
+
+1. Entre no repositório sdai-bosch-manager.
+2. Clique em Add file > Upload files.
+3. Arraste todos os arquivos e pastas deste pacote para a raiz do repositório:
+   - index.html
+   - README.md
+   - .nojekyll
+   - apps-script/
+   - docs/
+4. Clique em Commit changes.
+5. Vá em Settings > Pages.
+6. Em Build and deployment, selecione:
+   - Source: Deploy from a branch
+   - Branch: main
+   - Folder: /root
+7. Clique em Save.
+8. Aguarde alguns minutos.
+9. O GitHub vai gerar um link parecido com:
+   https://heliohayashida-lgtm.github.io/sdai-bosch-manager/
+
+IMPORTANTE:
+- Esse link pode ser salvo no Google Drive como atalho ou dentro de um Google Docs.
+- Quem tiver acesso ao link poderá abrir o sistema.
+- O compartilhamento real dos dados depende da integração com Apps Script + Google Sheets.
