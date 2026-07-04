@@ -1,5 +1,5 @@
 
-const APP_NAME = 'SDAI Bosch Manager';
+const APP_NAME = 'Contratos L3A';
 const PROP_KEY = 'SDAI_MANAGER_SPREADSHEET_ID';
 
 const SCHEMA = {
@@ -14,12 +14,12 @@ const SCHEMA = {
   Plano_Acao: ['id','falhaId','criadoEm','atualizadoEm','concluidoEm','categoria','prioridade','responsavel','situacao','prazo','necessitaCompra','material','justificativa','providencia','painel','laco','piso','local','item','statusFalha'],
   Inconsistencias: ['linha','motivo','registro'],
   Importacoes: ['id','data','stats','errors','romannel'],
-  Historico: ['id','data','usuario','entidade','entidadeId','acao','descricao'],
-  Usuarios: ['email','nome','perfil','ativo','criadoEm']
+  Usuarios: ['id','nome','email','perfil','ativo','criadoEm'],
+  Historico: ['id','data','usuario','entidade','entidadeId','acao','descricao']
 };
 
 const MAP = {
-  Paineis:'paineis', Lacos:'lacos', FLMs:'flms', Portas:'portas', Lojas_Areas:'locais', Equipamentos:'equipamentos', Falhas:'falhas', Plano_Acao:'planos', Inconsistencias:'inconsistencias', Importacoes:'imports'
+  Paineis:'paineis', Lacos:'lacos', FLMs:'flms', Portas:'portas', Lojas_Areas:'locais', Equipamentos:'equipamentos', Falhas:'falhas', Plano_Acao:'planos', Inconsistencias:'inconsistencias', Importacoes:'imports', Usuarios:'usuarios'
 };
 
 function doGet(e){
@@ -98,10 +98,15 @@ function ensureSchema_(ss){
 function loadDatabase_(){
   const ss = getOrCreateSpreadsheet_();
   ensureSchema_(ss);
-  const db = {empreendimento:{nome:'Empreendimento',cliente:'Cliente'},paineis:[],lacos:[],flms:[],portas:[],locais:[],equipamentos:[],falhas:[],planos:[],inconsistencias:[],imports:[]};
+  const db = {empreendimento:{nome:'Empreendimento',cliente:'Cliente'},config:{appName:'Contratos L3A',subtitle:'SDAI • Contratos • Operação',logoData:''},usuarios:[],paineis:[],lacos:[],flms:[],portas:[],locais:[],equipamentos:[],falhas:[],planos:[],inconsistencias:[],imports:[]};
   Object.keys(MAP).forEach(sheetName=>{
     const key = MAP[sheetName];
     db[key] = readSheetObjects_(ss.getSheetByName(sheetName));
+  });
+  const cfgRows = readSheetObjects_(ss.getSheetByName('Configuracoes'));
+  cfgRows.forEach(r=>{
+    if(r.chave === 'empreendimento'){ try{ db.empreendimento = JSON.parse(r.valor); }catch(e){} }
+    if(r.chave === 'config'){ try{ db.config = JSON.parse(r.valor); }catch(e){} }
   });
   return {ok:true, db:db, sheetUrl:ss.getUrl(), spreadsheetId:ss.getId(), loadedAt:new Date().toISOString()};
 }
@@ -119,6 +124,7 @@ function saveDatabase_(db){
   writeSheetObjects_(ss.getSheetByName('Plano_Acao'), SCHEMA.Plano_Acao, db.planos || []);
   writeSheetObjects_(ss.getSheetByName('Inconsistencias'), SCHEMA.Inconsistencias, db.inconsistencias || []);
   writeSheetObjects_(ss.getSheetByName('Importacoes'), SCHEMA.Importacoes, db.imports || []);
+  writeSheetObjects_(ss.getSheetByName('Usuarios'), SCHEMA.Usuarios, db.usuarios || []);
   writeConfig_(ss, db);
   appendHistorico_(ss, 'Sistema', '', 'sync', 'Base sincronizada pelo SDAI Manager');
   return {ok:true, savedAt:new Date().toISOString(), sheetUrl:ss.getUrl()};
@@ -159,9 +165,10 @@ function writeSheetObjects_(sh, header, rows){
 function writeConfig_(ss, db){
   const sh = ss.getSheetByName('Configuracoes');
   const rows = [
-    ['versao','5.2.0',new Date().toISOString()],
+    ['versao','5.3.0',new Date().toISOString()],
     ['atualizadoEm',new Date().toISOString(),new Date().toISOString()],
-    ['empreendimento',JSON.stringify(db.empreendimento || {}),new Date().toISOString()]
+    ['empreendimento',JSON.stringify(db.empreendimento || {}),new Date().toISOString()],
+    ['config',JSON.stringify(db.config || {}),new Date().toISOString()]
   ];
   sh.clear();
   sh.getRange(1,1,1,SCHEMA.Configuracoes.length).setValues([SCHEMA.Configuracoes]);

@@ -1,15 +1,16 @@
-# SDAI Bosch Manager v5.2
+# Contratos L3A — SDAI Manager v5.3
 
-Arquitetura definida: GitHub Pages + Google Apps Script + Google Sheets.
+Correções desta versão:
+- Menu com identidade profissional **Contratos L3A**.
+- Logotipo configurável em Sistema → Banco de Dados.
+- Usuários e perfis em Sistema → Usuários e Acessos.
+- Perfis: Administrador, Supervisor e Operacional.
+- Supervisor bloqueado para importação e alteração cadastral.
+- Operacional focado em lançamento de status/falhas/observações.
+- Banco Google preservado em abas estruturadas.
 
-## Instalação
-1. Suba todos os arquivos no GitHub.
-2. No Apps Script, substitua o Código.gs pelo arquivo `apps-script/Code.gs`.
-3. Implante uma nova versão do Web App.
-4. Abra o GitHub Pages com Ctrl+F5.
-5. Acesse Sistema > Banco de Dados.
-6. Clique em Configurar / validar banco.
-7. Clique em Sincronizar agora.
-
-## Observação
-Os botões de banco não ficam no topo; ficam somente em Sistema > Banco de Dados.
+## Publicação
+1. Subir todos os arquivos no GitHub.
+2. Substituir o Código.gs do Apps Script por apps-script/Code.gs.
+3. Implantar nova versão do Web App.
+4. Abrir GitHub Pages com Ctrl+F5.
