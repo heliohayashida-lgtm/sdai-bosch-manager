@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SDAI Bosch Manager v4 - FLM / Portas / Lojas</title>
+<title>SDAI Bosch Manager v5 - Google Sheets</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 :root{--bg:#eef3f8;--panel:#071a2d;--panel2:#0d2942;--card:#fff;--line:#d5deea;--text:#071426;--muted:#61728a;--blue:#0f5795;--blue2:#0b3d6b;--ok:#0f7a3b;--bad:#b42318;--warn:#b7791f;--chip:#e8f1fb}
@@ -40,7 +40,7 @@
     </div>
   </aside>
   <main class="main">
-    <header class="top"><div><h1 id="pageTitle">Dashboard</h1><p>Base técnica estruturada para diagnóstico SDAI Bosch</p></div><div id="clock"></div></header>
+    <header class="top"><div><h1 id="pageTitle">Dashboard</h1><p>Base técnica estruturada para diagnóstico SDAI Bosch</p></div><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end"><span id="cloudStatus" class="pill warn">Modo local</span><button class="btn small" type="button" onclick="setupCloudDB()">Configurar Banco Google</button><button class="btn small secondary" type="button" onclick="cloudLoad(true)">Carregar Google</button><button class="btn small secondary" type="button" onclick="cloudSaveNow()">Salvar agora</button><span id="clock"></span></div></header>
     <div class="content">
       <section id="dashboard" class="view active"></section>
       <section id="paineis" class="view"></section>
