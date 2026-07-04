@@ -1,7 +1,7 @@
-
 /*******************************************************
- * SDAI Bosch Manager API v5.1
+ * SDAI Bosch Manager API v5.1.2
  * Backend Google Apps Script + Google Sheets estruturado
+ * Compatível com GitHub Pages: POST + JSONP fallback
  *******************************************************/
 const PROP_DB_ID = 'SDAI_DB_SPREADSHEET_ID';
 
@@ -22,27 +22,60 @@ const TABLES = {
 };
 
 function doGet(e){
-  return HtmlService.createHtmlOutput('<h2>SDAI Bosch Manager API</h2><p>Backend ativo.</p>');
+  try{
+    const p = e && e.parameter ? e.parameter : {};
+    if(p.action){
+      const payload = parsePayload_(p.payload);
+      const result = route_(p.action, payload);
+      const out = {ok:true, ...result};
+      if(p.callback){
+        return ContentService
+          .createTextOutput(String(p.callback) + '(' + JSON.stringify(out) + ');')
+          .setMimeType(ContentService.MimeType.JAVASCRIPT);
+      }
+      return json_(out);
+    }
+    return HtmlService.createHtmlOutput('<h2>SDAI Bosch Manager API</h2><p>Backend ativo.</p><p>Versão 5.1.1</p>');
+  }catch(err){
+    const out = {ok:false,error:String(err && err.message ? err.message : err)};
+    const cb = e && e.parameter && e.parameter.callback;
+    if(cb){
+      return ContentService.createTextOutput(String(cb) + '(' + JSON.stringify(out) + ');').setMimeType(ContentService.MimeType.JAVASCRIPT);
+    }
+    return json_(out);
+  }
 }
 
 function doPost(e){
   try{
-    const body = JSON.parse(e.postData && e.postData.contents ? e.postData.contents : '{}');
-    const action = body.action;
-    const payload = body.payload || {};
-    let result;
-    if(action === 'setup') result = setupDatabase(payload);
-    else if(action === 'getDb') result = getDb();
-    else if(action === 'saveDb') result = saveDb(payload.db || {});
-    else if(action === 'ping') result = {message:'pong'};
-    else throw new Error('Ação não reconhecida: ' + action);
-    return json({ok:true, ...result});
+    let body = {};
+    if(e && e.postData && e.postData.contents){
+      body = JSON.parse(e.postData.contents || '{}');
+    } else if(e && e.parameter){
+      body = { action:e.parameter.action, payload:parsePayload_(e.parameter.payload) };
+    }
+    const result = route_(body.action, body.payload || {});
+    return json_({ok:true, ...result});
   }catch(err){
-    return json({ok:false, error:String(err && err.message ? err.message : err)});
+    return json_({ok:false, error:String(err && err.message ? err.message : err)});
   }
 }
 
-function json(obj){
+function parsePayload_(s){
+  if(!s) return {};
+  if(typeof s === 'object') return s;
+  try{return JSON.parse(s);}catch(e){return {};}
+}
+
+function route_(action, payload){
+  if(action === 'setup') return setupDatabase(payload || {});
+  if(action === 'getDb') return getDb();
+  if(action === 'saveDb') return saveDb((payload && payload.db) || {});
+  if(action === 'ping') return {message:'pong', version:'5.1.2'};
+  throw new Error('Ação não reconhecida: ' + action);
+}
+
+function json_(obj){
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -50,9 +83,7 @@ function setupDatabase(payload){
   const props = PropertiesService.getScriptProperties();
   let id = props.getProperty(PROP_DB_ID);
   let ss;
-  if(id){
-    try{ ss = SpreadsheetApp.openById(id); }catch(e){ ss = null; }
-  }
+  if(id){ try{ ss = SpreadsheetApp.openById(id); }catch(e){ ss = null; } }
   if(!ss){
     ss = SpreadsheetApp.create((payload && payload.name) || 'Banco SDAI Bosch Manager');
     props.setProperty(PROP_DB_ID, ss.getId());
@@ -60,7 +91,7 @@ function setupDatabase(payload){
   ensureAllSheets(ss);
   writeConfig(ss, 'databaseId', ss.getId());
   writeConfig(ss, 'databaseUrl', ss.getUrl());
-  writeConfig(ss, 'version', '5.1');
+  writeConfig(ss, 'version', '5.1.2');
   writeConfig(ss, 'updatedAt', new Date().toISOString());
   return {spreadsheetId:ss.getId(), url:ss.getUrl(), tables:Object.keys(TABLES)};
 }
@@ -68,20 +99,23 @@ function setupDatabase(payload){
 function getDb(){
   const ss = getSpreadsheet();
   ensureAllSheets(ss);
-  const db = {
-    empreendimento:{nome:'Empreendimento',cliente:'Cliente'},
-    paineis: readSheet(ss,'Paineis'),
-    lacos: readSheet(ss,'Lacos'),
-    flms: readSheet(ss,'FLMs'),
-    portas: readSheet(ss,'Portas'),
-    locais: readSheet(ss,'Locais'),
-    equipamentos: readSheet(ss,'Equipamentos'),
-    falhas: readSheet(ss,'Falhas'),
-    planos: readSheet(ss,'Plano_Acao'),
-    inconsistencias: [],
-    imports: readSheet(ss,'Importacoes')
+  return {
+    spreadsheetId:ss.getId(),
+    url:ss.getUrl(),
+    db:{
+      empreendimento:{nome:'Empreendimento',cliente:'Cliente'},
+      paineis: readSheet(ss,'Paineis'),
+      lacos: readSheet(ss,'Lacos'),
+      flms: readSheet(ss,'FLMs'),
+      portas: readSheet(ss,'Portas'),
+      locais: readSheet(ss,'Locais'),
+      equipamentos: readSheet(ss,'Equipamentos'),
+      falhas: readSheet(ss,'Falhas'),
+      planos: readSheet(ss,'Plano_Acao'),
+      inconsistencias: [],
+      imports: readSheet(ss,'Importacoes')
+    }
   };
-  return {spreadsheetId:ss.getId(), url:ss.getUrl(), db};
 }
 
 function saveDb(db){
@@ -95,10 +129,20 @@ function saveDb(db){
   writeSheet(ss,'Equipamentos', db.equipamentos || []);
   writeSheet(ss,'Falhas', db.falhas || []);
   writeSheet(ss,'Plano_Acao', db.planos || []);
-  writeSheet(ss,'Importacoes', db.imports || []);
+  writeSheet(ss,'Importacoes', normalizeImports_(db.imports || []));
   appendHistorico(ss, 'sync', 'all', 'saveDb', 'Base sincronizada pelo frontend');
   writeConfig(ss, 'updatedAt', new Date().toISOString());
   return {spreadsheetId:ss.getId(), url:ss.getUrl(), savedAt:new Date().toISOString()};
+}
+
+function normalizeImports_(rows){
+  return (rows || []).map(x => ({
+    id: x.id || Utilities.getUuid(),
+    data: x.data || new Date().toISOString(),
+    statsJson: x.statsJson || JSON.stringify(x.stats || {}),
+    errorsJson: x.errorsJson || JSON.stringify(x.errors || []),
+    romannelJson: x.romannelJson || JSON.stringify(x.romannel || {})
+  }));
 }
 
 function getSpreadsheet(){
@@ -114,7 +158,8 @@ function ensureAllSheets(ss){
     let sh = ss.getSheetByName(name);
     if(!sh) sh = ss.insertSheet(name);
     const headers = TABLES[name];
-    const current = sh.getRange(1,1,1,Math.max(headers.length, sh.getLastColumn() || 1)).getValues()[0].slice(0,headers.length);
+    const lastCol = Math.max(headers.length, sh.getLastColumn() || 1);
+    const current = sh.getRange(1,1,1,lastCol).getValues()[0].slice(0,headers.length);
     if(current.join('|') !== headers.join('|')){
       sh.clear();
       sh.getRange(1,1,1,headers.length).setValues([headers]).setFontWeight('bold').setBackground('#eaf1f9');

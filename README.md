@@ -1,18 +1,17 @@
-# SDAI Bosch Manager v5.1 — Banco estruturado e autosync
+# SDAI Bosch Manager v5.1.2
 
-Arquitetura definitiva: GitHub Pages + Google Apps Script + Google Sheets.
+Correções:
+- Botões de banco removidos do topo; ficam em Sistema > Banco de Dados.
+- API ajustada para Apps Script via JSONP/form POST, reduzindo erro de CORS.
+- Estado de sincronização persistido no navegador.
+- Autosync após alterações e a cada 30s.
+- Menu lateral recolhível no computador e drawer no celular.
+- Layout responsivo para celular/tablet/computador.
 
-## O que mudou
-- Botões de banco removidos do topo.
-- Menu Sistema > Banco de Dados.
-- Google Sheets com abas separadas.
-- Sincronização automática a cada 30 segundos e após alterações.
-- Botão manual apenas em Sistema > Banco de Dados.
-
-## Instalação
-1. Substitua os arquivos no GitHub.
-2. Substitua o Código.gs no Apps Script por apps-script/Code.gs.
-3. Implante nova versão do Apps Script.
+Implantação:
+1. Substitua todos os arquivos no GitHub.
+2. Substitua o Código.gs no Apps Script.
+3. Implante nova versão do Web App.
 4. Abra o GitHub Pages com Ctrl+F5.
-5. Acesse Sistema > Banco de Dados > Configurar Banco Google.
-6. Clique em Sincronizar agora para enviar a base atual ao Google.
+5. Acesse Sistema > Banco de Dados.
+6. Configure o banco e sincronize.
