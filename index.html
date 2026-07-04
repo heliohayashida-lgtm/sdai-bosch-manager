@@ -54,7 +54,7 @@
     </div>
   </aside>
   <main class="main">
-    <header class="top"><div class="topLeft"><button class="menuBtn" onclick="toggleSidebar()" title="Recolher/abrir menu">☰</button><div><h1 id="pageTitle">Dashboard</h1><p>Base técnica estruturada para diagnóstico SDAI Bosch</p></div></div><div class="topActions"><div id="clock"></div></div></header>
+    <header class="top"><div class="topLeft"><button class="menuBtn" onclick="toggleSidebar()" title="Recolher/abrir menu">☰</button><div><h1 id="pageTitle">Dashboard</h1><p>Base técnica estruturada para diagnóstico SDAI Bosch</p></div></div><div class="topActions"><span class="pill">v5.1.3</span><div id="clock"></div></div></header>
     <div class="content">
       <section id="dashboard" class="view active"></section>
       <section id="paineis" class="view"></section>
@@ -72,9 +72,10 @@
   </main>
 </div>
 <div class="mobileShade" id="mobileShade" onclick="closeSidebarMobile()"></div>
-<div class="syncBar warn" id="syncBar"><b>Banco Google</b><small>Não sincronizado</small></div>
+<div class="syncBar warn" id="syncBar"><b>Banco Google</b><small>Abra Sistema → Banco de Dados</small></div>
 <div class="modal" id="modal"><div class="drawer" id="drawer"></div></div>
 <script>
+const APP_VERSION='5.1.3';
 const KEY='sdai_bosch_manager_v4_flm_portas';
 const emptyDB=()=>({empreendimento:{nome:'Empreendimento',cliente:'Cliente'},paineis:[],lacos:[],flms:[],portas:[],locais:[],equipamentos:[],falhas:[],planos:[],inconsistencias:[],imports:[]});
 let db=load(); let currentView='dashboard'; let filters={};
@@ -169,7 +170,7 @@ function updateSyncBar(cls='warn',msg=''){
   const status=cls==='ok'?'🟢 Sincronizado':cls==='bad'?'🔴 Falha de sincronização':'🟡 Pendente / sincronizando';
   el.innerHTML=`<b>${status}</b><small>${esc(msg||syncState.lastSync||'Aguardando sincronização')} • Fila: ${syncState.queue||0} • v5.1.2</small>`;
 }
-async function setupGoogleDatabase(){try{updateSyncBar('warn','Configurando banco...');const r=await apiCall('setup',{name:'Banco SDAI Bosch Manager'});syncState.configured=true;syncState.spreadsheetId=r.spreadsheetId;syncState.spreadsheetUrl=r.url;syncState.lastSync=now();persistSyncState();updateSyncBar('ok','Banco configurado');renderSistema();alert('Banco Google configurado com sucesso. A sincronização automática já está ativa.')}catch(e){syncState.error=e.message;persistSyncState();updateSyncBar('bad',e.message);alert(e.message)}}
+async function setupGoogleDatabase(){try{updateSyncBar('warn','Configurando banco...');const r=await apiCall('setup',{name:'Banco SDAI Bosch Manager'});syncState.configured=true;syncState.spreadsheetId=r.spreadsheetId;syncState.spreadsheetUrl=r.url;syncState.lastSync=now();persistSyncState();updateSyncBar('ok','Banco configurado');renderSistema();alert('Banco Google configurado/validado. Agora use Sincronizar agora para enviar a base local ao Google.')}catch(e){syncState.error=e.message;persistSyncState();updateSyncBar('bad',e.message);alert(e.message)}}
 async function syncSave(showAlert=true){try{syncState.saving=true;updateSyncBar('warn','Salvando no Google...');localSave();const r=await apiCall('saveDb',{db});syncState.configured=true;syncState.spreadsheetId=r.spreadsheetId||syncState.spreadsheetId;syncState.spreadsheetUrl=r.url||syncState.spreadsheetUrl;syncState.dirty=false;syncState.queue=0;syncState.lastSync=now();persistSyncState();updateSyncBar('ok','Última sincronização: '+syncState.lastSync);if(showAlert)alert('Base sincronizada com Google Sheets.')}catch(e){syncState.error=e.message;syncState.queue=1;persistSyncState();updateSyncBar('bad',e.message);if(showAlert)alert('Erro ao salvar Google: '+e.message)}finally{syncState.saving=false;renderSistema()}}
 async function syncLoad(force=false){try{updateSyncBar('warn','Carregando do Google...');const r=await apiCall('getDb',{});const remote=Object.assign(emptyDB(),r.db||{});const remoteCount=Object.keys(remote).reduce((a,k)=>a+(Array.isArray(remote[k])?remote[k].length:0),0);const localCount=Object.keys(db).reduce((a,k)=>a+(Array.isArray(db[k])?db[k].length:0),0);if(remoteCount===0 && localCount>0 && !force){updateSyncBar('warn','Google vazio. Base local preservada. Use Sincronizar agora.');alert('O Google está vazio. A base local foi preservada. Clique em Sincronizar agora para enviar esses dados ao Google.');return}db=normalizeAllStatuses(remote);localSave();syncState.dirty=false;syncState.queue=0;syncState.lastSync=now();persistSyncState();updateSyncBar('ok','Carregado do Google: '+syncState.lastSync);render();}catch(e){syncState.error=e.message;persistSyncState();updateSyncBar('bad',e.message);alert('Erro ao carregar Google: '+e.message)}}
 setInterval(()=>{if(syncState.dirty&&!syncState.saving)syncSave(false)},30000);
@@ -420,12 +421,12 @@ function renderSistema(){
       <b>Erro</b><span>${esc(syncState.error||'-')}</span>
     </div>
     <div class="toolbar">
-      <button class="btn" onclick="setupGoogleDatabase()">Configurar Banco Google</button>
+      <button class="btn" onclick="setupGoogleDatabase()">Configurar / validar banco</button>
       <button class="btn secondary" onclick="syncSave(true)">Sincronizar agora</button>
       <button class="btn secondary" onclick="if(confirm('Carregar do Google substitui a base local pela base central. Deseja continuar?'))syncLoad(false)">Carregar do Google</button>
       ${syncState.spreadsheetUrl?`<button class="btn secondary" onclick="window.open('${syncState.spreadsheetUrl}','_blank')">Abrir Planilha</button>`:''}
     </div>
-    <p class="msg warn">A configuração do banco é feita apenas uma vez. Depois disso, o sistema salva automaticamente. O botão "Carregar do Google" é recurso de emergência ou para abrir a base em outro computador.</p>
+    <p class="msg warn">A configuração do banco é feita apenas uma vez. Depois disso, o sistema salva automaticamente. O carregamento do Google é recurso de emergência para substituir a base local pela base central.</p>
   </div>
   <div class="card"><h3 class="sectionTitle">Abas que o Apps Script cria no Google Sheets</h3>
     <div class="diag">

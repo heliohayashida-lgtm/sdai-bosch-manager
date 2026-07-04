@@ -35,7 +35,7 @@ function doGet(e){
       }
       return json_(out);
     }
-    return HtmlService.createHtmlOutput('<h2>SDAI Bosch Manager API</h2><p>Backend ativo.</p><p>Versão 5.1.1</p>');
+    return HtmlService.createHtmlOutput('<h2>SDAI Bosch Manager API</h2><p>Backend ativo.</p><p>Versão 5.1.3</p>');
   }catch(err){
     const out = {ok:false,error:String(err && err.message ? err.message : err)};
     const cb = e && e.parameter && e.parameter.callback;
@@ -68,10 +68,10 @@ function parsePayload_(s){
 }
 
 function route_(action, payload){
-  if(action === 'setup') return setupDatabase(payload || {});
-  if(action === 'getDb') return getDb();
-  if(action === 'saveDb') return saveDb((payload && payload.db) || {});
-  if(action === 'ping') return {message:'pong', version:'5.1.2'};
+  if(action === 'setup' || action === 'setupDatabase' || action === 'configurarBanco' || action === 'configurarBancoGoogle') return setupDatabase(payload || {});
+  if(action === 'getDb' || action === 'loadDb' || action === 'carregarBanco' || action === 'carregarGoogle') return getDb();
+  if(action === 'saveDb' || action === 'saveDatabase' || action === 'salvarBanco' || action === 'salvarGoogle') return saveDb((payload && payload.db) || payload || {});
+  if(action === 'ping') return {message:'pong', version:'5.1.3'};
   throw new Error('Ação não reconhecida: ' + action);
 }
 
@@ -91,7 +91,7 @@ function setupDatabase(payload){
   ensureAllSheets(ss);
   writeConfig(ss, 'databaseId', ss.getId());
   writeConfig(ss, 'databaseUrl', ss.getUrl());
-  writeConfig(ss, 'version', '5.1.2');
+  writeConfig(ss, 'version', '5.1.3');
   writeConfig(ss, 'updatedAt', new Date().toISOString());
   return {spreadsheetId:ss.getId(), url:ss.getUrl(), tables:Object.keys(TABLES)};
 }
