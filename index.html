@@ -15,10 +15,7 @@
 .reportCover,.metric,.chartPanel,.chartTrack i,.donut,.pill,.dot{ -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 .hidePrint{}@media(max-width:1000px){.app{grid-template-columns:1fr}.side{position:relative;height:auto}.grid,.diag,.miniChart{grid-template-columns:1fr 1fr}.formGrid{grid-template-columns:1fr}}@media print{*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}.side,.top,.hidePrint,.modal{display:none!important}.app{display:block}.content{padding:0}.card{box-shadow:none;border:0}.view{display:block}.view:not(.printTarget){display:none!important}body{background:#fff;color:#0f172a}.reportCover{border-radius:0;margin:-8mm -8mm 8mm -8mm;padding:22mm 12mm 18mm}.reportCover h2{font-size:25px}.grid{grid-template-columns:repeat(4,1fr);gap:8px}.metric{padding:10px;border-radius:10px}.metric strong{font-size:20px}.chartGrid{grid-template-columns:1fr 1fr;gap:8px}.chartPanel{break-inside:avoid;padding:10px}.reportBlock{break-inside:avoid;border-radius:10px;padding:10px;margin:8px 0}table{min-width:0;font-size:9px}th,td{font-size:9px;padding:5px}.reportFooter{font-size:10px}}
 
-.syncBar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
-.syncBar .btn{padding:8px 10px;font-size:12px}
-.syncStatus{font-size:11px;color:var(--muted);width:100%;text-align:right}
-@media(max-width:760px){.top{height:auto;gap:12px;align-items:flex-start;flex-direction:column}.syncBar{justify-content:flex-start}.syncStatus{text-align:left}}
+.syncBar{position:fixed;right:18px;bottom:16px;z-index:60;background:#fff;border:1px solid var(--line);border-left:5px solid var(--blue);border-radius:14px;padding:10px 14px;box-shadow:0 12px 30px rgba(18,38,63,.18);font-size:12px;color:#22384f;min-width:230px}.syncBar b{display:block;font-size:12px}.syncBar small{color:var(--muted)}.syncBar.ok{border-left-color:var(--ok)}.syncBar.warn{border-left-color:var(--warn)}.syncBar.bad{border-left-color:var(--bad)}.dbInfo{display:grid;grid-template-columns:180px 1fr;gap:8px;font-size:13px}.dbInfo b{color:#24384f}.note{font-size:12px;color:var(--muted)}
 
 </style>
 </head>
@@ -41,21 +38,13 @@
       <div class="navTitle">Dados</div>
       <button data-view="relatorios">📄 Relatórios</button>
       <div class="navTitle">Sistema</div>
+      <button data-view="sistema">🗄️ Banco de Dados</button>
       <button data-view="importacao">⬆️ Importação</button>
       <button data-view="exportacao">⬇️ Exportação</button>
     </div>
   </aside>
   <main class="main">
-    <header class="top">
-      <div><h1 id="pageTitle">Dashboard</h1><p>Base técnica estruturada para diagnóstico SDAI Bosch</p></div>
-      <div class="syncBar">
-        <button class="btn small secondary" onclick="setupGoogleDb()">Configurar Banco Google</button>
-        <button class="btn small secondary" onclick="loadGoogleDb()">Carregar Google</button>
-        <button class="btn small" onclick="saveGoogleDb()">Salvar agora</button>
-        <div id="syncStatus" class="syncStatus">Banco local ativo. Configure o Google para sincronizar.</div>
-        <div id="clock"></div>
-      </div>
-    </header>
+    <header class="top"><div><h1 id="pageTitle">Dashboard</h1><p>Base técnica estruturada para diagnóstico SDAI Bosch</p></div><div id="clock"></div></header>
     <div class="content">
       <section id="dashboard" class="view active"></section>
       <section id="paineis" class="view"></section>
@@ -65,70 +54,19 @@
       <section id="equipamentos" class="view"></section>
       <section id="falhas" class="view"></section>
       <section id="plano" class="view"></section>
+      <section id="sistema" class="view"></section>
       <section id="importacao" class="view"></section>
       <section id="exportacao" class="view"></section>
       <section id="relatorios" class="view printTarget"></section>
     </div>
   </main>
 </div>
+<div class="syncBar warn" id="syncBar"><b>Banco Google</b><small>Não sincronizado</small></div>
 <div class="modal" id="modal"><div class="drawer" id="drawer"></div></div>
-<script src="js/api.js"></script>
 <script>
 const KEY='sdai_bosch_manager_v4_flm_portas';
 const emptyDB=()=>({empreendimento:{nome:'Empreendimento',cliente:'Cliente'},paineis:[],lacos:[],flms:[],portas:[],locais:[],equipamentos:[],falhas:[],planos:[],inconsistencias:[],imports:[]});
-
 let db=load(); let currentView='dashboard'; let filters={};
-
-function setSyncStatus(msg, ok=true){
-  const el=document.getElementById('syncStatus');
-  if(el){ el.textContent=msg; el.style.color=ok?'#61728a':'#b42318'; }
-}
-async function setupGoogleDb(){
-  try{
-    setSyncStatus('Configurando banco Google...');
-    const res=await window.SDAI_API.setupDatabase('Banco - SDAI Bosch Manager - Pantanal L3A');
-    setSyncStatus('Banco Google configurado. Planilha: '+(res.url||res.spreadsheetId||'OK'));
-    alert('Banco Google configurado com sucesso.');
-  }catch(e){
-    setSyncStatus('Erro ao configurar banco: '+e.message,false);
-    alert(e.message);
-  }
-}
-function dbHasContent(data){
-  if(!data || typeof data !== 'object') return false;
-  const keys=['paineis','lacos','flms','portas','locais','equipamentos','falhas','planos','inconsistencias','imports'];
-  return keys.some(k => Array.isArray(data[k]) && data[k].length > 0);
-}
-async function loadGoogleDb(){
-  try{
-    setSyncStatus('Carregando base do Google...');
-    const res=await window.SDAI_API.getAll();
-    if(res && res.ok && dbHasContent(res.data)){
-      db=normalizeAllStatuses(Object.assign(emptyDB(),res.data));
-      localStorage.setItem(KEY,JSON.stringify(db));
-      setSyncStatus('Base carregada do Google em '+new Date().toLocaleString('pt-BR'));
-      render();
-    }else{
-      setSyncStatus('Banco Google está vazio. Base local foi preservada. Clique em Salvar agora para enviar estes dados ao Google.',false);
-      alert('Banco Google vazio. Não apaguei seus dados locais. Clique em Salvar agora para gravar esta base no Google.');
-    }
-  }catch(e){
-    setSyncStatus('Erro ao carregar Google: '+e.message,false);
-    alert(e.message);
-  }
-}
-async function saveGoogleDb(){
-  try{
-    setSyncStatus('Enviando base local para o Google...');
-    await window.SDAI_API.saveAll(db);
-    setSyncStatus('Base local salva no Google em '+new Date().toLocaleString('pt-BR'));
-    alert('Base local enviada ao Google com sucesso. Em outro computador, clique em Carregar Google.');
-  }catch(e){
-    setSyncStatus('Erro ao salvar Google: '+e.message,false);
-    alert(e.message);
-  }
-}
-
 let searchRenderTimer=null;
 let lastSearchFocus=null;
 function onSearchInput(el){
@@ -158,8 +96,31 @@ function restoreSearchFocus(){
   },0);
 }
 
+const API_URL='https://script.google.com/macros/s/AKfycby45dTdw4g-pkcvY9sys3_gmvVcmnSyf6PZzJbRsbSFjhtuWbV1D5XSBEc-J1UtOBYftA/exec';
+let syncState={configured:false,spreadsheetId:'',spreadsheetUrl:'',dirty:false,lastSync:'',saving:false,queue:0,error:''};
+let autoSyncTimer=null;
 function load(){try{return normalizeAllStatuses(Object.assign(emptyDB(),JSON.parse(localStorage.getItem(KEY))||{}))}catch(e){return emptyDB()}}
-function save(){localStorage.setItem(KEY,JSON.stringify(db));render()}
+function localSave(){localStorage.setItem(KEY,JSON.stringify(db));}
+function save(){localSave();markDirty('Alteração local');render()}
+function markDirty(reason='Alteração pendente'){syncState.dirty=true;syncState.queue=1;syncState.error='';updateSyncBar('warn',reason);scheduleAutoSync();}
+function scheduleAutoSync(){clearTimeout(autoSyncTimer);autoSyncTimer=setTimeout(()=>syncSave(false),3000)}
+async function apiCall(action,payload={}){
+  const res=await fetch(API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action,payload})});
+  const txt=await res.text();
+  let out; try{out=JSON.parse(txt)}catch(e){throw new Error('Falha ao carregar resposta da API. Verifique implantação do Apps Script.')}
+  if(!out.ok)throw new Error(out.error||'Erro na API');
+  return out;
+}
+function updateSyncBar(cls='warn',msg=''){
+  const el=document.getElementById('syncBar'); if(!el)return;
+  el.className='syncBar '+cls;
+  const status=cls==='ok'?'🟢 Sincronizado':cls==='bad'?'🔴 Falha de sincronização':'🟡 Pendente / sincronizando';
+  el.innerHTML=`<b>${status}</b><small>${esc(msg||syncState.lastSync||'Aguardando sincronização')} • Fila: ${syncState.queue||0} • v5.1</small>`;
+}
+async function setupGoogleDatabase(){try{updateSyncBar('warn','Configurando banco...');const r=await apiCall('setup',{name:'Banco SDAI Bosch Manager'});syncState.configured=true;syncState.spreadsheetId=r.spreadsheetId;syncState.spreadsheetUrl=r.url;syncState.lastSync=now();updateSyncBar('ok','Banco configurado');renderSistema();alert('Banco Google configurado com sucesso. Agora use Sincronizar agora para enviar a base atual.')}catch(e){syncState.error=e.message;updateSyncBar('bad',e.message);alert(e.message)}}
+async function syncSave(showAlert=true){try{syncState.saving=true;updateSyncBar('warn','Salvando no Google...');localSave();const r=await apiCall('saveDb',{db});syncState.configured=true;syncState.spreadsheetId=r.spreadsheetId||syncState.spreadsheetId;syncState.spreadsheetUrl=r.url||syncState.spreadsheetUrl;syncState.dirty=false;syncState.queue=0;syncState.lastSync=now();updateSyncBar('ok','Última sincronização: '+syncState.lastSync);if(showAlert)alert('Base sincronizada com Google Sheets.')}catch(e){syncState.error=e.message;syncState.queue=1;updateSyncBar('bad',e.message);if(showAlert)alert('Erro ao salvar Google: '+e.message)}finally{syncState.saving=false;renderSistema()}}
+async function syncLoad(force=false){try{updateSyncBar('warn','Carregando do Google...');const r=await apiCall('getDb',{});const remote=Object.assign(emptyDB(),r.db||{});const remoteCount=Object.keys(remote).reduce((a,k)=>a+(Array.isArray(remote[k])?remote[k].length:0),0);const localCount=Object.keys(db).reduce((a,k)=>a+(Array.isArray(db[k])?db[k].length:0),0);if(remoteCount===0 && localCount>0 && !force){updateSyncBar('warn','Google vazio. Base local preservada. Use Sincronizar agora.');alert('O Google está vazio. A base local foi preservada. Clique em Sincronizar agora para enviar esses dados ao Google.');return}db=normalizeAllStatuses(remote);localSave();syncState.dirty=false;syncState.queue=0;syncState.lastSync=now();updateSyncBar('ok','Carregado do Google: '+syncState.lastSync);render();}catch(e){syncState.error=e.message;updateSyncBar('bad',e.message);alert('Erro ao carregar Google: '+e.message)}}
+setInterval(()=>{if(syncState.dirty&&!syncState.saving)syncSave(false)},30000);
 const id=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
 const n=s=>String(s??'').trim(); const up=s=>n(s).toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
 function normalizeStatus(st){const raw=n(st); const x=up(raw); if(!x||x==='ATIVO'||x==='OK'||x==='NORMAL'||x.includes('OPERACAO')||x.includes('FUNCION'))return 'Em operação'; if(x.includes('LOGISTA'))return 'Falha logista'; if(x.includes('SISTEMA'))return 'Falha sistema'; if(x.includes('FALHA'))return raw||'Falha sistema'; if(x.includes('DESATIV')||x==='INATIVO')return 'Desativada'; if(x.includes('TESTE'))return 'Em teste'; return raw||'Em operação'}
@@ -191,12 +152,12 @@ function ensurePorta(flmId,numero,localId='',ligacao=''){return findOrCreate(db.
 function ensureLocal(nome,tipo,painelId,lacoId,piso,flmId,portaId){let r=findOrCreate(db.locais,x=>up(x.nome)===up(nome),{nome,tipo:tipo||localClass(nome),painelId,lacoId,piso,flmId,portaId,status:'Em operação',ultimaAlteracao:isoNow(),obs:'Importado'}); Object.assign(r.obj,{painelId:r.obj.painelId||painelId,lacoId:r.obj.lacoId||lacoId,piso:r.obj.piso||piso,flmId:r.obj.flmId||flmId,portaId:r.obj.portaId||portaId}); return r.obj}
 function deviceKey(d){return [d.painelId,d.lacoId,up(d.tipo),up(d.endereco),up(d.modelo),d.flmId||''].join('|')}
 function ensureEquip(obj,mode='diff'){obj.status=normalizeStatus(obj.status); let key=deviceKey(obj); let ex=db.equipamentos.find(e=>deviceKey(e)===key); if(ex){ ex.status=normalizeStatus(ex.status||obj.status); if(mode==='overwrite')Object.assign(ex,{...obj,id:ex.id,status:normalizeStatus(ex.status||obj.status),ultimaAlteracao:ex.ultimaAlteracao||obj.ultimaAlteracao}); return {obj:ex,created:false,updated:mode==='overwrite'} } obj.id=id(); db.equipamentos.push(obj); return {obj,created:true}}
-function clearAll(){db=emptyDB();localStorage.setItem(KEY,JSON.stringify(db));render()}
+function clearAll(){db=emptyDB();localSave();markDirty('Base local limpa');render()}
 function counts(){let tipos=unique(db.equipamentos.map(e=>e.tipo).concat(['Módulo'])); let c={paineis:db.paineis.length,lacos:db.lacos.length,flms:db.flms.length,portas:db.portas.length,locais:db.locais.length,equipamentos:db.equipamentos.length,totalDispositivos:db.equipamentos.length+db.flms.length,tipos:{},status:{}}; tipos.forEach(t=>c.tipos[t]=0); db.flms.forEach(()=>c.tipos['Módulo']=(c.tipos['Módulo']||0)+1); db.equipamentos.forEach(e=>{c.tipos[e.tipo]=(c.tipos[e.tipo]||0)+1;{let st=normalizeStatus(e.status); c.status[st]=(c.status[st]||0)+1}}); db.flms.forEach(f=>{{let st=normalizeStatus(f.status||'Em operação'); c.status[st]=(c.status[st]||0)+1}}); return c}
 function table(rows,cols,actions){if(!rows.length)return '<p class="msg warn">Sem registros.</p>';return `<div class="tableWrap"><table><thead><tr>${cols.map(c=>`<th>${c[0]}</th>`).join('')}${actions?'<th>Ações</th>':''}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${c[2]?c[2](r):esc(r[c[1]])}</td>`).join('')}${actions?`<td>${actions(r)}</td>`:''}</tr>`).join('')}</tbody></table></div>`}
 function selectOpts(vals,sel=''){return '<option value="">Todos</option>'+vals.map(v=>`<option ${v===sel?'selected':''}>${esc(v)}</option>`).join('')}
 function kpi(label,val){return `<div class="metric"><small>${esc(label)}</small><strong>${esc(val)}</strong></div>`}
-function render(){document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));document.getElementById(currentView).classList.add('active'); document.getElementById('pageTitle').textContent={dashboard:'Dashboard',paineis:'Painéis',lacos:'Laços',flms:'FLMs / Portas',locais:'Lojas / Áreas',equipamentos:'Equipamentos',falhas:'Falhas',plano:'Plano de Ação',importacao:'Importação',exportacao:'Exportação',relatorios:'Relatórios'}[currentView]||'SDAI'; renderDashboard();renderPaineis();renderLacos();renderFlms();renderLocais();renderEquipamentos();renderFalhas();renderPlano();renderImportacao();renderExportacao();renderRelatorios();attachSearchInputs();restoreSearchFocus();}
+function render(){document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));document.getElementById(currentView).classList.add('active'); document.getElementById('pageTitle').textContent={dashboard:'Dashboard',paineis:'Painéis',lacos:'Laços',flms:'FLMs / Portas',locais:'Lojas / Áreas',equipamentos:'Equipamentos',falhas:'Falhas',plano:'Plano de Ação',sistema:'Banco de Dados',importacao:'Importação',exportacao:'Exportação',relatorios:'Relatórios'}[currentView]||'SDAI'; renderDashboard();renderPaineis();renderLacos();renderFlms();renderLocais();renderEquipamentos();renderFalhas();renderPlano();renderSistema();renderImportacao();renderExportacao();renderRelatorios();attachSearchInputs();restoreSearchFocus();}
 document.querySelectorAll('.nav button').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.nav button').forEach(x=>x.classList.remove('active'));b.classList.add('active');currentView=b.dataset.view;render()})); setInterval(()=>document.getElementById('clock').textContent=now(),1000);
 function isOperacaoStatus(st){st=up(normalizeStatus(st||'Em operação'));return st.includes('OPER')}
 function isFalhaStatus(st){st=up(normalizeStatus(st||''));return st.includes('FALHA')}
@@ -394,6 +355,33 @@ function renderPlano(){
   ['plBuscaPlano','plCat','plPrio','plSit','plResp','plIni','plFim'].forEach(id=>{let el=document.getElementById(id); if(el)el.onchange=renderPlano});
 }
 
+
+function renderSistema(){
+  const el=document.getElementById('sistema'); if(!el)return;
+  el.innerHTML=`<div class="card"><h3 class="sectionTitle">Banco de Dados Google</h3>
+    <div class="dbInfo">
+      <b>Status</b><span>${syncState.error?'<span class="pill bad">Falha</span>':syncState.configured?'<span class="pill ok">Conectado</span>':'<span class="pill warn">Não configurado</span>'}</span>
+      <b>Planilha</b><span>${syncState.spreadsheetUrl?`<a href="${syncState.spreadsheetUrl}" target="_blank">Abrir Google Sheets</a>`:'Ainda não vinculada'}</span>
+      <b>Última sincronização</b><span>${esc(syncState.lastSync||'Nunca')}</span>
+      <b>Sincronização</b><span>Automática a cada 30 segundos e após alterações relevantes</span>
+      <b>Fila pendente</b><span>${syncState.queue||0}</span>
+      <b>Erro</b><span>${esc(syncState.error||'-')}</span>
+    </div>
+    <div class="toolbar">
+      <button class="btn" onclick="setupGoogleDatabase()">Configurar Banco Google</button>
+      <button class="btn secondary" onclick="syncSave(true)">Sincronizar agora</button>
+      <button class="btn secondary" onclick="syncLoad(false)">Carregar do Google</button>
+      ${syncState.spreadsheetUrl?`<button class="btn secondary" onclick="window.open('${syncState.spreadsheetUrl}','_blank')">Abrir Planilha</button>`:''}
+    </div>
+    <p class="msg warn">A configuração do banco é feita apenas uma vez. Depois disso, o sistema salva automaticamente. O botão "Carregar do Google" é recurso de emergência ou para abrir a base em outro computador.</p>
+  </div>
+  <div class="card"><h3 class="sectionTitle">Abas que o Apps Script cria no Google Sheets</h3>
+    <div class="diag">
+      ${['Configuracoes','Paineis','Lacos','FLMs','Portas','Locais','Equipamentos','Falhas','Plano_Acao','Historico','Importacoes','Usuarios','Relatorios'].map(x=>`<div class="diagItem"><b>${x}</b><small>Banco estruturado</small></div>`).join('')}
+    </div>
+  </div>`;
+}
+
 function renderImportacao(){document.getElementById('importacao').innerHTML=`<div class="card"><h3 class="sectionTitle">Importar CSV / XLS / XLSX</h3><div class="toolbar"><div class="field"><label>Arquivo</label><input type="file" id="fileImp" accept=".csv,.xls,.xlsx"></div><div class="field"><label>Modo</label><select id="modeImp"><option value="diff">Somente diferença</option><option value="overwrite">Sobrescrever iguais preservando histórico</option><option value="replace">Apagar dados atuais e importar do zero</option></select></div></div><p class="msg warn"><b>Colunas esperadas:</b> Painel, Laço, Piso, Endereço FLM, Porta, Loja, Tipo, Modelo, Endereço, Fabricante, Status, Observação. O sistema valida antes de importar.</p><button class="btn secondary" onclick="previewImport()">Pré-visualizar / validar</button> <button class="btn" onclick="importFile()">Importar</button><div id="impMsg"></div><div id="previewBox"></div></div><div class="card"><h3 class="sectionTitle">Último diagnóstico de importação</h3>${lastImportHtml()}</div>`}
 function lastImportHtml(){let r=db.imports.at(-1); if(!r)return '<p class="msg warn">Nenhuma importação executada.</p>'; let cards=Object.entries(r.stats).map(([k,v])=>`<div class="diagItem"><small>${esc(k)}</small><b>${esc(v)}</b></div>`).join(''); let rom=r.romannel?`<div class="msg ${r.romannel.ok?'ok':'err'}">ROMANNEL: ${esc(r.romannel.msg)}</div>`:''; return `${rom}<div class="diag">${cards}</div><h4>Erros / ignorados</h4>${table(r.errors||[],[['Linha','linha'],['Motivo','motivo'],['Registro','registro']])}`}
 function renderExportacao(){document.getElementById('exportacao').innerHTML=`<div class="card"><h3 class="sectionTitle">Exportações</h3><div class="toolbar"><button class="btn" onclick="exportJson()">Base completa JSON</button><button class="btn" onclick="exportAllCsv()">Base completa CSV</button><button class="btn secondary" onclick="exportEntity('locais')">Lojas / Áreas</button><button class="btn secondary" onclick="exportEntity('flms')">FLMs</button><button class="btn secondary" onclick="exportEntity('equipamentos')">Equipamentos</button><button class="btn secondary" onclick="exportEntity('planos')">Plano de ação</button><button class="btn secondary" onclick="exportEntity('inconsistencias')">Inconsistências</button><button class="btn danger" onclick="if(confirm('Apagar toda base local?'))clearAll()">Limpar base local</button></div></div>`}
@@ -412,7 +400,7 @@ function splitCSV(line,sep){let out=[],cur='',q=false; for(let i=0;i<line.length
 async function previewImport(){try{let rows=await readRows(); let v=validateRows(rows); document.getElementById('previewBox').innerHTML=`<div class="msg ${v.ok?'ok':'err'}">${v.ok?'Arquivo validado':'Arquivo com inconsistências'}: ${rows.length} registros lidos.</div>${table(rows.slice(0,20),Object.keys(rows[0]||{}).map(k=>[k,k]))}${v.errors.length?table(v.errors,[['Linha','linha'],['Motivo','motivo'],['Registro','registro']]):''}`}catch(e){document.getElementById('impMsg').innerHTML=`<div class="msg err">${esc(e.message)}</div>`}}
 function validateRows(rows){let errors=[]; if(!rows.length)errors.push({linha:0,motivo:'Arquivo vazio',registro:''}); let cols=Object.keys(rows[0]||{}).map(normKey); ['PAINEL','LACO','TIPO','MODELO'].forEach(c=>{if(!cols.some(x=>x.includes(c)))errors.push({linha:1,motivo:'Coluna obrigatória ausente: '+c,registro:Object.keys(rows[0]||{}).join(', ')})}); return {ok:!errors.length,errors}}
 async function importFile(){try{let rows=await readRows(); let mode=document.getElementById('modeImp').value; let v=validateRows(rows); if(!v.ok)throw new Error(v.errors.map(e=>e.motivo).join(' | ')); if(mode==='replace')db=emptyDB(); let stats={registrosLidos:rows.length,paineis:0,lacos:0,flms:0,portas:0,lojasCriadas:0,areasTecnicas:0,areasComuns:0,detectores:0,acionadores:0,modulos:0,ignorados:0}; let errors=[],rom={ok:false,msg:'Não localizada no arquivo.'}; rows.forEach((r,i)=>{let linha=i+2; try{let painel=get(r,['Painel','Central']); let laco=get(r,['Laço','Laco','Loop']); let piso=get(r,['Piso','Pavimento']); let endFlm=get(r,['Endereço FLM','Endereco FLM','FLM','Módulo','Modulo']); let porta=get(r,['Porta','Canal','Porta / Ligação','Porta Ligação']); let loja=get(r,['Loja','Local','Área','Area','Ambiente']); let tipo=get(r,['Tipo','Classificação','Classificacao']); let modelo=get(r,['Modelo','Dispositivo','Nome do dispositivo']); let endereco=get(r,['Endereço','Endereco','Zona','Endereço Equipamento']); let fab=get(r,['Fabricante']); let status=normalizeStatus(get(r,['Status'])||'Em operação'); let obs=get(r,['Observação','Observacao','Obs']); if(!painel||!laco){stats.ignorados++; errors.push({linha,motivo:'Painel ou laço ausente',registro:JSON.stringify(r)}); return} let p0=db.paineis.length,l0=db.lacos.length,f0=db.flms.length,pt0=db.portas.length,loc0=db.locais.length; let p=ensurePanel(painel); let l=ensureLaco(p.id,laco,piso); stats.paineis+=db.paineis.length>p0?1:0; stats.lacos+=db.lacos.length>l0?1:0; let classe=classifyDevice(modelo,tipo,loja); let isModulo=classe==='Módulo'; let flm=null,portaObj=null,local=null; if(isModulo||endFlm){flm=ensureFlm(p.id,l.id,endFlm||endereco||modelo,modelo||'FLM',piso); stats.flms+=db.flms.length>f0?1:0; stats.modulos+=db.flms.length>f0?1:0; if(porta||loja){portaObj=ensurePorta(flm.id,porta||'1'); stats.portas+=db.portas.length>pt0?1:0} if(loja){local=ensureLocal(loja,localClass(loja),p.id,l.id,piso,flm.id,portaObj?.id); if(portaObj)local.portaId=portaObj.id, portaObj.localId=local.id; let created=db.locais.length>loc0; if(created){if(local.tipo==='Loja')stats.lojasCriadas++; if(local.tipo==='Área Técnica')stats.areasTecnicas++; if(local.tipo==='Área Comum')stats.areasComuns++} if(up(loja).includes('ROMANNEL'))rom={ok:true,msg:`Importada/vinculada ao ${painel} • ${laco} • FLM ${flm.endereco} • Porta ${portaObj?.numero||porta||'1'}.`}} } else { if(loja){local=db.locais.find(x=>up(x.nome)===up(loja)); if(!local){let areaTipo=equipAreaClass(loja,modelo,tipo); if(areaTipo){local=ensureLocal(loja,areaTipo,p.id,l.id,piso,'',''); if(up(loja).includes('ROMANNEL'))rom={ok:false,msg:'ROMANNEL apareceu em registro de equipamento/área. Não foi criada como loja; foi tratada como '+areaTipo+'.'} } else { if(up(loja).includes('ROMANNEL'))rom={ok:false,msg:'ROMANNEL apareceu em registro de equipamento, mas loja só é criada por porta de FLM. Registro não criou loja.'}; errors.push({linha,motivo:'Equipamento não cria loja. Loja informada não existe por porta de FLM: '+loja,registro:JSON.stringify(r)}) }}} let res=ensureEquip({painelId:p.id,lacoId:l.id,piso,tipo:classe,endereco:endereco||get(r,['Zona'])||'',modelo,fabricante:fab,localId:local?.id||'',flmId:flm?.id||'',portaId:portaObj?.id||'',status,ultimaAlteracao:isoNow(),obs},mode); if(res.created){if(classe.includes('Detector'))stats.detectores++; else if(classe.includes('Acionador'))stats.acionadores++;} }
-      }catch(e){stats.ignorados++; errors.push({linha,motivo:e.message,registro:JSON.stringify(r)})}}); stats.lojasCriadas=db.locais.filter(x=>x.tipo==='Loja').length; stats.areasTecnicas=db.locais.filter(x=>x.tipo==='Área Técnica').length; stats.areasComuns=db.locais.filter(x=>x.tipo==='Área Comum').length; stats.detectores=db.equipamentos.filter(x=>x.tipo.includes('Detector')).length; stats.acionadores=db.equipamentos.filter(x=>x.tipo.includes('Acionador')).length; stats.modulos=db.flms.length; stats.flms=db.flms.length; stats.portas=db.portas.length; stats.paineis=db.paineis.length; stats.lacos=db.lacos.length; stats.ignorados=errors.length; db.inconsistencias=errors; db.imports.push({data:isoNow(),stats,errors,romannel:rom}); localStorage.setItem(KEY,JSON.stringify(db)); render(); document.getElementById('impMsg').innerHTML=`<div class="msg ok">Importação concluída. DFO/FAP/ACM/DM210/SM210/FMC são importados como equipamentos vinculados a Área Comum/Técnica, sem criar loja.</div>`}catch(e){document.getElementById('impMsg').innerHTML=`<div class="msg err">${esc(e.message)}</div>`}}
+      }catch(e){stats.ignorados++; errors.push({linha,motivo:e.message,registro:JSON.stringify(r)})}}); stats.lojasCriadas=db.locais.filter(x=>x.tipo==='Loja').length; stats.areasTecnicas=db.locais.filter(x=>x.tipo==='Área Técnica').length; stats.areasComuns=db.locais.filter(x=>x.tipo==='Área Comum').length; stats.detectores=db.equipamentos.filter(x=>x.tipo.includes('Detector')).length; stats.acionadores=db.equipamentos.filter(x=>x.tipo.includes('Acionador')).length; stats.modulos=db.flms.length; stats.flms=db.flms.length; stats.portas=db.portas.length; stats.paineis=db.paineis.length; stats.lacos=db.lacos.length; stats.ignorados=errors.length; db.inconsistencias=errors; db.imports.push({data:isoNow(),stats,errors,romannel:rom}); localSave(); markDirty('Importação pendente de sincronização'); render(); document.getElementById('impMsg').innerHTML=`<div class="msg ok">Importação concluída. DFO/FAP/ACM/DM210/SM210/FMC são importados como equipamentos vinculados a Área Comum/Técnica, sem criar loja.</div>`}catch(e){document.getElementById('impMsg').innerHTML=`<div class="msg err">${esc(e.message)}</div>`}}
 function openModal(html){document.getElementById('drawer').innerHTML=html;document.getElementById('modal').classList.add('show')} function closeModal(){document.getElementById('modal').classList.remove('show')} document.getElementById('modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal()})
 function formPainel(i=''){let o=db.paineis.find(x=>x.id===i)||{};openModal(`<h2>${i?'Editar':'Novo'} Painel</h2><div class="formGrid"><div class="field"><label>Nome</label><input id="mNome" value="${esc(o.nome)}"></div><div class="field"><label>Modelo</label><input id="mModelo" value="${esc(o.modelo)}"></div><div class="field"><label>Localização</label><input id="mLoc" value="${esc(o.localizacao)}"></div><div class="field"><label>Observação</label><input id="mObs" value="${esc(o.obs)}"></div></div><br><button class="btn" onclick="savePainel('${i}')">Salvar</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`)}
 function savePainel(i){let o=i?db.paineis.find(x=>x.id===i):{id:id()}; o.nome=n(mNome.value);o.modelo=n(mModelo.value);o.localizacao=n(mLoc.value);o.obs=n(mObs.value); if(!i)db.paineis.push(o); closeModal(); save()}
@@ -536,7 +524,7 @@ function toCsv(rows){if(!rows.length)return '';let keys=Object.keys(rows[0]);ret
 function exportEntity(e){download(toCsv(flat(e)),e+'.csv','text/csv;charset=utf-8')}
 function exportAllCsv(){let chunks=[];['paineis','lacos','flms','portas','locais','equipamentos','falhas','planos','inconsistencias'].forEach(e=>{chunks.push('### '+e+' ###\n'+toCsv(flat(e))) }); download(chunks.join('\n\n'),'base_sdai_bosch_completa.csv','text/csv;charset=utf-8')}
 function download(content,name,type){let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([content],{type}));a.download=name;a.click()}
-render();
+render();updateSyncBar('warn','Base local carregada. Sincronização automática pronta.');
 </script>
 </body>
 </html>
