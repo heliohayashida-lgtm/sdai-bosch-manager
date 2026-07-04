@@ -1,0 +1,1 @@
+Suba tudo no GitHub. Depois copie apps-script/Code.gs para o Apps Script se quiser atualizar o backend.

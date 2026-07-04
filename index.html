@@ -1,521 +1,242 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SDAI Bosch Manager v5 - Google Sheets</title>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<style>
-:root{--bg:#eef3f8;--panel:#071a2d;--panel2:#0d2942;--card:#fff;--line:#d5deea;--text:#071426;--muted:#61728a;--blue:#0f5795;--blue2:#0b3d6b;--ok:#0f7a3b;--bad:#b42318;--warn:#b7791f;--chip:#e8f1fb}
-*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}body{margin:0;font-family:Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--text)}button,input,select,textarea{font:inherit}button{cursor:pointer}.app{display:grid;grid-template-columns:280px 1fr;min-height:100vh}.side{background:linear-gradient(180deg,#071a2d,#0a2338);color:#e9f2ff;padding:18px 14px;position:sticky;top:0;height:100vh;overflow:auto}.brand{display:flex;align-items:center;gap:12px;padding:8px 8px 18px;border-bottom:1px solid rgba(255,255,255,.12)}.logo{width:44px;height:44px;border-radius:14px;background:#fff;color:#0f5795;font-weight:900;display:grid;place-items:center}.brand b{display:block}.brand span{font-size:12px;color:#a9bdd4}.navTitle{font-size:11px;letter-spacing:.12em;color:#8eacc8;margin:22px 10px 8px;text-transform:uppercase}.nav button{width:100%;border:0;background:transparent;color:#d9e8f7;text-align:left;padding:11px 12px;border-radius:10px;margin:2px 0;font-weight:650}.nav button:hover,.nav button.active{background:#18364f;color:#fff;box-shadow:inset 0 0 0 1px rgba(255,255,255,.18)}.main{min-width:0}.top{height:68px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 28px}.top h1{font-size:20px;margin:0}.top p{margin:4px 0 0;color:var(--muted);font-size:13px}.content{padding:24px 28px 50px}.view{display:none}.view.active{display:block}.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;box-shadow:0 16px 36px rgba(18,38,63,.08);margin-bottom:18px}.sectionTitle{font-size:14px;text-transform:uppercase;letter-spacing:.08em;color:#33475f;margin:0 0 14px}.grid{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:14px}.metric{background:#fff;border:1px solid var(--line);border-left:5px solid var(--blue);border-radius:16px;padding:16px}.metric small{display:block;color:var(--muted);font-weight:700;text-transform:uppercase;font-size:11px}.metric strong{font-size:28px}.toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin:12px 0}.field{display:flex;flex-direction:column;gap:5px;min-width:180px;flex:1}.field label{font-size:12px;font-weight:800;color:#31445b}.field input,.field select,.field textarea{border:1px solid var(--line);border-radius:10px;padding:10px;background:#fff}.btn{border:0;border-radius:10px;padding:10px 14px;font-weight:800;background:var(--blue);color:#fff}.btn.secondary{background:#fff;color:var(--blue2);border:1px solid var(--line)}.btn.danger{background:var(--bad)}.btn.small{padding:6px 9px;border-radius:8px;font-size:12px}.tableWrap{overflow:auto;border:1px solid var(--line);border-radius:14px;background:#fff}table{border-collapse:collapse;width:100%;min-width:900px}th,td{padding:10px 11px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;font-size:13px}th{background:#f5f8fc;color:#31445b;font-size:11px;text-transform:uppercase;letter-spacing:.04em;position:sticky;top:0}tr:hover td{background:#fbfdff}.pill{display:inline-flex;align-items:center;padding:4px 9px;border-radius:999px;font-weight:800;font-size:11px;background:var(--chip);color:#16436c}.pill.ok{background:#dcfce7;color:#166534}.pill.bad{background:#fee2e2;color:#991b1b}.pill.warn{background:#fef3c7;color:#92400e}.pill.off{background:#e2e8f0;color:#334155}.diag{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.diagItem{border:1px solid var(--line);border-radius:12px;padding:12px;background:#f8fbff}.diagItem b{font-size:22px;display:block}.msg{padding:12px;border-radius:12px;margin:12px 0;font-weight:800}.msg.ok{background:#dcfce7;color:#166534}.msg.err{background:#fee2e2;color:#991b1b}.msg.warn{background:#fef3c7;color:#92400e}.bars{display:grid;gap:12px}.barrow{display:grid;grid-template-columns:170px 1fr 120px;gap:12px;align-items:center}.bar{height:10px;border-radius:999px;background:#dfe7f1;overflow:hidden}.bar i{display:block;height:100%;background:var(--blue);border-radius:999px}.modal{position:fixed;inset:0;background:rgba(7,20,38,.5);display:none;align-items:center;justify-content:flex-end;z-index:50}.modal.show{display:flex}.drawer{width:min(720px,100%);height:100%;background:#fff;padding:24px;overflow:auto;box-shadow:-20px 0 40px rgba(0,0,0,.22)}.drawer h2{margin:0 0 8px}.formGrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.timeline{border-left:3px solid var(--line);margin-left:10px;padding-left:18px}.tl{position:relative;margin:0 0 14px;padding:10px 12px;background:#f8fbff;border:1px solid var(--line);border-radius:12px}.tl:before{content:"";position:absolute;left:-27px;top:16px;width:12px;height:12px;background:var(--blue);border-radius:50%}.printArea{background:#fff}.reportBlock{border:1px solid var(--line);border-radius:14px;margin:12px 0;padding:14px}.miniChart{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.chartCard{border:1px solid var(--line);border-radius:14px;padding:12px;background:#fff}.chartCard h4{margin:0 0 8px}
-.reportCover{background:linear-gradient(135deg,#06182c,#0f5795);color:#fff;border-radius:20px;padding:28px;margin-bottom:18px;position:relative;overflow:hidden}
-.reportCover:after{content:"";position:absolute;right:-90px;top:-90px;width:260px;height:260px;border-radius:50%;background:rgba(255,255,255,.10)}
-.reportCover h2{font-size:28px;margin:0 0 8px}.reportCover p{margin:4px 0;color:#dcecff}.reportMeta{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.reportMeta span{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);padding:8px 10px;border-radius:999px;font-weight:800;font-size:12px}
-.chartGrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:14px 0}.chartPanel{border:1px solid var(--line);border-radius:16px;padding:14px;background:linear-gradient(180deg,#fff,#f8fbff)}.chartPanel h4{margin:0 0 12px;color:#22384f}.chartBars{display:grid;gap:10px}.chartLine{display:grid;grid-template-columns:150px 1fr 64px;gap:10px;align-items:center;font-size:12px}.chartTrack{height:12px;border-radius:99px;background:#dfe7f1;overflow:hidden}.chartTrack i{display:block;height:100%;border-radius:99px;background:var(--blue)}.chartTrack i.bad{background:var(--bad)}.chartTrack i.ok{background:var(--ok)}.donutWrap{display:flex;align-items:center;gap:18px}.donut{width:118px;height:118px;border-radius:50%;background:conic-gradient(var(--bad) 0 var(--deg), var(--ok) var(--deg) 360deg);position:relative}.donut:after{content:"";position:absolute;inset:22px;background:#fff;border-radius:50%}.legend{display:grid;gap:8px}.legend span{display:flex;align-items:center;gap:8px;font-weight:700}.dot{width:12px;height:12px;border-radius:50%;display:inline-block}.dot.ok{background:var(--ok)}.dot.bad{background:var(--bad)}.premiumTable table{min-width:0}.premiumTable th{background:#eaf1f9;color:#10263e}.reportFooter{border-top:2px solid var(--line);margin-top:24px;padding-top:14px;color:#52677d;font-size:12px;display:flex;justify-content:space-between;gap:12px}
-.reportCover,.metric,.chartPanel,.chartTrack i,.donut,.pill,.dot{ -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-.hidePrint{}@media(max-width:1000px){.app{grid-template-columns:1fr}.side{position:relative;height:auto}.grid,.diag,.miniChart{grid-template-columns:1fr 1fr}.formGrid{grid-template-columns:1fr}}@media print{*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}.side,.top,.hidePrint,.modal{display:none!important}.app{display:block}.content{padding:0}.card{box-shadow:none;border:0}.view{display:block}.view:not(.printTarget){display:none!important}body{background:#fff;color:#0f172a}.reportCover{border-radius:0;margin:-8mm -8mm 8mm -8mm;padding:22mm 12mm 18mm}.reportCover h2{font-size:25px}.grid{grid-template-columns:repeat(4,1fr);gap:8px}.metric{padding:10px;border-radius:10px}.metric strong{font-size:20px}.chartGrid{grid-template-columns:1fr 1fr;gap:8px}.chartPanel{break-inside:avoid;padding:10px}.reportBlock{break-inside:avoid;border-radius:10px;padding:10px;margin:8px 0}table{min-width:0;font-size:9px}th,td{font-size:9px;padding:5px}.reportFooter{font-size:10px}}
-</style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Painel de Controle SDAI — L3A</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-<div class="app">
-  <aside class="side">
-    <div class="brand"><div class="logo">S</div><div><b>SDAI Bosch</b><span>FLM físico • portas • histórico</span></div></div>
-    <div class="nav">
-      <div class="navTitle">Gestão</div>
-      <button class="active" data-view="dashboard">📊 Dashboard</button>
-      <div class="navTitle">Base técnica</div>
-      <button data-view="paineis">🖥️ Painéis</button>
-      <button data-view="lacos">🔁 Laços</button>
-      <button data-view="flms">🧩 FLMs / Portas</button>
-      <button data-view="locais">🏬 Lojas / Áreas</button>
-      <button data-view="equipamentos">📍 Equipamentos</button>
-      <div class="navTitle">Operação</div>
-      <button data-view="falhas">⚠️ Falhas</button>
-      <button data-view="plano">✅ Plano de Ação</button>
-      <div class="navTitle">Dados</div>
-      <button data-view="relatorios">📄 Relatórios</button>
-      <div class="navTitle">Sistema</div>
-      <button data-view="importacao">⬆️ Importação</button>
-      <button data-view="exportacao">⬇️ Exportação</button>
-    </div>
-  </aside>
-  <main class="main">
-    <header class="top"><div><h1 id="pageTitle">Dashboard</h1><p>Base técnica estruturada para diagnóstico SDAI Bosch</p></div><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end"><span id="cloudStatus" class="pill warn">Modo local</span><button class="btn small" type="button" onclick="setupCloudDB()">Configurar Banco Google</button><button class="btn small secondary" type="button" onclick="cloudLoad(true)">Carregar Google</button><button class="btn small secondary" type="button" onclick="cloudSaveNow()">Salvar agora</button><span id="clock"></span></div></header>
-    <div class="content">
-      <section id="dashboard" class="view active"></section>
-      <section id="paineis" class="view"></section>
-      <section id="lacos" class="view"></section>
-      <section id="flms" class="view"></section>
-      <section id="locais" class="view"></section>
-      <section id="equipamentos" class="view"></section>
-      <section id="falhas" class="view"></section>
-      <section id="plano" class="view"></section>
-      <section id="importacao" class="view"></section>
-      <section id="exportacao" class="view"></section>
-      <section id="relatorios" class="view printTarget"></section>
-    </div>
-  </main>
+
+<div class="save-banner" id="saveBanner">
+  <div>Não consegui salvar a última alteração.<div id="saveBannerDetail" style="font-weight:500;opacity:.85;font-size:10.5px;"></div></div>
+  <button id="retrySave">Tentar de novo</button>
 </div>
-<div class="modal" id="modal"><div class="drawer" id="drawer"></div></div>
-<script>
-const KEY='sdai_bosch_manager_v5_cloud';
-const API_URL='https://script.google.com/macros/s/AKfycby45dTdw4g-pkcvY9sys3_gmvVcmnSyf6PZzJbRsbSFjhtuWbV1D5XSBEc-J1UtOBYftA/exec';
-let cloudReady=false;
-let cloudSyncTimer=null;
-let cloudBusy=false;
-const emptyDB=()=>({empreendimento:{nome:'Empreendimento',cliente:'Cliente'},paineis:[],lacos:[],flms:[],portas:[],locais:[],equipamentos:[],falhas:[],planos:[],inconsistencias:[],imports:[]});
-let db=load(); let currentView='dashboard'; let filters={};
-let searchRenderTimer=null;
-let lastSearchFocus=null;
-function onSearchInput(el){
-  const val=el.value;
-  const group=el.dataset.filterGroup;
-  const key=el.dataset.filterKey;
-  const path=el.dataset.filterPath;
-  if(group && key){ filters[group]={...(filters[group]||{}),[key]:val}; }
-  else if(path){ filters[path]=val; }
-  lastSearchFocus={key:el.dataset.focusKey||path||((group||'')+'.'+(key||'')),start:el.selectionStart??val.length,end:el.selectionEnd??val.length};
-  clearTimeout(searchRenderTimer);
-  searchRenderTimer=setTimeout(()=>render(),120);
-}
-function attachSearchInputs(){
-  document.querySelectorAll('[data-filter-input="1"]').forEach(el=>{
-    if(el.dataset.boundSearch==='1')return;
-    el.dataset.boundSearch='1';
-    el.addEventListener('input',()=>onSearchInput(el));
-  });
-}
-function restoreSearchFocus(){
-  if(!lastSearchFocus)return;
-  const f=lastSearchFocus;
-  setTimeout(()=>{
-    const el=document.querySelector(`[data-focus-key="${CSS.escape(f.key)}"]`);
-    if(el){el.focus();try{el.setSelectionRange(f.start,f.end)}catch(e){}}
-  },0);
-}
 
-function load(){try{return normalizeAllStatuses(Object.assign(emptyDB(),JSON.parse(localStorage.getItem(KEY))||{}))}catch(e){return emptyDB()}}
-function save(){
-  localStorage.setItem(KEY,JSON.stringify(db));
-  render();
-  queueCloudSave();
-}
-async function apiCall(action,payload={}){
-  if(!API_URL)return {ok:false,error:'API_URL não configurada'};
-  const r=await fetch(API_URL,{
-    method:'POST',
-    headers:{'Content-Type':'text/plain;charset=utf-8'},
-    body:JSON.stringify({action,payload})
-  });
-  const txt=await r.text();
-  try{return JSON.parse(txt)}catch(e){throw new Error('Resposta inválida do Apps Script: '+txt.slice(0,160))}
-}
-function setCloudMsg(text,cls='warn'){
-  let el=document.getElementById('cloudStatus');
-  if(el){el.className='pill '+cls;el.textContent=text}
-}
-async function setupCloudDB(){
-  try{setCloudMsg('Configurando banco...','warn'); const res=await apiCall('setupDB',{}); if(!res.ok)throw new Error(res.error||'Erro ao configurar banco'); setCloudMsg('Banco Google conectado','ok'); await cloudLoad(true); alert('Banco Google configurado com sucesso.\nPlanilha: '+(res.spreadsheetUrl||''));}
-  catch(e){setCloudMsg('Erro no banco','bad'); alert(e.message)}
-}
-async function cloudLoad(force=false){
-  try{setCloudMsg('Carregando Google...','warn'); const res=await apiCall('getDB',{}); if(!res.ok)throw new Error(res.error||'Erro ao carregar banco'); if(res.db && Object.keys(res.db).length){db=normalizeAllStatuses(Object.assign(emptyDB(),res.db)); localStorage.setItem(KEY,JSON.stringify(db));}
-    cloudReady=true; setCloudMsg('Google sincronizado','ok'); render();
-  }catch(e){setCloudMsg('Modo local','bad'); console.warn('Falha no carregamento Google:',e)}
-}
-function queueCloudSave(){
-  if(!cloudReady||cloudBusy)return;
-  clearTimeout(cloudSyncTimer);
-  cloudSyncTimer=setTimeout(async()=>{
-    try{cloudBusy=true; setCloudMsg('Salvando Google...','warn'); const res=await apiCall('saveDB',{db}); if(!res.ok)throw new Error(res.error||'Erro ao salvar'); setCloudMsg('Google sincronizado','ok');}
-    catch(e){setCloudMsg('Erro ao salvar','bad'); console.warn('Falha ao salvar Google:',e)}
-    finally{cloudBusy=false}
-  },700);
-}
-async function cloudSaveNow(){
-  try{cloudBusy=true; setCloudMsg('Salvando Google...','warn'); const res=await apiCall('saveDB',{db}); if(!res.ok)throw new Error(res.error||'Erro ao salvar'); setCloudMsg('Google sincronizado','ok'); alert('Base salva no Google Sheets.');}
-  catch(e){setCloudMsg('Erro ao salvar','bad'); alert(e.message)}
-  finally{cloudBusy=false}
-}
+<header class="top">
+  <div class="brand">L3A · Pantanal Shopping</div>
+  <h1>Painel de Controle SDAI</h1>
+</header>
+<div class="cloud-toolbar">
+  <button class="btn small secondary" id="cloudSetup" type="button">Configurar Banco Google</button>
+  <button class="btn small ghost" id="cloudLoad" type="button">Carregar Google</button>
+  <button class="btn small" id="cloudSave" type="button">Salvar agora</button>
+  <span id="cloudStatus" class="cloud-status">Banco local ativo</span>
+</div>
 
-const id=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
-const n=s=>String(s??'').trim(); const up=s=>n(s).toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-function normalizeStatus(st){const raw=n(st); const x=up(raw); if(!x||x==='ATIVO'||x==='OK'||x==='NORMAL'||x.includes('OPERACAO')||x.includes('FUNCION'))return 'Em operação'; if(x.includes('LOGISTA'))return 'Falha logista'; if(x.includes('SISTEMA'))return 'Falha sistema'; if(x.includes('FALHA'))return raw||'Falha sistema'; if(x.includes('DESATIV')||x==='INATIVO')return 'Desativada'; if(x.includes('TESTE'))return 'Em teste'; return raw||'Em operação'}
-function normalizeAllStatuses(base){['equipamentos','flms','locais','falhas'].forEach(k=>(base[k]||[]).forEach(o=>{if(o.status)o.status=normalizeStatus(o.status)}));return base}
-function now(){return new Date().toLocaleString('pt-BR')}
-function isoNow(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+'T'+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')}
-function esc(s){return n(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
-function csvEscape(s){s=n(s);return /[;,"\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s}
-function normKey(k){return up(k).replace(/^\uFEFF/,'').replace(/[^A-Z0-9]/g,'')}
-function get(row,names){const keys=Object.keys(row); for(const name of names){const nk=normKey(name); const k=keys.find(x=>normKey(x)===nk); if(k!==undefined)return n(row[k])} return ''}
-function classifyDevice(model,tipo,local){const m=up(model+' '+tipo); if(/FLM4204CONS|FLM420I2WE|FLM/.test(m))return 'Módulo'; if(/FAP|DFO/.test(m))return 'Detector de Fumaça'; if(/FAH/.test(m))return 'Detector Térmico'; if(/ACM|DM210|SM210|FMC210|FMC420RW|ACIONADOR/.test(m))return 'Acionador Manual'; if(/FNM|FNS|SIRENE|SINALIZ/.test(m))return 'Sirene / Sinalizador'; if(/DETECTOR/.test(m))return 'Detector'; return n(tipo)||'Não classificado'}
-function localClass(name){const x=up(name); if(!x)return ''; if(/AREA COMUM|MALL|CORREDOR|HALL|PRACA|CIRCULACAO|ACESSO/.test(x))return 'Área Comum'; if(/TECNIC|CASA|SALA|BARRILETE|SUBEST|SHAFT|DML|DOCAS|DEPOSITO|SEGURANCA|ADMIN|CPD|TI|BOMBA|GERADOR/.test(x))return 'Área Técnica'; return 'Loja'}
-function isEquipAreaLabel(name,model,tipo){const x=up((name||'')+' '+(model||'')+' '+(tipo||'')); return /(^|\s)(DFO|FAP|ACM|DM210|SM210|FMC210|FMC420RW)(\s|$)/.test(x)}
-function equipAreaClass(name,model,tipo){const cls=localClass(name); if(cls==='Área Técnica'||cls==='Área Comum')return cls; return isEquipAreaLabel(name,model,tipo)?'Área Comum':''}
-function statusClass(s){s=up(normalizeStatus(s)); if(/OPER/.test(s))return 'ok'; if(/LOGISTA|SISTEMA|FALHA/.test(s))return 'bad'; if(/TESTE/.test(s))return 'warn'; if(/DESATIV/.test(s))return 'off'; return ''}
-function unique(arr){return [...new Set(arr.filter(Boolean).map(n))].sort((a,b)=>a.localeCompare(b,'pt-BR'))}
-function findOrCreate(arr,match,obj){let x=arr.find(match); if(x)return {obj:x,created:false}; x={id:id(),...obj}; arr.push(x); return {obj:x,created:true}}
-function painelById(v){return db.paineis.find(x=>x.id===v)||db.paineis.find(x=>x.nome===v)}
-function lacoById(v){return db.lacos.find(x=>x.id===v)||db.lacos.find(x=>x.nome===v)}
-function localById(v){return db.locais.find(x=>x.id===v)}
-function flmById(v){return db.flms.find(x=>x.id===v)}
-function locName(v){return localById(v)?.nome||''}
-function paiName(v){return painelById(v)?.nome||''}
-function lacName(v){return lacoById(v)?.nome||''}
-function ensurePanel(nome,modelo='',localizacao='',obs='Importado'){return findOrCreate(db.paineis,x=>up(x.nome)===up(nome),{nome:nome||'Painel não informado',modelo,localizacao,obs}).obj}
-function ensureLaco(painelId,nome,piso=''){return findOrCreate(db.lacos,x=>x.painelId===painelId&&up(x.nome)===up(nome),{painelId,nome:nome||'Laço não informado',piso,obs:'Importado'}).obj}
-function ensureFlm(painelId,lacoId,endereco,modelo,piso){return findOrCreate(db.flms,x=>x.painelId===painelId&&x.lacoId===lacoId&&up(x.endereco)===up(endereco),{painelId,lacoId,endereco:endereco||'S/E',modelo:modelo||'FLM',piso,obs:'Importado'}).obj}
-function ensurePorta(flmId,numero,localId='',ligacao=''){return findOrCreate(db.portas,x=>x.flmId===flmId&&String(x.numero)===String(numero||'1'),{flmId,numero:numero||'1',localId,ligacao,obs:'Importado'}).obj}
-function ensureLocal(nome,tipo,painelId,lacoId,piso,flmId,portaId){let r=findOrCreate(db.locais,x=>up(x.nome)===up(nome),{nome,tipo:tipo||localClass(nome),painelId,lacoId,piso,flmId,portaId,status:'Em operação',ultimaAlteracao:isoNow(),obs:'Importado'}); Object.assign(r.obj,{painelId:r.obj.painelId||painelId,lacoId:r.obj.lacoId||lacoId,piso:r.obj.piso||piso,flmId:r.obj.flmId||flmId,portaId:r.obj.portaId||portaId}); return r.obj}
-function deviceKey(d){return [d.painelId,d.lacoId,up(d.tipo),up(d.endereco),up(d.modelo),d.flmId||''].join('|')}
-function ensureEquip(obj,mode='diff'){obj.status=normalizeStatus(obj.status); let key=deviceKey(obj); let ex=db.equipamentos.find(e=>deviceKey(e)===key); if(ex){ ex.status=normalizeStatus(ex.status||obj.status); if(mode==='overwrite')Object.assign(ex,{...obj,id:ex.id,status:normalizeStatus(ex.status||obj.status),ultimaAlteracao:ex.ultimaAlteracao||obj.ultimaAlteracao}); return {obj:ex,created:false,updated:mode==='overwrite'} } obj.id=id(); db.equipamentos.push(obj); return {obj,created:true}}
-function clearAll(){db=emptyDB();localStorage.setItem(KEY,JSON.stringify(db));render()}
-function counts(){let tipos=unique(db.equipamentos.map(e=>e.tipo).concat(['Módulo'])); let c={paineis:db.paineis.length,lacos:db.lacos.length,flms:db.flms.length,portas:db.portas.length,locais:db.locais.length,equipamentos:db.equipamentos.length,totalDispositivos:db.equipamentos.length+db.flms.length,tipos:{},status:{}}; tipos.forEach(t=>c.tipos[t]=0); db.flms.forEach(()=>c.tipos['Módulo']=(c.tipos['Módulo']||0)+1); db.equipamentos.forEach(e=>{c.tipos[e.tipo]=(c.tipos[e.tipo]||0)+1;{let st=normalizeStatus(e.status); c.status[st]=(c.status[st]||0)+1}}); db.flms.forEach(f=>{{let st=normalizeStatus(f.status||'Em operação'); c.status[st]=(c.status[st]||0)+1}}); return c}
-function table(rows,cols,actions){if(!rows.length)return '<p class="msg warn">Sem registros.</p>';return `<div class="tableWrap"><table><thead><tr>${cols.map(c=>`<th>${c[0]}</th>`).join('')}${actions?'<th>Ações</th>':''}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${c[2]?c[2](r):esc(r[c[1]])}</td>`).join('')}${actions?`<td>${actions(r)}</td>`:''}</tr>`).join('')}</tbody></table></div>`}
-function selectOpts(vals,sel=''){return '<option value="">Todos</option>'+vals.map(v=>`<option ${v===sel?'selected':''}>${esc(v)}</option>`).join('')}
-function kpi(label,val){return `<div class="metric"><small>${esc(label)}</small><strong>${esc(val)}</strong></div>`}
-function render(){document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));document.getElementById(currentView).classList.add('active'); document.getElementById('pageTitle').textContent={dashboard:'Dashboard',paineis:'Painéis',lacos:'Laços',flms:'FLMs / Portas',locais:'Lojas / Áreas',equipamentos:'Equipamentos',falhas:'Falhas',plano:'Plano de Ação',importacao:'Importação',exportacao:'Exportação',relatorios:'Relatórios'}[currentView]||'SDAI'; renderDashboard();renderPaineis();renderLacos();renderFlms();renderLocais();renderEquipamentos();renderFalhas();renderPlano();renderImportacao();renderExportacao();renderRelatorios();attachSearchInputs();restoreSearchFocus();}
-document.querySelectorAll('.nav button').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.nav button').forEach(x=>x.classList.remove('active'));b.classList.add('active');currentView=b.dataset.view;render()})); setInterval(()=>document.getElementById('clock').textContent=now(),1000);
-function isOperacaoStatus(st){st=up(normalizeStatus(st||'Em operação'));return st.includes('OPER')}
-function isFalhaStatus(st){st=up(normalizeStatus(st||''));return st.includes('FALHA')}
-function isDesativadoStatus(st){st=up(normalizeStatus(st||''));return st.includes('DESATIV')}
-function isTesteStatus(st){st=up(normalizeStatus(st||''));return st.includes('TESTE')}
-function statusClass(st){st=normalizeStatus(st); if(isFalhaStatus(st))return 'bad'; if(isOperacaoStatus(st))return 'ok'; if(isTesteStatus(st))return 'warn'; if(isDesativadoStatus(st))return 'off'; return ''}
-function dashBar(label,value,total,cls=''){
-  const pct=total?Math.round((value/total)*100):0;
-  return `<div class="barrow"><b>${esc(label)}</b><div class="bar"><i class="${cls}" style="width:${pct}%"></i></div><span>${value} • ${pct}%</span></div>`
-}
-function renderDashboard(){
-  const c=counts();
-  const allDevices=[...db.flms.map(f=>({...f,tipo:'Módulo'})),...db.equipamentos];
-  const total=allDevices.length;
-  const op=allDevices.filter(x=>isOperacaoStatus(x.status)).length;
-  const falhaLogista=allDevices.filter(x=>up(x.status).includes('LOGISTA')).length;
-  const falhaSistema=allDevices.filter(x=>up(x.status).includes('SISTEMA')).length;
-  const desativados=allDevices.filter(x=>isDesativadoStatus(x.status)).length;
-  const teste=allDevices.filter(x=>isTesteStatus(x.status)).length;
-  const falhas=allDevices.filter(x=>isFalhaStatus(x.status)).length;
-  const disponibilidade=total?Math.round((op/total)*100):0;
-  const falhaPct=total?Math.round((falhas/total)*100):0;
-  const deg=Math.max(0,Math.min(360,Math.round((falhas/Math.max(1,total))*360)));
 
-  const tipoRows=Object.entries(c.tipos).map(([tipo,qtd])=>({tipo,qtd,pct:total?Math.round((qtd/total)*100):0}));
-  const tipoTable=table(tipoRows,[['Tipo','tipo'],['Qtd.','qtd'],['Participação','pct',r=>dashBar('',r.qtd,total)]]);
-  const statusRows=Object.entries(c.status).map(([status,qtd])=>({status:status||'Sem status',qtd,pct:total?Math.round((qtd/total)*100):0}));
-  const statusTable=table(statusRows,[['Status','status',r=>`<span class="pill ${statusClass(r.status)}">${esc(r.status)}</span>`],['Qtd.','qtd'],['Participação','pct',r=>dashBar('',r.qtd,total,statusClass(r.status))]]);
+<main>
 
-  const painelRows=db.paineis.map(p=>{
-    const fl=db.flms.filter(f=>f.painelId===p.id);
-    const eq=db.equipamentos.filter(e=>e.painelId===p.id);
-    const dev=[...fl.map(f=>({...f,tipo:'Módulo'})),...eq];
-    const totalP=dev.length;
-    const opP=dev.filter(x=>isOperacaoStatus(x.status)).length;
-    const falP=dev.filter(x=>isFalhaStatus(x.status)).length;
-    return {painel:p.nome,total:totalP,flms:fl.length,equip:eq.length,operacao:opP,falhas:falP,ef:totalP?Math.round((opP/totalP)*100):0};
-  });
-  const painelTable=table(painelRows,[['Painel','painel'],['Total','total'],['FLMs','flms'],['Equip.','equip'],['Em operação','operacao'],['Falhas','falhas'],['Eficiência','ef',r=>dashBar('',r.operacao,r.total,'ok')]]);
+  <section class="panel" id="tab-inicio">
+    <div class="section-title">Resumo</div>
+    <div class="kpi-grid" id="kpiGrid"></div>
+    <div class="hint" style="margin-top:16px;">Este painel reúne <b>cadastro de lojas e equipamentos</b>, <b>plano de ação com leitura automática do painel Bosch</b>, <b>serviços realizados</b>, <b>atas de reunião</b> e a <b>exportação do relatório</b> formatado — tudo salvo nesta conta, em qualquer aparelho.</div>
+  </section>
 
-  const painelBlocks=db.paineis.map(p=>{
-    const lac=db.lacos.filter(l=>l.painelId===p.id);
-    const rows=lac.map(l=>{
-      const fl=db.flms.filter(f=>f.lacoId===l.id);
-      const eq=db.equipamentos.filter(e=>e.lacoId===l.id);
-      const dev=[...fl.map(f=>({...f,tipo:'Módulo'})),...eq];
-      const totalL=dev.length;
-      const opL=dev.filter(x=>isOperacaoStatus(x.status)).length;
-      const falL=dev.filter(x=>isFalhaStatus(x.status)).length;
-      const porTipo={};dev.forEach(d=>porTipo[d.tipo]=(porTipo[d.tipo]||0)+1);
-      return {laco:l.nome,piso:l.piso,total:totalL,operacao:opL,falhas:falL,ef:totalL?Math.round((opL/totalL)*100):0,tipos:Object.entries(porTipo).map(([k,v])=>`${k}: ${v}`).join(' • ')};
-    });
-    return `<div class="card"><h3 class="sectionTitle">${esc(p.nome)} — Laços, tipos e performance</h3>${table(rows,[['Laço','laco'],['Piso','piso'],['Total','total'],['Tipos cadastrados','tipos'],['Em operação','operacao'],['Falhas','falhas'],['Eficiência','ef',r=>dashBar('',r.operacao,r.total,'ok')]])}</div>`
-  }).join('');
+  <section class="panel" id="tab-cadastro">
+    <div class="toggle-tabs">
+      <button id="btnLojas" class="active">Lojas</button>
+      <button id="btnEquip">Equipamentos</button>
+      <button id="btnHist">Histórico</button>
+    </div>
 
-  document.getElementById('dashboard').innerHTML=`
+    <!-- ===== LOJAS ===== -->
+    <div id="lojasWrap">
+      <div class="import-box">
+        <label>Importar planilha de lojas (.xlsx, .xls ou .csv)</label>
+        <input type="file" id="importLojasFile" accept=".xlsx,.xls,.csv">
+        <label>Se a loja já existir</label>
+        <select id="importModoLojas">
+          <option value="atualizar">Atualizar campos preenchidos</option>
+          <option value="sobrescrever">Sobrescrever registro inteiro</option>
+          <option value="ignorar">Ignorar (manter o que já existe)</option>
+        </select>
+        <button class="btn secondary" id="importLojasBtn">Importar lojas</button>
+        <div class="import-log" id="importLojasLog" style="display:none;"></div>
+      </div>
+
+      <div class="section-title">Nova loja<button class="btn small ghost" id="cancelEditLoja" style="display:none;">Cancelar edição</button></div>
+      <div class="card">
+        <div class="row2">
+          <div><label>Nome da loja *</label><input type="text" id="fLojaNome" placeholder="Ex: Boteco 065"></div>
+          <div><label>Número</label><input type="text" id="fLojaNumero" placeholder="Ex: 065"></div>
+        </div>
+        <div class="row2">
+          <div><label>Piso</label><input type="text" id="fLojaPiso" placeholder="Ex: Piso 1"></div>
+          <div><label>Setor</label><input type="text" id="fLojaSetor" placeholder="Ex: Praça de Alimentação"></div>
+        </div>
+        <div class="row2">
+          <div><label>Laço</label><input type="text" id="fLojaLaco" placeholder="Ex: Laço 05 FPA"></div>
+          <div><label>Módulo</label><input type="text" id="fLojaModulo" placeholder="Ex: 44"></div>
+        </div>
+        <div class="row2">
+          <div><label>Responsável</label><input type="text" id="fLojaResponsavel" placeholder="Nome do responsável"></div>
+          <div><label>Telefone</label><input type="tel" id="fLojaTelefone" placeholder="(65) 99999-9999"></div>
+        </div>
+        <div class="row2">
+          <div><label>Sistema</label>
+            <select id="fLojaSistema"><option>SDAI</option><option>CFTV</option><option>Som</option><option>Controle de acesso</option><option>Múltiplos</option></select>
+          </div>
+          <div><label>Status</label>
+            <select id="fLojaStatus"><option>Ativo</option><option>Inativo</option><option>Em obras</option></select>
+          </div>
+        </div>
+        <label>Observações</label>
+        <textarea id="fLojaObs" placeholder="Notas gerais sobre a loja"></textarea>
+        <button class="btn" id="saveLoja">+ Adicionar loja</button>
+      </div>
+
+      <div class="section-title">Lojas cadastradas <span id="lojasCount"></span></div>
+      <input type="text" id="lojaBusca" placeholder="Pesquisar por loja, número, responsável...">
+      <div class="filter-row">
+        <select id="filtroPiso"><option value="">Todos os pisos</option></select>
+        <select id="filtroLaco"><option value="">Todos os laços</option></select>
+        <select id="filtroStatus"><option value="">Todos os status</option><option>Ativo</option><option>Inativo</option><option>Em obras</option></select>
+      </div>
+      <div id="lojasList"></div>
+    </div>
+
+    <!-- ===== EQUIPAMENTOS ===== -->
+    <div id="equipWrap" style="display:none">
+      <div class="import-box">
+        <label>Importar planilha de equipamentos (.xlsx, .xls ou .csv)</label>
+        <input type="file" id="importEquipFile" accept=".xlsx,.xls,.csv">
+        <label>Se o equipamento já existir</label>
+        <select id="importModoEquip">
+          <option value="atualizar">Atualizar campos preenchidos</option>
+          <option value="sobrescrever">Sobrescrever registro inteiro</option>
+          <option value="ignorar">Ignorar (manter o que já existe)</option>
+        </select>
+        <button class="btn secondary" id="importEquipBtn">Importar equipamentos</button>
+        <div class="import-log" id="importEquipLog" style="display:none;"></div>
+      </div>
+
+      <div class="section-title">Novo equipamento<button class="btn small ghost" id="cancelEditEquip" style="display:none;">Cancelar edição</button></div>
+      <div class="card">
+        <label>Loja vinculada *</label>
+        <select id="fEquipLoja"></select>
+        <div class="row2">
+          <div><label>Tipo</label>
+            <select id="fEquipTipo"><option>Detector</option><option>Acionador</option><option>Módulo</option><option>Sirene</option><option>Interface CO2</option><option>Central</option></select>
+          </div>
+          <div><label>Endereço</label><input type="text" id="fEquipEndereco" placeholder="Ex: 44"></div>
+        </div>
+        <div class="row2">
+          <div><label>Laço</label><input type="text" id="fEquipLaco" placeholder="Ex: Laço 05 FPA"></div>
+          <div><label>Número</label><input type="text" id="fEquipNumero" placeholder="Nº de série/tag"></div>
+        </div>
+        <div class="row2">
+          <div><label>Fabricante</label><input type="text" id="fEquipFabricante" placeholder="Ex: Bosch"></div>
+          <div><label>Modelo</label><input type="text" id="fEquipModelo" placeholder="Ex: FAP-O420"></div>
+        </div>
+        <div class="row2">
+          <div><label>Data instalação</label><input type="date" id="fEquipDataInstalacao"></div>
+          <div><label>Última manutenção</label><input type="date" id="fEquipUltimaManutencao"></div>
+        </div>
+        <label>Status</label>
+        <select id="fEquipStatus"><option>Ativo</option><option>Em falha</option><option>Desativado</option></select>
+        <label>Observações</label>
+        <textarea id="fEquipObs"></textarea>
+        <button class="btn" id="saveEquip">+ Adicionar equipamento</button>
+      </div>
+
+      <div class="section-title">Equipamentos cadastrados <span id="equipCount"></span></div>
+      <input type="text" id="equipBusca" placeholder="Pesquisar por loja, endereço, modelo...">
+      <div class="filter-row">
+        <select id="filtroEquipLoja"><option value="">Todas as lojas</option></select>
+        <select id="filtroEquipTipo"><option value="">Todos os tipos</option><option>Detector</option><option>Acionador</option><option>Módulo</option><option>Sirene</option><option>Interface CO2</option><option>Central</option></select>
+        <select id="filtroEquipStatus"><option value="">Todos os status</option><option>Ativo</option><option>Em falha</option><option>Desativado</option></select>
+      </div>
+      <div id="equipList"></div>
+    </div>
+
+    <!-- ===== HISTÓRICO ===== -->
+    <div id="histWrap" style="display:none">
+      <div class="section-title">Histórico de alterações</div>
+      <div id="histList"></div>
+    </div>
+  </section>
+
+  <section class="panel" id="tab-plano">
+    <div class="section-title">Analisar evento do painel (IA)</div>
     <div class="card">
-      <h3 class="sectionTitle">Base configurada no sistema</h3>
-      <div class="grid">
-        ${kpi('Painéis',c.paineis)}${kpi('Laços',c.lacos)}${kpi('FLMs físicos',c.flms)}${kpi('Portas',c.portas)}
-        ${kpi('Lojas / áreas',c.locais)}${kpi('Equipamentos',c.equipamentos)}${kpi('Total dispositivos',c.totalDispositivos)}${kpi('Tipos distintos',Object.keys(c.tipos).length)}
-      </div>
+      <label>Foto do painel (pode escolher mais de uma)</label>
+      <input type="file" id="planoImgs" accept="image/*" multiple>
+      <label>Ou cole o texto do evento</label>
+      <textarea id="planoTexto" placeholder="Ex: Boteco 065 CO2 - 17.06.26 08:16&#10;Loja XPTO - 17.06.26 09:02&#10;Falha módulo endereço 44 - 17.06.26 10:15"></textarea>
+      <button class="btn secondary" id="analisarBtn">Analisar com IA</button>
+      <div class="status-msg" id="analiseStatus"></div>
     </div>
-    <div class="chartGrid">
-      <div class="chartPanel">
-        <h4>Distribuição por tipo cadastrado</h4>
-        <div class="chartBars">${tipoRows.map(r=>dashBar(r.tipo,r.qtd,total)).join('')||'<p class="msg warn">Sem dados.</p>'}</div>
-      </div>
-      <div class="chartPanel">
-        <h4>Resumo técnico por painel</h4>
-        ${painelTable}
-      </div>
+
+    <div id="propostaWrap"></div>
+
+    <div class="section-title">Plano de ação atual</div>
+    <div id="planoAtual"></div>
+  </section>
+
+  <section class="panel" id="tab-servicos">
+    <div class="toggle-tabs">
+      <button id="btnServ" class="active">Serviços realizados</button>
+      <button id="btnAtas">Atas de reunião</button>
     </div>
-    <div class="card">
-      <h3 class="sectionTitle">Eficiência e performance operacional</h3>
-      <div class="grid">
-        ${kpi('Disponibilidade',disponibilidade+'%')}${kpi('Em operação',op)}${kpi('Falha logista',falhaLogista)}${kpi('Falha sistema',falhaSistema)}
-        ${kpi('Falhas totais',falhas)}${kpi('Taxa de falha',falhaPct+'%')}${kpi('Em teste',teste)}${kpi('Desativados',desativados)}
+
+    <div id="servWrap">
+      <div class="card">
+        <label>Data</label><input type="date" id="servData">
+        <label>Sistema</label>
+        <select id="servSistema"><option>SDAI</option><option>CFTV</option><option>Som</option><option>Controle de acesso</option><option>Outro</option></select>
+        <label>Descrição do serviço</label>
+        <textarea id="servDesc" placeholder="O que foi feito"></textarea>
+        <label>Técnico responsável</label>
+        <input type="text" id="servTecnico" placeholder="Ex: Elvis de Souza">
+        <button class="btn" id="addServico">+ Registrar serviço</button>
       </div>
+      <div id="servList"></div>
     </div>
-    <div class="chartGrid">
-      <div class="chartPanel">
-        <h4>Disponibilidade operacional</h4>
-        <div class="donutWrap"><div class="donut" style="--deg:${deg}deg"></div><div class="legend"><span><i class="dot ok"></i>Em operação: ${op}</span><span><i class="dot bad"></i>Falhas: ${falhas}</span><span><i class="dot"></i>Outros status: ${Math.max(0,total-op-falhas)}</span></div></div>
+
+    <div id="ataWrap" style="display:none">
+      <div class="card">
+        <label>Data</label><input type="date" id="ataData">
+        <label>Título</label><input type="text" id="ataTitulo" placeholder="Ex: Reunião mensal SDAI">
+        <label>Participantes</label><input type="text" id="ataParticipantes" placeholder="Ex: Hélio, Deividi, Síndico">
+        <label>Resumo / decisões</label><textarea id="ataResumo" placeholder="Principais pontos discutidos e decisões"></textarea>
+        <button class="btn" id="addAta">+ Registrar ata</button>
       </div>
-      <div class="chartPanel">
-        <h4>Status operacional por quantidade</h4>
-        <div class="chartBars">${statusRows.map(r=>dashBar(r.status,r.qtd,total,statusClass(r.status))).join('')||'<p class="msg warn">Sem status.</p>'}</div>
-      </div>
+      <div id="ataList"></div>
     </div>
-    <div class="card">
-      <h3 class="sectionTitle">Tabela consolidada por status</h3>
-      ${statusTable}
-    </div>
-    <h3 class="sectionTitle">Compilado por Painel → Laço</h3>
-    ${painelBlocks||'<div class="card"><p class="msg warn">Importe uma base para iniciar.</p></div>'}
-  `
-}
-function renderPaineis(){let rows=db.paineis.map(p=>({...p,totalDisp:db.flms.filter(f=>f.painelId===p.id).length+db.equipamentos.filter(e=>e.painelId===p.id).length,sub:subTipos(x=>x.painelId===p.id)}));document.getElementById('paineis').innerHTML=`<div class="card"><button class="btn" onclick="formPainel()">+ Criar novo painel</button></div><div class="card"><h3 class="sectionTitle">Painéis cadastrados</h3>${table(rows,[['Painel','nome'],['Modelo','modelo'],['Localização','localizacao'],['Total disp.','totalDisp'],['Subtotal por tipo','sub',r=>r.sub]],r=>`<button class="btn small secondary" onclick="formPainel('${r.id}')">✏️</button> <button class="btn small danger" onclick="del('paineis','${r.id}')">🗑</button>`)}</div>`}
-function renderLacos(){let fp=filters.lacoPainel||'',fl=filters.lacoNome||'',fs=filters.lacoStatus||''; let rows=db.lacos.filter(l=>(!fp||paiName(l.painelId)===fp)&&(!fl||l.nome===fl)).map(l=>{let eq=db.equipamentos.filter(e=>e.lacoId===l.id);let status=eq.some(e=>up(e.status).includes('FALHA'))?'Com falha':'Em operação';return {...l,painel:paiName(l.painelId),totalDisp:db.flms.filter(f=>f.lacoId===l.id).length+eq.length,status,sub:subTipos(x=>x.lacoId===l.id)}}).filter(r=>(!fs||r.status===fs));document.getElementById('lacos').innerHTML=`<div class="card"><button class="btn" onclick="formLaco()">+ Criar novo laço</button><div class="toolbar"><div class="field"><label>Painel</label><select onchange="filters.lacoPainel=this.value;render()">${selectOpts(unique(db.paineis.map(p=>p.nome)),fp)}</select></div><div class="field"><label>Laço</label><select onchange="filters.lacoNome=this.value;render()">${selectOpts(unique(db.lacos.map(l=>l.nome)),fl)}</select></div><div class="field"><label>Status</label><select onchange="filters.lacoStatus=this.value;render()">${selectOpts(['Em operação','Com falha'],fs)}</select></div></div></div><div class="card"><h3 class="sectionTitle">Laços cadastrados</h3>${table(rows,[['Painel','painel'],['Laço','nome'],['Piso','piso'],['Total disp.','totalDisp'],['Status','status',r=>`<span class="pill ${r.status==='Com falha'?'bad':'ok'}">${r.status}</span>`],['Subtotal por tipo/modelo','sub',r=>r.sub]],r=>`<button class="btn small secondary" onclick="formLaco('${r.id}')">✏️</button> <button class="btn small danger" onclick="del('lacos','${r.id}')">🗑</button>`)}</div>`}
-function subTipos(match){let map={}; db.flms.filter(match).forEach(f=>{let k='Módulo • '+(f.modelo||'FLM');map[k]=(map[k]||0)+1}); db.equipamentos.filter(match).forEach(e=>{let k=(e.tipo||'Equipamento')+' • '+(e.modelo||'S/modelo');map[k]=(map[k]||0)+1}); return Object.entries(map).map(([k,v])=>`<span class="pill">${esc(k)}: ${v}</span>`).join(' ')||'-'}
-function renderFlms(){let f=filters.flm||{};let paineis=unique(db.paineis.map(p=>p.nome));let lacos=unique(db.lacos.map(l=>l.nome));let pisos=unique(db.flms.map(x=>x.piso).concat(db.lacos.map(x=>x.piso),db.locais.map(x=>x.piso),db.equipamentos.map(x=>x.piso)));let lojas=unique(db.locais.map(x=>x.nome));let rows=db.flms.map(flm=>{let ps=db.portas.filter(p=>p.flmId===flm.id);let portas=ps.map(p=>`P${p.numero}: ${locName(p.localId)||'Sem vínculo'}${p.ligacao?' • '+esc(p.ligacao):''}`).join('<br>');let nomesPortas=ps.map(p=>locName(p.localId)).filter(Boolean).join(' | ');return {...flm,painel:paiName(flm.painelId),laco:lacName(flm.lacoId),portas,lojas:nomesPortas}}).filter(r=>(!f.painel||r.painel===f.painel)&&(!f.laco||r.laco===f.laco)&&(!f.piso||r.piso===f.piso)&&(!f.loja||up(r.lojas).includes(up(f.loja))));document.getElementById('flms').innerHTML=`<div class="card"><button class="btn" onclick="formFlm()">+ Criar novo FLM</button><div class="toolbar"><div class="field"><label>Painel</label><select onchange="filters.flm={...filters.flm,painel:this.value};render()">${selectOpts(paineis,f.painel)}</select></div><div class="field"><label>Laço</label><select onchange="filters.flm={...filters.flm,laco:this.value};render()">${selectOpts(lacos,f.laco)}</select></div><div class="field"><label>Piso</label><select onchange="filters.flm={...filters.flm,piso:this.value};render()">${selectOpts(pisos,f.piso)}</select></div><div class="field"><label>Loja / Área</label><select onchange="filters.flm={...filters.flm,loja:this.value};render()">${selectOpts(lojas,f.loja)}</select></div><button class="btn secondary" onclick="filters.flm={};render()">Limpar filtros</button></div></div><div class="card"><h3 class="sectionTitle">FLMs físicos e portas</h3>${table(rows,[['Painel','painel'],['Laço','laco'],['Piso','piso'],['Endereço FLM','endereco'],['Modelo','modelo'],['Portas / Ligações','portas',r=>r.portas||'-']],r=>`<button class="btn small secondary" onclick="formFlm('${r.id}')">✏️</button> <button class="btn small secondary" onclick="managePortas('${r.id}')">Portas</button> <button class="btn small danger" onclick="del('flms','${r.id}')">🗑</button>`)}</div>`}
-function renderLocais(){let q=filters.locaisQ||'';let rows=db.locais.filter(l=>!q||JSON.stringify(l).toUpperCase().includes(up(q))).map(l=>({...l,painel:paiName(l.painelId),laco:lacName(l.lacoId),flm:flmById(l.flmId)?.endereco||'',porta:db.portas.find(p=>p.id===l.portaId)?.numero||'',qtd:db.equipamentos.filter(e=>e.localId===l.id).length}));document.getElementById('locais').innerHTML=`<div class="card"><button class="btn" onclick="formLocal()">+ Criar nova loja/área</button><div class="toolbar"><div class="field"><label>Busca</label><input value="${esc(q)}" data-filter-input="1" data-filter-path="locaisQ" data-focus-key="locaisBusca" placeholder="Loja, piso, painel, laço..."></div></div></div><div class="card"><h3 class="sectionTitle">Lojas / Áreas vinculadas às portas</h3>${table(rows,[['Nome','nome'],['Classificação','tipo'],['Painel','painel'],['Laço','laco'],['Piso','piso'],['FLM','flm'],['Porta','porta'],['Qtd. equip.','qtd'],['Status','status',r=>`<span class="pill ${statusClass(r.status)}">${esc(r.status)}</span>`]],r=>`<button class="btn small secondary" onclick="openLocal('${r.id}')">Histórico</button> <button class="btn small secondary" onclick="formLocal('${r.id}')">✏️</button> <button class="btn small danger" onclick="del('locais','${r.id}')">🗑</button>`)}</div>`}
-function renderEquipamentos(){let f=filters.eq||{};let tipos=unique(db.equipamentos.map(e=>e.tipo));let modelos=unique(db.equipamentos.map(e=>e.modelo));let status=unique(db.equipamentos.map(e=>normalizeStatus(e.status)));let rows=db.equipamentos.filter(e=>(!f.painel||paiName(e.painelId)===f.painel)&&(!f.laco||lacName(e.lacoId)===f.laco)&&(!f.tipo||e.tipo===f.tipo)&&(!f.modelo||e.modelo===f.modelo)&&(!f.status||normalizeStatus(e.status)===f.status)&&(!f.q||JSON.stringify(e).toUpperCase().includes(up(f.q)))).map(e=>({...e,painel:paiName(e.painelId),laco:lacName(e.lacoId),loja:locName(e.localId),porta:db.portas.find(p=>p.id===e.portaId)?.numero||'',status:normalizeStatus(e.status)}));document.getElementById('equipamentos').innerHTML=`<div class="card"><button class="btn" onclick="formEquip()">+ Criar novo equipamento</button><div class="toolbar"><div class="field"><label>Painel</label><select onchange="filters.eq={...filters.eq,painel:this.value};render()">${selectOpts(unique(db.paineis.map(p=>p.nome)),f.painel)}</select></div><div class="field"><label>Laço</label><select onchange="filters.eq={...filters.eq,laco:this.value};render()">${selectOpts(unique(db.lacos.map(l=>l.nome)),f.laco)}</select></div><div class="field"><label>Tipo</label><select onchange="filters.eq={...filters.eq,tipo:this.value};render()">${selectOpts(tipos,f.tipo)}</select></div><div class="field"><label>Modelo</label><select onchange="filters.eq={...filters.eq,modelo:this.value};render()">${selectOpts(modelos,f.modelo)}</select></div><div class="field"><label>Status</label><select onchange="filters.eq={...filters.eq,status:this.value};render()">${selectOpts(status,f.status)}</select></div><div class="field"><label>Busca</label><input value="${esc(f.q)}" data-filter-input="1" data-filter-group="eq" data-filter-key="q" data-focus-key="equipBusca"></div></div></div><div class="card"><h3 class="sectionTitle">Equipamentos cadastrados — status operacional</h3>${table(rows,[['Painel','painel'],['Laço','laco'],['Piso','piso'],['Tipo','tipo'],['Endereço','endereco'],['Modelo','modelo'],['Loja/Área','loja'],['Porta','porta'],['Status','status',r=>`<span class="pill ${statusClass(r.status)}">${esc(r.status)}</span>`],['Última alteração','ultimaAlteracao']],r=>`<button class="btn small secondary" onclick="openEquip('${r.id}')">Histórico</button> <button class="btn small secondary" onclick="formEquip('${r.id}')">✏️</button> <button class="btn small danger" onclick="del('equipamentos','${r.id}')">🗑</button>`)}</div>`}
-function renderFalhas(){let f=filters.falhas||{};let rows=db.falhas.filter(x=>(!f.status||normalizeStatus(x.status)===f.status)&&(!f.tipo||x.tipo===f.tipo)&&(!f.q||JSON.stringify(x).toUpperCase().includes(up(f.q)))).map(x=>({...x,painel:paiName(x.painelId),laco:lacName(x.lacoId),loja:locName(x.localId)}));document.getElementById('falhas').innerHTML=`<div class="card"><button class="btn" onclick="formFalha()">+ Registrar falha / operação</button><div class="toolbar"><div class="field"><label>Tipo</label><select onchange="filters.falhas={...filters.falhas,tipo:this.value};render()">${selectOpts(unique(db.falhas.map(x=>x.tipo)),f.tipo)}</select></div><div class="field"><label>Status</label><select onchange="filters.falhas={...filters.falhas,status:this.value};render()">${selectOpts(unique(db.falhas.map(x=>normalizeStatus(x.status))),f.status)}</select></div><div class="field"><label>Busca</label><input value="${esc(f.q)}" data-filter-input="1" data-filter-group="falhas" data-filter-key="q" data-focus-key="falhasBusca"></div></div></div><div class="card"><h3 class="sectionTitle">Histórico e falhas</h3>${table(rows,[['Data','data'],['Painel','painel'],['Laço','laco'],['Piso','piso'],['Tipo','tipo'],['Item','itemNome'],['Loja','loja'],['Status','status',r=>`<span class="pill ${statusClass(r.status)}">${esc(r.status)}</span>`],['Origem','origem'],['Motivo','motivo'],['Resolvida em','resolvidaEm']],r=>`<button class="btn small secondary" onclick="formFalha('${r.id}')">✏️</button> <button class="btn small danger" onclick="del('falhas','${r.id}')">🗑</button>`)}</div>`}
+  </section>
 
-function planoCategorias(){return ['Substituição de material','Manutenção corretiva','Refazer teste','Reconfiguração de nome','Notificar logista']}
-function planoPrioridades(){return ['Crítica','Alta','Média','Baixa']}
-function planoResponsaveis(){return ['L3A Engenharia','Brigada','Logista','Shopping','Terceiro / Fornecedor']}
-function prioridadePeso(p){return {'Crítica':1,'Alta':2,'Média':3,'Baixa':4}[p]||9}
-function isFalhaStatus(s){s=up(normalizeStatus(s));return s.includes('FALHA')||s.includes('DESATIV')||s.includes('TESTE')}
-function itemInfoFromFalha(f){
-  let isFlm=String(f.itemId||'').startsWith('flm:'), item=isFlm?flmById(String(f.itemId).slice(4)):db.equipamentos.find(e=>e.id===f.itemId);
-  let localId=f.localId||item?.localId||'';
-  return {painel:paiName(f.painelId||item?.painelId),laco:lacName(f.lacoId||item?.lacoId),piso:f.piso||item?.piso||'',tipo:f.tipo||(isFlm?'Módulo':item?.tipo)||'',itemNome:f.itemNome||(isFlm?'Módulo ':'')+(item?.endereco||item?.modelo||''),local:locName(localId),localId,itemId:f.itemId||item?.id||'',falhaId:f.id||''}
-}
-function falhasAtivasParaPlano(){
-  let map={}; db.falhas.slice().sort((a,b)=>String(a.data).localeCompare(String(b.data))).forEach(f=>{let k=f.itemId||f.localId||f.id; map[k]=f});
-  return Object.values(map).filter(f=>isFalhaStatus(f.status));
-}
-function planoForFalha(fid){return db.planos.find(p=>p.falhaId===fid)}
-function renderPlano(){
-  let planos=db.planos||[];
-  let q=(document.getElementById('plBuscaPlano')?.value||'').toUpperCase();
-  let fcat=document.getElementById('plCat')?.value||'', fprio=document.getElementById('plPrio')?.value||'', fsit=document.getElementById('plSit')?.value||'', fresp=document.getElementById('plResp')?.value||'', ini=document.getElementById('plIni')?.value||'', fim=document.getElementById('plFim')?.value||'';
-  let falhas=falhasAtivasParaPlano();
-  let rows=[];
+  <section class="panel" id="tab-exportar">
+    <div class="section-title">Exportar relatório do Plano de Ação</div>
+    <div class="hint">Gera o texto na ordem fixa (Falhas de Comunicação → Correção de Cadastros → Integração CO₂ → Retestes SDAI → Lojas já regularizadas), com asterisco único e ✅ nas confirmadas.</div>
+    <button class="btn secondary" id="buildExport">Gerar texto do relatório</button>
+    <textarea class="export" id="exportArea" readonly placeholder="Toque no botão acima..."></textarea>
+    <button class="btn" id="copyExport">Copiar</button>
+    <div class="status-msg" id="statusMsg"></div>
 
-  // 1) Planos já criados: nunca somem da base, mesmo concluídos.
-  planos.forEach(p=>{
-    let f=db.falhas.find(x=>x.id===p.falhaId)||{};
-    let inf=f.id?itemInfoFromFalha(f):{};
-    rows.push({
-      origemLinha:'Plano',
-      falhaId:p.falhaId||'',
-      planoId:p.id,
-      prioridade:p.prioridade||'Média',
-      painel:inf.painel||p.painel||'',
-      laco:inf.laco||p.laco||'',
-      piso:inf.piso||p.piso||'',
-      local:inf.local||p.local||'',
-      itemNome:inf.itemNome||p.item||'',
-      statusFalha:f.status||p.statusFalha||'',
-      categoria:p.categoria||'',
-      responsavel:p.responsavel||'',
-      desde:f.data||p.criadoEm||'',
-      criadoEm:p.criadoEm||'',
-      concluidoEm:p.concluidoEm||'',
-      situacao:p.situacao||'Aberto',
-      justificativa:p.justificativa||'',
-      providencia:p.providencia||'',
-      necessitaCompra:p.necessitaCompra?'Sim':'Não'
-    });
-  });
+    <div class="section-title">Backup completo (Lojas + Equipamentos + Plano + Serviços + Atas)</div>
+    <div class="hint">Copie e cole na conversa com o Claude pedindo para salvar no Google Drive ou baixar como arquivo.</div>
+    <button class="btn secondary" id="buildBackup">Gerar backup completo</button>
+    <textarea class="export" id="backupArea" readonly placeholder="Toque no botão acima..."></textarea>
+    <button class="btn" id="copyBackup">Copiar backup completo</button>
+    <button class="btn ghost" id="downloadBackup">Baixar arquivo .json no computador</button>
+    <div class="status-msg" id="backupStatus"></div>
+  </section>
 
-  // 2) Falhas ativas sem plano: aparecem para permitir criar plano.
-  falhas.forEach(f=>{
-    if(planoForFalha(f.id)) return;
-    let inf=itemInfoFromFalha(f);
-    rows.push({
-      origemLinha:'Falha sem plano',
-      falhaId:f.id,
-      planoId:'',
-      prioridade:'Média',
-      painel:inf.painel||'',
-      laco:inf.laco||'',
-      piso:inf.piso||'',
-      local:inf.local||'',
-      itemNome:inf.itemNome||'',
-      statusFalha:f.status||'',
-      categoria:'',
-      responsavel:'',
-      desde:f.data||'',
-      criadoEm:'',
-      concluidoEm:'',
-      situacao:'Sem plano',
-      justificativa:f.motivo||f.obs||'',
-      providencia:'',
-      necessitaCompra:'Não'
-    });
-  });
+</main>
 
-  function inPeriodo(x){
-    if(!ini&&!fim) return true;
-    let datas=[x.desde,x.criadoEm,x.concluidoEm].filter(Boolean).map(String);
-    return datas.some(d=>(!ini||d>=ini)&&(!fim||d<=fim+'T23:59'));
-  }
-  function situacaoPeso(s){return {'Sem plano':0,'Aberto':1,'Em andamento':2,'Concluído':3}[s]??9}
-  let filtrados=rows.filter(x=>(!q||JSON.stringify(x).toUpperCase().includes(q))&&(!fcat||x.categoria===fcat)&&(!fprio||x.prioridade===fprio)&&(!fsit||x.situacao===fsit)&&(!fresp||x.responsavel===fresp)&&inPeriodo(x))
-    .sort((a,b)=>situacaoPeso(a.situacao)-situacaoPeso(b.situacao)||prioridadePeso(a.prioridade)-prioridadePeso(b.prioridade)||String(a.desde||a.criadoEm).localeCompare(String(b.desde||b.criadoEm)));
+<footer class="tabs">
+  <button data-tab="inicio" class="active"><span class="dot"></span>Início</button>
+  <button data-tab="cadastro"><span class="dot"></span>Cadastro</button>
+  <button data-tab="plano"><span class="dot"></span>Plano IA</button>
+  <button data-tab="servicos"><span class="dot"></span>Serviços</button>
+  <button data-tab="exportar"><span class="dot"></span>Exportar</button>
+</footer>
 
-  document.getElementById('plano').innerHTML=`
-    <div class="card"><h3 class="sectionTitle">Filtros do Plano de Ação</h3><div class="toolbar"><div class="field"><label>Busca</label><input id="plBuscaPlano" placeholder="Loja, laço, item, motivo..." value="${esc(document.getElementById('plBuscaPlano')?.value||'')}"></div><div class="field"><label>Categoria</label><select id="plCat">${selectOpts(planoCategorias(),fcat)}</select></div><div class="field"><label>Prioridade</label><select id="plPrio">${selectOpts(planoPrioridades(),fprio)}</select></div><div class="field"><label>Situação</label><select id="plSit">${selectOpts(['Sem plano','Aberto','Em andamento','Concluído'],fsit)}</select></div><div class="field"><label>Responsável</label><select id="plResp">${selectOpts(planoResponsaveis(),fresp)}</select></div><div class="field"><label>Inicial</label><input id="plIni" type="date" value="${esc(ini)}"></div><div class="field"><label>Final</label><input id="plFim" type="date" value="${esc(fim)}"></div><button class="btn" onclick="renderPlano()">Filtrar</button></div><p class="msg warn">Planos concluídos permanecem registrados para relatório e rastreabilidade.</p></div>
-    <div class="card"><h3 class="sectionTitle">Lançamentos e acompanhamento</h3>${table(filtrados,[['Prioridade','prioridade'],['Painel','painel'],['Laço','laco'],['Piso','piso'],['Loja / Área','local'],['Item','itemNome'],['Falha','statusFalha',r=>`<span class="pill ${statusClass(r.statusFalha)}">${esc(r.statusFalha)}</span>`],['Categoria','categoria'],['Responsável','responsavel'],['Desde','desde'],['Situação','situacao',r=>`<span class="pill ${r.situacao==='Concluído'?'ok':r.situacao==='Sem plano'?'warn':''}">${esc(r.situacao)}</span>`],['Concluído em','concluidoEm']],r=>`${r.planoId?`<button class="btn small secondary" onclick="formPlano('${r.planoId}')">✏️ Editar</button>`:`<button class="btn small" onclick="formPlano('', '${r.falhaId}')">+ Criar</button>`} ${r.planoId&&r.situacao!=='Concluído'?`<button class="btn small" onclick="concluirPlano('${r.planoId}')">✅ Concluir</button>`:''}`)}</div>`;
-  ['plBuscaPlano','plCat','plPrio','plSit','plResp','plIni','plFim'].forEach(id=>{let el=document.getElementById(id); if(el)el.onchange=renderPlano});
-}
-
-function renderImportacao(){document.getElementById('importacao').innerHTML=`<div class="card"><h3 class="sectionTitle">Importar CSV / XLS / XLSX</h3><div class="toolbar"><div class="field"><label>Arquivo</label><input type="file" id="fileImp" accept=".csv,.xls,.xlsx"></div><div class="field"><label>Modo</label><select id="modeImp"><option value="diff">Somente diferença</option><option value="overwrite">Sobrescrever iguais preservando histórico</option><option value="replace">Apagar dados atuais e importar do zero</option></select></div></div><p class="msg warn"><b>Colunas esperadas:</b> Painel, Laço, Piso, Endereço FLM, Porta, Loja, Tipo, Modelo, Endereço, Fabricante, Status, Observação. O sistema valida antes de importar.</p><button class="btn secondary" onclick="previewImport()">Pré-visualizar / validar</button> <button class="btn" onclick="importFile()">Importar</button><div id="impMsg"></div><div id="previewBox"></div></div><div class="card"><h3 class="sectionTitle">Último diagnóstico de importação</h3>${lastImportHtml()}</div>`}
-function lastImportHtml(){let r=db.imports.at(-1); if(!r)return '<p class="msg warn">Nenhuma importação executada.</p>'; let cards=Object.entries(r.stats).map(([k,v])=>`<div class="diagItem"><small>${esc(k)}</small><b>${esc(v)}</b></div>`).join(''); let rom=r.romannel?`<div class="msg ${r.romannel.ok?'ok':'err'}">ROMANNEL: ${esc(r.romannel.msg)}</div>`:''; return `${rom}<div class="diag">${cards}</div><h4>Erros / ignorados</h4>${table(r.errors||[],[['Linha','linha'],['Motivo','motivo'],['Registro','registro']])}`}
-function renderExportacao(){document.getElementById('exportacao').innerHTML=`<div class="card"><h3 class="sectionTitle">Exportações</h3><div class="toolbar"><button class="btn" onclick="exportJson()">Base completa JSON</button><button class="btn" onclick="exportAllCsv()">Base completa CSV</button><button class="btn secondary" onclick="exportEntity('locais')">Lojas / Áreas</button><button class="btn secondary" onclick="exportEntity('flms')">FLMs</button><button class="btn secondary" onclick="exportEntity('equipamentos')">Equipamentos</button><button class="btn secondary" onclick="exportEntity('planos')">Plano de ação</button><button class="btn secondary" onclick="exportEntity('inconsistencias')">Inconsistências</button><button class="btn danger" onclick="if(confirm('Apagar toda base local?'))clearAll()">Limpar base local</button></div></div>`}
-function reportData(){let ini=document.getElementById('repIni')?.value||'',fim=document.getElementById('repFim')?.value||'',painel=document.getElementById('repPainel')?.value||''; let fal=db.falhas.filter(f=>(!painel||paiName(f.painelId)===painel)&&(!ini||f.data>=ini)&&(!fim||f.data<=fim+'T23:59')); let lanc=fal.filter(f=>up(f.status).includes('FALHA')).length; let resol=fal.filter(f=>up(f.status).includes('OPER')||f.resolvidaEm).length; let byPainel={}; db.paineis.filter(p=>!painel||p.nome===painel).forEach(p=>{byPainel[p.nome]={op:0,falha:0,tipos:{}}}); db.equipamentos.forEach(e=>{let pn=paiName(e.painelId); if(!byPainel[pn])return; let st=up(e.status).includes('FALHA')?'falha':'op'; byPainel[pn][st]++; byPainel[pn].tipos[e.tipo]=(byPainel[pn].tipos[e.tipo]||{op:0,falha:0}); byPainel[pn].tipos[e.tipo][st]++}); db.flms.forEach(f=>{let pn=paiName(f.painelId); if(!byPainel[pn])return; let st=up(f.status).includes('FALHA')?'falha':'op'; byPainel[pn][st]++; byPainel[pn].tipos['Módulo']=(byPainel[pn].tipos['Módulo']||{op:0,falha:0}); byPainel[pn].tipos['Módulo'][st]++}); return {ini,fim,painel,fal,lanc,resol,byPainel}}
-function renderRelatorios(){let pain=unique(db.paineis.map(p=>p.nome));document.getElementById('relatorios').innerHTML=`<div class="card hidePrint"><h3 class="sectionTitle">Central de relatórios</h3><p class="msg warn">Escolha o período e o painel. Você pode apenas visualizar na tela ou gerar PDF para envio ao cliente.</p><div class="toolbar"><div class="field"><label>Data inicial</label><input type="date" id="repIni"></div><div class="field"><label>Data final</label><input type="date" id="repFim"></div><div class="field"><label>Painel</label><select id="repPainel">${selectOpts(pain)}</select></div><button class="btn" onclick="drawReport()">Visualizar relatório</button><button class="btn secondary" onclick="drawReport();setTimeout(()=>window.print(),250)">Gerar PDF</button></div></div><div id="reportOut" class="printArea"></div>`}
-function pct(v,t){return t?Math.round((v/t)*100):0}
-function chartBarRows(rows,max){return `<div class="chartBars">${rows.map(r=>`<div class="chartLine"><b>${esc(r.label)}</b><div class="chartTrack"><i class="${r.cls||''}" style="width:${Math.max(2,pct(r.value,max))}%"></i></div><strong>${r.value}</strong></div>`).join('')}</div>`}
-function donutChart(ok,bad){let total=ok+bad,deg=total?Math.round((bad/total)*360):0;return `<div class="donutWrap"><div class="donut" style="--deg:${deg}deg"></div><div class="legend"><span><i class="dot ok"></i>Em operação: ${ok}</span><span><i class="dot bad"></i>Em falha: ${bad}</span><span>Total: ${total}</span></div></div>`}
-
-function reportPlanoBlock(r){let ini=r.ini||'',fim=r.fim||'';let plans=(db.planos||[]).filter(p=>(!r.painel||p.painel===r.painel)&&(!ini||String(p.criadoEm||p.atualizadoEm)>=ini)&&(!fim||String(p.criadoEm||p.atualizadoEm)<=fim+'T23:59'));let ab=plans.filter(p=>p.situacao!=='Concluído').length, co=plans.filter(p=>p.situacao==='Concluído').length;let cat=planoCategorias().map(c=>({label:c,value:plans.filter(p=>p.categoria===c).length})).filter(x=>x.value);let pend=plans.filter(p=>p.situacao!=='Concluído').sort((a,b)=>prioridadePeso(a.prioridade)-prioridadePeso(b.prioridade)||String(a.criadoEm).localeCompare(String(b.criadoEm))).slice(0,20);return `<div class="reportBlock"><h3>Plano de Ação</h3><div class="grid">${kpi('Planos criados',plans.length)}${kpi('Planos concluídos',co)}${kpi('Planos em aberto',ab)}${kpi('Pendências críticas',plans.filter(p=>p.prioridade==='Crítica'&&p.situacao!=='Concluído').length)}</div><div class="chartGrid"><div class="chartPanel"><h4>Plano por categoria</h4>${chartBarRows(cat,Math.max(1,...cat.map(x=>x.value)))}</div><div class="chartPanel"><h4>Situação dos planos</h4>${chartBarRows([{label:'Aberto',value:plans.filter(p=>p.situacao==='Aberto').length},{label:'Em andamento',value:plans.filter(p=>p.situacao==='Em andamento').length},{label:'Concluído',value:co,cls:'ok'}],Math.max(1,plans.length))}</div></div><h4>Pendências abertas</h4>${table(pend,[['Prioridade','prioridade'],['Local','local'],['Item','item'],['Categoria','categoria'],['Responsável','responsavel'],['Situação','situacao'],['Criado em','criadoEm']])}</div>`}
-
-function drawReport(){let r=reportData(); let geral=Object.values(r.byPainel).reduce((a,d)=>{a.op+=d.op;a.falha+=d.falha;Object.entries(d.tipos).forEach(([t,v])=>{a.tipos[t]=a.tipos[t]||{op:0,falha:0};a.tipos[t].op+=(v.op||0);a.tipos[t].falha+=(v.falha||0)});return a},{op:0,falha:0,tipos:{}});let maxPain=Math.max(1,...Object.values(r.byPainel).map(d=>d.op+d.falha));let painelChart=chartBarRows(Object.entries(r.byPainel).map(([pn,d])=>({label:pn,value:d.op+d.falha})),maxPain);let tipoRows=Object.entries(geral.tipos).map(([t,v])=>({label:t,value:(v.op||0)+(v.falha||0)}));let tipoChart=chartBarRows(tipoRows,Math.max(1,...tipoRows.map(x=>x.value)));let painBlocks=Object.entries(r.byPainel).map(([pn,d])=>{let lacos=db.lacos.filter(l=>paiName(l.painelId)===pn).map(l=>{let eq=db.equipamentos.filter(e=>e.lacoId===l.id);let fl=db.flms.filter(f=>f.lacoId===l.id);let tipos={}; eq.forEach(e=>{tipos[e.tipo]=tipos[e.tipo]||{op:0,falha:0}; tipos[e.tipo][up(e.status).includes('FALHA')?'falha':'op']++}); fl.forEach(f=>{tipos['Módulo']=tipos['Módulo']||{op:0,falha:0}; tipos['Módulo'][up(f.status).includes('FALHA')?'falha':'op']++});let totalL=Object.values(tipos).reduce((a,v)=>a+(v.op||0)+(v.falha||0),0);let falhaL=Object.values(tipos).reduce((a,v)=>a+(v.falha||0),0);return `<div class="reportBlock"><b>${esc(l.nome)} — ${totalL} itens / ${falhaL} em falha</b><div class="premiumTable">${table(Object.entries(tipos).map(([t,v])=>({tipo:t,operacao:v.op||0,falha:v.falha||0,total:(v.op||0)+(v.falha||0)})),[['Tipo','tipo'],['Em operação','operacao'],['Falha','falha'],['Total','total']])}</div></div>`}).join('');let rowsTipo=Object.entries(d.tipos).map(([t,v])=>({tipo:t,operacao:v.op||0,falha:v.falha||0,total:(v.op||0)+(v.falha||0)}));return `<div class="reportBlock"><h3>${esc(pn)}</h3><div class="miniChart"><div class="chartCard"><h4>Em operação</h4><b>${d.op}</b></div><div class="chartCard"><h4>Em falha</h4><b>${d.falha}</b></div><div class="chartCard"><h4>Disponibilidade</h4><b>${pct(d.op,d.op+d.falha)}%</b></div></div><div class="chartPanel"><h4>Status do painel</h4>${donutChart(d.op,d.falha)}</div><h4>Compilado por tipo</h4><div class="premiumTable">${table(rowsTipo,[['Tipo','tipo'],['Em operação','operacao'],['Falha','falha'],['Total','total']])}</div><h4>Por laço</h4>${lacos}</div>`}).join('');document.getElementById('reportOut').innerHTML=`<div class="card"><div class="reportCover"><h2>Relatório Técnico SDAI Bosch</h2><p>Setup Soluções Integradas • Diagnóstico operacional do sistema de detecção e alarme de incêndio</p><div class="reportMeta"><span>Período: ${esc(r.ini||'início')} até ${esc(r.fim||'atual')}</span><span>Painel: ${esc(r.painel||'Todos')}</span><span>Gerado em: ${now()}</span></div></div><div class="grid">${kpi('Falhas lançadas no período',r.lanc)}${kpi('Falhas resolvidas no período',r.resol)}${kpi('Itens em operação',geral.op)}${kpi('Itens em falha',geral.falha)}${kpi('Disponibilidade',pct(geral.op,geral.op+geral.falha)+'%')}${kpi('Total avaliado',geral.op+geral.falha)}</div><div class="chartGrid"><div class="chartPanel"><h4>Status geral do sistema</h4>${donutChart(geral.op,geral.falha)}</div><div class="chartPanel"><h4>Dispositivos por tipo</h4>${tipoChart}</div><div class="chartPanel"><h4>Total por painel</h4>${painelChart}</div><div class="chartPanel"><h4>Movimentação no período</h4>${chartBarRows([{label:'Falhas lançadas',value:r.lanc,cls:'bad'},{label:'Falhas resolvidas',value:r.resol,cls:'ok'}],Math.max(1,r.lanc,r.resol))}</div></div><div class="reportBlock"><h3>Compilado geral por tipo</h3><div class="premiumTable">${table(Object.entries(geral.tipos).map(([t,v])=>({tipo:t,operacao:v.op||0,falha:v.falha||0,total:(v.op||0)+(v.falha||0)})),[['Tipo','tipo'],['Em operação','operacao'],['Falha','falha'],['Total','total']])}</div></div>${painBlocks}${reportPlanoBlock(r)}<div class="reportBlock"><h3>Conclusão técnica</h3><p>Relatório compilado sem listagem nominal de todas as lojas, priorizando indicadores por painel, laço, tipo de dispositivo e status operacional. A base segue a estrutura Empreendimento → Painel → Laço → FLM físico → Porta → Loja/Área → Equipamentos → Histórico de falhas.</p></div><div class="reportFooter"><span>Setup Soluções Integradas</span><span>Documento técnico gerado pelo SDAI Bosch Manager</span></div></div>`}
-async function readRows(){let f=document.getElementById('fileImp').files[0]; if(!f)throw new Error('Selecione um arquivo.'); let ext=f.name.split('.').pop().toLowerCase(); let data=await f.arrayBuffer(); if(ext==='csv'){let txt=new TextDecoder('utf-8').decode(data); return parseCSV(txt)} if(typeof XLSX==='undefined')throw new Error('Biblioteca XLSX não carregada. Para XLS/XLSX, abra com internet ou use CSV.'); let wb=XLSX.read(data,{type:'array'}); let rows=[]; wb.SheetNames.forEach(sn=>{rows=rows.concat(XLSX.utils.sheet_to_json(wb.Sheets[sn],{defval:''}))}); return rows}
-function parseCSV(txt){let sep=(txt.split('\n')[0].match(/;/g)||[]).length>=(txt.split('\n')[0].match(/,/g)||[]).length?';':','; let lines=txt.split(/\r?\n/).filter(x=>x.trim()); if(!lines.length)return []; let headers=splitCSV(lines[0],sep); return lines.slice(1).map(l=>{let vals=splitCSV(l,sep),o={};headers.forEach((h,i)=>o[h]=vals[i]||'');return o})}
-function splitCSV(line,sep){let out=[],cur='',q=false; for(let i=0;i<line.length;i++){let ch=line[i]; if(ch==='"'){if(q&&line[i+1]==='"'){cur+='"';i++}else q=!q}else if(ch===sep&&!q){out.push(cur);cur=''}else cur+=ch} out.push(cur); return out}
-async function previewImport(){try{let rows=await readRows(); let v=validateRows(rows); document.getElementById('previewBox').innerHTML=`<div class="msg ${v.ok?'ok':'err'}">${v.ok?'Arquivo validado':'Arquivo com inconsistências'}: ${rows.length} registros lidos.</div>${table(rows.slice(0,20),Object.keys(rows[0]||{}).map(k=>[k,k]))}${v.errors.length?table(v.errors,[['Linha','linha'],['Motivo','motivo'],['Registro','registro']]):''}`}catch(e){document.getElementById('impMsg').innerHTML=`<div class="msg err">${esc(e.message)}</div>`}}
-function validateRows(rows){let errors=[]; if(!rows.length)errors.push({linha:0,motivo:'Arquivo vazio',registro:''}); let cols=Object.keys(rows[0]||{}).map(normKey); ['PAINEL','LACO','TIPO','MODELO'].forEach(c=>{if(!cols.some(x=>x.includes(c)))errors.push({linha:1,motivo:'Coluna obrigatória ausente: '+c,registro:Object.keys(rows[0]||{}).join(', ')})}); return {ok:!errors.length,errors}}
-async function importFile(){try{let rows=await readRows(); let mode=document.getElementById('modeImp').value; let v=validateRows(rows); if(!v.ok)throw new Error(v.errors.map(e=>e.motivo).join(' | ')); if(mode==='replace')db=emptyDB(); let stats={registrosLidos:rows.length,paineis:0,lacos:0,flms:0,portas:0,lojasCriadas:0,areasTecnicas:0,areasComuns:0,detectores:0,acionadores:0,modulos:0,ignorados:0}; let errors=[],rom={ok:false,msg:'Não localizada no arquivo.'}; rows.forEach((r,i)=>{let linha=i+2; try{let painel=get(r,['Painel','Central']); let laco=get(r,['Laço','Laco','Loop']); let piso=get(r,['Piso','Pavimento']); let endFlm=get(r,['Endereço FLM','Endereco FLM','FLM','Módulo','Modulo']); let porta=get(r,['Porta','Canal','Porta / Ligação','Porta Ligação']); let loja=get(r,['Loja','Local','Área','Area','Ambiente']); let tipo=get(r,['Tipo','Classificação','Classificacao']); let modelo=get(r,['Modelo','Dispositivo','Nome do dispositivo']); let endereco=get(r,['Endereço','Endereco','Zona','Endereço Equipamento']); let fab=get(r,['Fabricante']); let status=normalizeStatus(get(r,['Status'])||'Em operação'); let obs=get(r,['Observação','Observacao','Obs']); if(!painel||!laco){stats.ignorados++; errors.push({linha,motivo:'Painel ou laço ausente',registro:JSON.stringify(r)}); return} let p0=db.paineis.length,l0=db.lacos.length,f0=db.flms.length,pt0=db.portas.length,loc0=db.locais.length; let p=ensurePanel(painel); let l=ensureLaco(p.id,laco,piso); stats.paineis+=db.paineis.length>p0?1:0; stats.lacos+=db.lacos.length>l0?1:0; let classe=classifyDevice(modelo,tipo,loja); let isModulo=classe==='Módulo'; let flm=null,portaObj=null,local=null; if(isModulo||endFlm){flm=ensureFlm(p.id,l.id,endFlm||endereco||modelo,modelo||'FLM',piso); stats.flms+=db.flms.length>f0?1:0; stats.modulos+=db.flms.length>f0?1:0; if(porta||loja){portaObj=ensurePorta(flm.id,porta||'1'); stats.portas+=db.portas.length>pt0?1:0} if(loja){local=ensureLocal(loja,localClass(loja),p.id,l.id,piso,flm.id,portaObj?.id); if(portaObj)local.portaId=portaObj.id, portaObj.localId=local.id; let created=db.locais.length>loc0; if(created){if(local.tipo==='Loja')stats.lojasCriadas++; if(local.tipo==='Área Técnica')stats.areasTecnicas++; if(local.tipo==='Área Comum')stats.areasComuns++} if(up(loja).includes('ROMANNEL'))rom={ok:true,msg:`Importada/vinculada ao ${painel} • ${laco} • FLM ${flm.endereco} • Porta ${portaObj?.numero||porta||'1'}.`}} } else { if(loja){local=db.locais.find(x=>up(x.nome)===up(loja)); if(!local){let areaTipo=equipAreaClass(loja,modelo,tipo); if(areaTipo){local=ensureLocal(loja,areaTipo,p.id,l.id,piso,'',''); if(up(loja).includes('ROMANNEL'))rom={ok:false,msg:'ROMANNEL apareceu em registro de equipamento/área. Não foi criada como loja; foi tratada como '+areaTipo+'.'} } else { if(up(loja).includes('ROMANNEL'))rom={ok:false,msg:'ROMANNEL apareceu em registro de equipamento, mas loja só é criada por porta de FLM. Registro não criou loja.'}; errors.push({linha,motivo:'Equipamento não cria loja. Loja informada não existe por porta de FLM: '+loja,registro:JSON.stringify(r)}) }}} let res=ensureEquip({painelId:p.id,lacoId:l.id,piso,tipo:classe,endereco:endereco||get(r,['Zona'])||'',modelo,fabricante:fab,localId:local?.id||'',flmId:flm?.id||'',portaId:portaObj?.id||'',status,ultimaAlteracao:isoNow(),obs},mode); if(res.created){if(classe.includes('Detector'))stats.detectores++; else if(classe.includes('Acionador'))stats.acionadores++;} }
-      }catch(e){stats.ignorados++; errors.push({linha,motivo:e.message,registro:JSON.stringify(r)})}}); stats.lojasCriadas=db.locais.filter(x=>x.tipo==='Loja').length; stats.areasTecnicas=db.locais.filter(x=>x.tipo==='Área Técnica').length; stats.areasComuns=db.locais.filter(x=>x.tipo==='Área Comum').length; stats.detectores=db.equipamentos.filter(x=>x.tipo.includes('Detector')).length; stats.acionadores=db.equipamentos.filter(x=>x.tipo.includes('Acionador')).length; stats.modulos=db.flms.length; stats.flms=db.flms.length; stats.portas=db.portas.length; stats.paineis=db.paineis.length; stats.lacos=db.lacos.length; stats.ignorados=errors.length; db.inconsistencias=errors; db.imports.push({data:isoNow(),stats,errors,romannel:rom}); localStorage.setItem(KEY,JSON.stringify(db)); render(); document.getElementById('impMsg').innerHTML=`<div class="msg ok">Importação concluída. DFO/FAP/ACM/DM210/SM210/FMC são importados como equipamentos vinculados a Área Comum/Técnica, sem criar loja.</div>`}catch(e){document.getElementById('impMsg').innerHTML=`<div class="msg err">${esc(e.message)}</div>`}}
-function openModal(html){document.getElementById('drawer').innerHTML=html;document.getElementById('modal').classList.add('show')} function closeModal(){document.getElementById('modal').classList.remove('show')} document.getElementById('modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal()})
-function formPainel(i=''){let o=db.paineis.find(x=>x.id===i)||{};openModal(`<h2>${i?'Editar':'Novo'} Painel</h2><div class="formGrid"><div class="field"><label>Nome</label><input id="mNome" value="${esc(o.nome)}"></div><div class="field"><label>Modelo</label><input id="mModelo" value="${esc(o.modelo)}"></div><div class="field"><label>Localização</label><input id="mLoc" value="${esc(o.localizacao)}"></div><div class="field"><label>Observação</label><input id="mObs" value="${esc(o.obs)}"></div></div><br><button class="btn" onclick="savePainel('${i}')">Salvar</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`)}
-function savePainel(i){let o=i?db.paineis.find(x=>x.id===i):{id:id()}; o.nome=n(mNome.value);o.modelo=n(mModelo.value);o.localizacao=n(mLoc.value);o.obs=n(mObs.value); if(!i)db.paineis.push(o); closeModal(); save()}
-function formLaco(i=''){let o=db.lacos.find(x=>x.id===i)||{};openModal(`<h2>${i?'Editar':'Novo'} Laço</h2><div class="formGrid"><div class="field"><label>Painel</label><select id="mPainel">${db.paineis.map(p=>`<option value="${p.id}" ${p.id===o.painelId?'selected':''}>${esc(p.nome)}</option>`)}</select></div><div class="field"><label>Laço</label><input id="mNome" value="${esc(o.nome)}"></div><div class="field"><label>Piso</label><input id="mPiso" value="${esc(o.piso)}"></div><div class="field"><label>Obs</label><input id="mObs" value="${esc(o.obs)}"></div></div><br><button class="btn" onclick="saveLaco('${i}')">Salvar</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`)}
-function saveLaco(i){let o=i?db.lacos.find(x=>x.id===i):{id:id()}; o.painelId=mPainel.value;o.nome=n(mNome.value);o.piso=n(mPiso.value);o.obs=n(mObs.value); if(!i)db.lacos.push(o); closeModal(); save()}
-function formFlm(i=''){let o=db.flms.find(x=>x.id===i)||{};let pisos=unique(db.flms.map(x=>x.piso).concat(db.lacos.map(x=>x.piso),db.locais.map(x=>x.piso),db.equipamentos.map(x=>x.piso)));let modelos=unique(db.flms.map(x=>x.modelo));if(o.piso&&!pisos.includes(o.piso))pisos.push(o.piso);if(o.modelo&&!modelos.includes(o.modelo))modelos.push(o.modelo);openModal(`<h2>${i?'Editar':'Novo'} FLM físico</h2><div class="formGrid"><div class="field"><label>Painel</label><select id="mPainel">${db.paineis.map(p=>`<option value="${p.id}" ${p.id===o.painelId?'selected':''}>${esc(p.nome)}</option>`)}</select></div><div class="field"><label>Laço</label><select id="mLaco">${db.lacos.map(l=>`<option value="${l.id}" ${l.id===o.lacoId?'selected':''}>${esc(paiName(l.painelId)+' - '+l.nome)}</option>`)}</select></div><div class="field"><label>Endereço FLM</label><input id="mEnd" value="${esc(o.endereco)}"></div><div class="field"><label>Modelo</label><input id="mModelo" list="listaModelosFlm" value="${esc(o.modelo||modelos[0]||'FLM')}"><datalist id="listaModelosFlm">${modelos.map(v=>`<option value="${esc(v)}"></option>`).join('')}</datalist></div><div class="field"><label>Piso</label><select id="mPiso"><option value="">Selecione</option>${pisos.map(v=>`<option value="${esc(v)}" ${v===o.piso?'selected':''}>${esc(v)}</option>`).join('')}</select></div></div><br><button class="btn" onclick="saveFlm('${i}')">Salvar</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`)}
-function saveFlm(i){let o=i?db.flms.find(x=>x.id===i):{id:id(),status:'Em operação'}; o.painelId=mPainel.value;o.lacoId=mLaco.value;o.endereco=n(mEnd.value);o.modelo=n(mModelo.value)||'FLM';o.piso=n(mPiso.value); if(!i)db.flms.push(o); closeModal(); save()}
-function managePortas(flmId){let f=flmById(flmId); let ps=db.portas.filter(p=>p.flmId===flmId); openModal(`<h2>Portas do FLM ${esc(f?.endereco)}</h2>${table(ps.map(p=>({...p,loja:locName(p.localId)})),[['Porta','numero'],['Loja / Área','loja'],['Ligação','ligacao']],p=>`<button class="btn small secondary" onclick="formPorta('${flmId}','${p.id}')">✏️</button> <button class="btn small danger" onclick="del('portas','${p.id}')">🗑</button>`)}<br><button class="btn" onclick="formPorta('${flmId}')">+ Porta</button> <button class="btn secondary" onclick="closeModal()">Fechar</button>`)}
-function formPorta(flmId,pid=''){let p=db.portas.find(x=>x.id===pid)||{flmId};openModal(`<h2>${pid?'Editar':'Nova'} Porta</h2><div class="formGrid"><div class="field"><label>Número</label><select id="mNum"><option ${p.numero==='1'?'selected':''}>1</option><option ${p.numero==='2'?'selected':''}>2</option></select></div><div class="field"><label>Loja / Área</label><select id="mLocal"><option value="">Sem vínculo</option>${db.locais.map(l=>`<option value="${l.id}" ${l.id===p.localId?'selected':''}>${esc(l.nome)}</option>`)}</select></div><div class="field"><label>Ligação</label><input id="mLig" value="${esc(p.ligacao)}"></div></div><br><button class="btn" onclick="savePorta('${flmId}','${pid}')">Salvar</button>`)}
-function savePorta(flmId,pid){let p=pid?db.portas.find(x=>x.id===pid):{id:id(),flmId};p.numero=mNum.value;p.localId=mLocal.value;p.ligacao=mLig.value;if(!pid)db.portas.push(p);let loc=localById(p.localId);if(loc){loc.flmId=flmId;loc.portaId=p.id} closeModal(); save()}
-function formLocal(i=''){let o=db.locais.find(x=>x.id===i)||{};openModal(`<h2>${i?'Editar':'Nova'} Loja / Área</h2><div class="formGrid"><div class="field"><label>Nome</label><input id="mNome" value="${esc(o.nome)}"></div><div class="field"><label>Classificação</label><select id="mTipo"><option ${o.tipo==='Loja'?'selected':''}>Loja</option><option ${o.tipo==='Área Técnica'?'selected':''}>Área Técnica</option><option ${o.tipo==='Área Comum'?'selected':''}>Área Comum</option></select></div><div class="field"><label>Piso</label><input id="mPiso" value="${esc(o.piso)}"></div><div class="field"><label>Status</label><select id="mStatus"><option>Em operação</option><option>Falha logista</option><option>Falha sistema</option><option>Desativada</option></select></div></div><br><button class="btn" onclick="saveLocal('${i}')">Salvar</button>`)}
-function saveLocal(i){let o=i?db.locais.find(x=>x.id===i):{id:id(),ultimaAlteracao:isoNow()}; if(i&&o.nome!==n(mNome.value))db.falhas.push({id:id(),data:isoNow(),tipo:'Alteração cadastral',itemId:o.id,itemNome:o.nome,localId:o.id,status:'Nome alterado',motivo:`Nome anterior: ${o.nome} | Novo: ${n(mNome.value)}`,origem:'Cadastro'}); o.nome=n(mNome.value);o.tipo=mTipo.value;o.piso=n(mPiso.value);o.status=mStatus.value;if(!i)db.locais.push(o);closeModal();save()}
-function formEquip(i=''){let o=db.equipamentos.find(x=>x.id===i)||{};openModal(`<h2>${i?'Editar':'Novo'} Equipamento</h2><div class="formGrid"><div class="field"><label>Painel</label><select id="mPainel">${db.paineis.map(p=>`<option value="${p.id}" ${p.id===o.painelId?'selected':''}>${esc(p.nome)}</option>`)}</select></div><div class="field"><label>Laço</label><select id="mLaco">${db.lacos.map(l=>`<option value="${l.id}" ${l.id===o.lacoId?'selected':''}>${esc(paiName(l.painelId)+' - '+l.nome)}</option>`)}</select></div><div class="field"><label>Tipo</label><input id="mTipo" value="${esc(o.tipo)}" placeholder="Detector de Fumaça, Acionador Manual..."></div><div class="field"><label>Endereço</label><input id="mEnd" value="${esc(o.endereco)}"></div><div class="field"><label>Modelo</label><input id="mModelo" value="${esc(o.modelo)}"></div><div class="field"><label>Piso</label><input id="mPiso" value="${esc(o.piso)}"></div><div class="field"><label>Loja / Área</label><select id="mLocal"><option value="">Sem vínculo</option>${db.locais.map(l=>`<option value="${l.id}" ${l.id===o.localId?'selected':''}>${esc(l.nome)}</option>`)}</select></div><div class="field"><label>Status</label><select id="mStatus">${['Em operação','Falha logista','Falha sistema','Desativada','Em teste'].map(st=>`<option ${normalizeStatus(o.status)===st?'selected':''}>${st}</option>`).join('')}</select></div></div><br><button class="btn" onclick="saveEquip('${i}')">Salvar</button>`)}
-function saveEquip(i){let o=i?db.equipamentos.find(x=>x.id===i):{id:id(),ultimaAlteracao:isoNow()}; o.painelId=mPainel.value;o.lacoId=mLaco.value;o.tipo=n(mTipo.value);o.endereco=n(mEnd.value);o.modelo=n(mModelo.value);o.piso=n(mPiso.value);o.localId=mLocal.value;o.status=normalizeStatus(mStatus.value);o.ultimaAlteracao=isoNow(); if(!i)db.equipamentos.push(o);closeModal();save()}
-function falhaItems(){
-  const eq=db.equipamentos.map(e=>({id:e.id,n:`${e.tipo} • ${e.endereco||'sem endereço'} • ${locName(e.localId)||'Sem vínculo'}`,tipo:e.tipo,painelId:e.painelId,lacoId:e.lacoId,piso:e.piso,localId:e.localId,kind:'equip'}));
-  const fl=db.flms.map(f=>{const ps=db.portas.filter(p=>p.flmId===f.id);const locs=ps.map(p=>p.localId).filter(Boolean);const label=ps.map(p=>`P${p.numero}: ${locName(p.localId)||'Sem vínculo'}`).join(' | ');return {id:'flm:'+f.id,n:`Módulo • ${f.endereco||f.modelo||'sem endereço'}${label?' • '+label:''}`,tipo:'Módulo',painelId:f.painelId,lacoId:f.lacoId,piso:f.piso,localId:'',localIds:locs,kind:'flm'}});
-  return eq.concat(fl);
-}
-function getFalhaFilterValues(){return {
-  painel:document.getElementById('mFiltroPainel')?.value||'',
-  laco:document.getElementById('mFiltroLaco')?.value||'',
-  piso:document.getElementById('mFiltroPiso')?.value||'',
-  local:document.getElementById('mFiltroLocal')?.value||'',
-  item:document.getElementById('mItem')?.value||''
-}}
-function itemMatchesFalhaFilters(it,f){
-  if(f.painel && paiName(it.painelId)!==f.painel)return false;
-  if(f.laco && lacName(it.lacoId)!==f.laco)return false;
-  if(f.piso && n(it.piso)!==f.piso)return false;
-  if(f.local){
-    const locOk=it.localId===f.local || (it.localIds||[]).includes(f.local);
-    if(!locOk)return false;
-  }
-  return true;
-}
-function falhaFilteredItems(ignoreField=''){
-  const f=getFalhaFilterValues(); if(ignoreField)f[ignoreField]='';
-  return falhaItems().filter(it=>itemMatchesFalhaFilters(it,f));
-}
-function refreshFalhaFilters(changed=''){
-  const f=getFalhaFilterValues();
-  const fill=(id,vals,sel,allLabel='Todos')=>{const el=document.getElementById(id); if(!el)return; const keep=vals.includes(sel)?sel:''; el.innerHTML=`<option value="">${allLabel}</option>`+vals.map(v=>`<option value="${esc(v)}" ${v===keep?'selected':''}>${esc(v)}</option>`).join('')};
-  fill('mFiltroPainel',unique(falhaFilteredItems('painel').map(it=>paiName(it.painelId))),f.painel,'Todos os painéis');
-  fill('mFiltroLaco',unique(falhaFilteredItems('laco').map(it=>lacName(it.lacoId))),f.laco,'Todos os laços');
-  fill('mFiltroPiso',unique(falhaFilteredItems('piso').map(it=>it.piso)),f.piso,'Todos os pisos');
-  const localIds=unique(falhaFilteredItems('local').flatMap(it=>[it.localId,...(it.localIds||[])]));
-  const localOpts=localIds.map(id=>({id,nome:locName(id)})).filter(x=>x.id&&x.nome).sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
-  const locEl=document.getElementById('mFiltroLocal'); if(locEl){const keep=localIds.includes(f.local)?f.local:''; locEl.innerHTML='<option value="">Todas as lojas/áreas</option>'+localOpts.map(x=>`<option value="${x.id}" ${x.id===keep?'selected':''}>${esc(x.nome)}</option>`).join('')}
-  const items=falhaFilteredItems();
-  const itemEl=document.getElementById('mItem'); if(itemEl){const keep=items.some(x=>x.id===f.item)?f.item:''; itemEl.innerHTML=items.map(it=>`<option value="${it.id}" ${it.id===keep?'selected':''}>${esc(it.n)}</option>`).join('')||'<option value="">Nenhum item encontrado</option>'}
-  const hint=document.getElementById('mFalhaHint'); if(hint){hint.textContent=`${items.length} item(ns) disponível(is) com os filtros aplicados.`}
-}
-function bindFalhaModal(){['mFiltroPainel','mFiltroLaco','mFiltroPiso','mFiltroLocal'].forEach(id=>{const el=document.getElementById(id); if(el)el.addEventListener('change',()=>refreshFalhaFilters(id.replace('mFiltro','').toLowerCase()))});
-  document.querySelectorAll('input[name="mStatusCheck"]').forEach(ch=>ch.addEventListener('change',e=>{if(e.target.checked)document.querySelectorAll('input[name="mStatusCheck"]').forEach(o=>{if(o!==e.target)o.checked=false})}));
-  refreshFalhaFilters();
-}
-function formFalha(i=''){
-  let o=db.falhas.find(x=>x.id===i)||{};
-  const item=falhaItems().find(it=>it.id===o.itemId);
-  const fp=item?paiName(item.painelId):''; const fl=item?lacName(item.lacoId):''; const fpi=item?item.piso:''; const flo=o.localId||item?.localId||'';
-  const statusAtual=o.status||'Em operação';
-  openModal(`<h2>Registrar Falha / Operação</h2>
-  <p class="msg warn">Fluxo correto: filtre por painel, laço, piso ou loja/área. Os filtros permanecem ativos e restringem os próximos campos.</p>
-  <div class="formGrid">
-    <div class="field"><label>Painel</label><select id="mFiltroPainel"><option value="${esc(fp)}" selected>${esc(fp||'Todos os painéis')}</option></select></div>
-    <div class="field"><label>Laço</label><select id="mFiltroLaco"><option value="${esc(fl)}" selected>${esc(fl||'Todos os laços')}</option></select></div>
-    <div class="field"><label>Piso / Pavimento</label><select id="mFiltroPiso"><option value="${esc(fpi)}" selected>${esc(fpi||'Todos os pisos')}</option></select></div>
-    <div class="field"><label>Loja / Área</label><select id="mFiltroLocal"><option value="${esc(flo)}" selected>${esc(locName(flo)||'Todas as lojas/áreas')}</option></select></div>
-    <div class="field" style="grid-column:1/-1"><label>Item filtrado</label><select id="mItem"><option value="${esc(o.itemId||'')}" selected>${esc(item?.n||'Selecione um item')}</option></select><small id="mFalhaHint" class="note"></small></div>
-    <div class="field"><label>Data/hora do lançamento</label><input value="${esc(i?o.data:now())}" disabled></div>
-    <div class="field"><label>Responsável pelo lançamento</label><input id="mResp" value="${esc(o.responsavel)}" placeholder="Ex.: Hélio / equipe técnica"></div>
-    <div class="field"><label>Origem</label><select id="mOrigem"><option ${o.origem==='Painel Bosch'?'selected':''}>Painel Bosch</option><option ${o.origem==='Teste em campo'?'selected':''}>Teste em campo</option><option ${o.origem==='Inspeção'?'selected':''}>Inspeção</option><option ${o.origem==='Importação'?'selected':''}>Importação</option></select></div>
-    <div class="field"><label>Motivo</label><input id="mMotivo" value="${esc(o.motivo)}" placeholder="Ex.: curto, aberto, acionamento, normalização"></div>
-    <div class="field" style="grid-column:1/-1"><label>Status do sistema</label><div class="toolbar statusChecks">
-      ${['Em operação','Falha logista','Falha sistema','Desativada','Em teste'].map((st,idx)=>`<label class="check"><input type="checkbox" name="mStatusCheck" value="${st}" ${st===statusAtual?'checked':''}> ${st}</label>`).join('')}
-    </div></div>
-    <div class="field" style="grid-column:1/-1"><label>Observação técnica</label><textarea id="mObs" placeholder="Detalhe técnico do lançamento">${esc(o.obs)}</textarea></div>
-  </div><br><button class="btn" onclick="saveFalha('${i}')">Salvar lançamento</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`);
-  bindFalhaModal();
-}
-function saveFalha(i){
-  let sel=mItem.value; if(!sel){alert('Selecione um item filtrado antes de salvar.');return}
-  let checked=document.querySelector('input[name="mStatusCheck"]:checked'); if(!checked){alert('Marque um status do sistema.');return}
-  let isFlm=sel.startsWith('flm:');let item=isFlm?db.flms.find(x=>x.id===sel.slice(4)):db.equipamentos.find(x=>x.id===sel); if(!item)return;
-  let localId=isFlm?(mFiltroLocal.value||''):(item.localId||mFiltroLocal.value||'');
-  let statusAnterior=item.status||'Em operação'; item.status=checked.value; item.ultimaAlteracao=isoNow();
-  let loc=localById(localId); if(loc){loc.status=checked.value;loc.ultimaAlteracao=isoNow()}
-  let rec=i?db.falhas.find(x=>x.id===i):{id:id()};
-  Object.assign(rec,{data:isoNow(),painelId:item.painelId,lacoId:item.lacoId,piso:item.piso,tipo:isFlm?'Módulo':item.tipo,itemId:sel,itemNome:(isFlm?'Módulo ':'')+(item.endereco||item.modelo),localId,status:checked.value,statusAnterior,responsavel:n(mResp.value),origem:mOrigem.value,motivo:n(mMotivo.value),obs:n(mObs.value),resolvidaEm:up(checked.value).includes('OPER')?isoNow():''});
-  if(!i){db.falhas.push(rec); if(isFalhaStatus(rec.status)&&!db.planos.find(p=>p.falhaId===rec.id)){db.planos.push({id:id(),falhaId:rec.id,criadoEm:isoNow(),categoria:'Manutenção corretiva',prioridade:'Média',responsavel:'L3A Engenharia',situacao:'Aberto',painel:paiName(rec.painelId),laco:lacName(rec.lacoId),piso:rec.piso,local:locName(rec.localId),item:rec.itemNome,statusFalha:rec.status,justificativa:rec.motivo||rec.obs||'',providencia:'',necessitaCompra:false});}} closeModal(); save()
-}
-
-function formPlano(i='',falhaId=''){
-  let o=db.planos.find(x=>x.id===i)||{}; let f=db.falhas.find(x=>x.id===(falhaId||o.falhaId))||{}; let inf=f.id?itemInfoFromFalha(f):{};
-  openModal(`<h2>${i?'Editar':'Criar'} plano de ação</h2><p class="msg warn">Base: ${esc(inf.painel||'')} • ${esc(inf.laco||'')} • ${esc(inf.local||'')} • ${esc(inf.itemNome||'')}</p><div class="formGrid">
-    <div class="field"><label>Categoria</label><select id="mCategoria">${planoCategorias().map(c=>`<option ${c===(o.categoria||'Manutenção corretiva')?'selected':''}>${c}</option>`).join('')}</select></div>
-    <div class="field"><label>Prioridade</label><select id="mPrioridade">${planoPrioridades().map(c=>`<option ${c===(o.prioridade||'Média')?'selected':''}>${c}</option>`).join('')}</select></div>
-    <div class="field"><label>Responsável</label><select id="mRespPlano">${planoResponsaveis().map(c=>`<option ${c===(o.responsavel||'L3A Engenharia')?'selected':''}>${c}</option>`).join('')}</select></div>
-    <div class="field"><label>Situação</label><select id="mSituacao"><option ${o.situacao==='Aberto'?'selected':''}>Aberto</option><option ${o.situacao==='Em andamento'?'selected':''}>Em andamento</option><option ${o.situacao==='Concluído'?'selected':''}>Concluído</option></select></div>
-    <div class="field"><label>Previsão</label><input id="mPrazo" type="date" value="${esc(o.prazo)}"></div>
-    <div class="field"><label>Necessita compra?</label><select id="mCompra"><option value="Não" ${!o.necessitaCompra?'selected':''}>Não</option><option value="Sim" ${o.necessitaCompra?'selected':''}>Sim</option></select></div>
-    <div class="field" style="grid-column:1/-1"><label>Material necessário / quantidade</label><input id="mMaterial" value="${esc(o.material)}" placeholder="Ex.: FLM-420/4-CON-S/D - 01 unidade"></div>
-    <div class="field" style="grid-column:1/-1"><label>Justificativa técnica</label><textarea id="mJust">${esc(o.justificativa||f.motivo||f.obs||'')}</textarea></div>
-    <div class="field" style="grid-column:1/-1"><label>Providência executada / próxima ação</label><textarea id="mProv">${esc(o.providencia)}</textarea></div>
-  </div><br><button class="btn" onclick="savePlano('${i}','${falhaId||o.falhaId||''}')">Salvar plano</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`)
-}
-function savePlano(i,falhaId=''){
-  let f=db.falhas.find(x=>x.id===falhaId)||{}; let inf=f.id?itemInfoFromFalha(f):{}; let o=i?db.planos.find(x=>x.id===i):{id:id(),criadoEm:isoNow(),falhaId};
-  let old=o.situacao||'Aberto'; Object.assign(o,{falhaId:falhaId||o.falhaId,categoria:mCategoria.value,prioridade:mPrioridade.value,responsavel:mRespPlano.value,situacao:mSituacao.value,prazo:mPrazo.value,necessitaCompra:mCompra.value==='Sim',material:n(mMaterial.value),justificativa:n(mJust.value),providencia:n(mProv.value),painel:inf.painel||o.painel,laco:inf.laco||o.laco,piso:inf.piso||o.piso,local:inf.local||o.local,item:inf.itemNome||o.item,statusFalha:f.status||o.statusFalha,atualizadoEm:isoNow()});
-  if(o.situacao==='Concluído'&&!o.concluidoEm)o.concluidoEm=isoNow(); if(!i)db.planos.push(o); closeModal(); save()
-}
-function concluirPlano(i){let o=db.planos.find(x=>x.id===i); if(!o)return; o.situacao='Concluído'; o.concluidoEm=isoNow(); if(confirm('Plano concluído. Deseja retornar o item automaticamente para Em operação?')){let f=db.falhas.find(x=>x.id===o.falhaId); if(f){let itemId=f.itemId||'';let isFlm=String(itemId).startsWith('flm:');let item=isFlm?flmById(String(itemId).slice(4)):db.equipamentos.find(e=>e.id===itemId);if(item){let old=item.status||'Em operação';item.status='Em operação';item.ultimaAlteracao=isoNow();db.falhas.push({id:id(),data:isoNow(),painelId:item.painelId,lacoId:item.lacoId,piso:item.piso,tipo:isFlm?'Módulo':item.tipo,itemId:f.itemId,itemNome:f.itemNome,localId:f.localId,status:'Em operação',statusAnterior:old,responsavel:o.responsavel,origem:'Plano de Ação',motivo:'Plano de ação concluído',obs:o.providencia,resolvidaEm:isoNow()})}}} save()}
-
-function openEquip(i){let e=db.equipamentos.find(x=>x.id===i);let hist=db.falhas.filter(f=>f.itemId===i||f.localId===e.localId).sort((a,b)=>b.data.localeCompare(a.data));openModal(`<h2>${esc(e.tipo)} ${esc(e.endereco)}</h2><p><b>Loja:</b> ${esc(locName(e.localId))} • <b>Painel:</b> ${esc(paiName(e.painelId))} • <b>Laço:</b> ${esc(lacName(e.lacoId))}</p><h3>Histórico</h3><div class="timeline">${hist.map(h=>`<div class="tl"><b>${esc(h.status)}</b><br><small>${esc(h.data)} • ${esc(h.origem||'')}</small><p>${esc(h.motivo||h.obs||'Sem observação')}</p></div>`).join('')||'<p class="msg warn">Sem histórico.</p>'}</div>`)}
-function openLocal(i){let l=db.locais.find(x=>x.id===i);let hist=db.falhas.filter(f=>f.localId===i||f.itemId===i).sort((a,b)=>b.data.localeCompare(a.data));openModal(`<h2>${esc(l.nome)}</h2><p><b>Tipo:</b> ${esc(l.tipo)} • <b>Painel:</b> ${esc(paiName(l.painelId))} • <b>Laço:</b> ${esc(lacName(l.lacoId))} • <b>Piso:</b> ${esc(l.piso)}</p><h3>Histórico da loja/área</h3><div class="timeline">${hist.map(h=>`<div class="tl"><b>${esc(h.status)}</b><br><small>${esc(h.data)} • ${esc(h.itemNome||'')}</small><p>${esc(h.motivo||h.obs||'Sem observação')}</p></div>`).join('')||'<p class="msg warn">Sem histórico.</p>'}</div>`)}
-function del(ent,i){if(!confirm('Excluir registro?'))return;db[ent]=db[ent].filter(x=>x.id!==i);closeModal();save()}
-function exportJson(){download(JSON.stringify(db,null,2),'base_sdai_bosch_completa.json','application/json')}
-function flat(entity){return db[entity].map(o=>Object.fromEntries(Object.entries(o).map(([k,v])=>[k,typeof v==='object'?JSON.stringify(v):v])))}
-function toCsv(rows){if(!rows.length)return '';let keys=Object.keys(rows[0]);return keys.join(';')+'\n'+rows.map(r=>keys.map(k=>csvEscape(r[k])).join(';')).join('\n')}
-function exportEntity(e){download(toCsv(flat(e)),e+'.csv','text/csv;charset=utf-8')}
-function exportAllCsv(){let chunks=[];['paineis','lacos','flms','portas','locais','equipamentos','falhas','planos','inconsistencias'].forEach(e=>{chunks.push('### '+e+' ###\n'+toCsv(flat(e))) }); download(chunks.join('\n\n'),'base_sdai_bosch_completa.csv','text/csv;charset=utf-8')}
-function download(content,name,type){let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([content],{type}));a.download=name;a.click()}
-render();
-cloudLoad(true);
-</script>
+<script src="js/config.js"></script>
+<script src="js/api.js"></script>
+<script src="js/storage.js"></script>
+<script src="js/app.js"></script>
 </body>
 </html>

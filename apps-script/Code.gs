@@ -1,119 +1,70 @@
 /************************************************************
- * SDAI Bosch Manager v5 - Apps Script API
- * Frontend: GitHub Pages
- * Banco: Google Sheets centralizado
+ * SDAI Bosch Manager V5 - Apps Script Backend
+ * Banco central em Google Sheets
  ************************************************************/
-
 const APP_NAME = 'SDAI Bosch Manager';
-const PROP_DB_ID = 'SDAI_MANAGER_DB_ID';
-const DB_SHEET = 'DB_JSON';
-const AUDIT_SHEET = 'AUDITORIA';
-
-function doGet(e) {
-  return jsonOutput({ ok: true, app: APP_NAME, message: 'API online' });
+const PROP_DB_ID = 'SDAI_DB_SPREADSHEET_ID';
+const TABLES = {
+  Configuracoes:['chave','valor','updatedAt'],
+  Storage:['chave','json','updatedAt'],
+  Log:['dataHora','usuario','acao','detalhe']
+};
+function doGet(e){ return handle_(e); }
+function doPost(e){ return handle_(e); }
+function handle_(e){
+  const action = (e && e.parameter && e.parameter.action) || 'status';
+  let payload = {};
+  try{ payload = e && e.postData && e.postData.contents ? JSON.parse(e.postData.contents) : {}; }catch(err){}
+  let out;
+  try{
+    if(action==='setupDatabase') out = setupDatabase_();
+    else if(action==='saveAll') out = saveAll_(payload.data||{});
+    else if(action==='loadAll') out = loadAll_();
+    else out = {ok:true, app:APP_NAME, action};
+  }catch(err){ out = {ok:false, error:err.message || String(err)}; }
+  return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
 }
-
-function doPost(e) {
-  try {
-    const body = e && e.postData && e.postData.contents ? JSON.parse(e.postData.contents) : {};
-    const action = body.action || '';
-    const payload = body.payload || {};
-
-    if (action === 'setupDB') return jsonOutput(setupDB());
-    if (action === 'getDB') return jsonOutput(getDB());
-    if (action === 'saveDB') return jsonOutput(saveDB(payload.db || {}));
-    if (action === 'resetDB') return jsonOutput(resetDB());
-
-    return jsonOutput({ ok: false, error: 'Ação inválida: ' + action });
-  } catch (err) {
-    return jsonOutput({ ok: false, error: String(err && err.message ? err.message : err) });
-  }
+function setupDatabase_(){
+  const props = PropertiesService.getScriptProperties();
+  let id = props.getProperty(PROP_DB_ID);
+  let ss = id ? SpreadsheetApp.openById(id) : SpreadsheetApp.create('Banco - SDAI Bosch Manager');
+  props.setProperty(PROP_DB_ID, ss.getId());
+  Object.keys(TABLES).forEach(name=>ensureSheet_(ss,name,TABLES[name]));
+  log_('setupDatabase','Banco configurado');
+  return {ok:true, spreadsheetId:ss.getId(), url:ss.getUrl()};
 }
-
-function setupDB() {
-  let ss = getSpreadsheet(false);
-  if (!ss) {
-    ss = SpreadsheetApp.create('SDAI Manager - Banco de Dados');
-    PropertiesService.getScriptProperties().setProperty(PROP_DB_ID, ss.getId());
-  }
-  ensureStructure(ss);
-  audit('setupDB', 'Banco configurado');
-  return { ok: true, spreadsheetId: ss.getId(), spreadsheetUrl: ss.getUrl() };
-}
-
-function getDB() {
-  const ss = getSpreadsheet(true);
-  ensureStructure(ss);
-  const sh = ss.getSheetByName(DB_SHEET);
-  const raw = sh.getRange('A2').getValue();
-  let db = {};
-  if (raw) {
-    try { db = JSON.parse(raw); } catch (e) { db = {}; }
-  }
-  return { ok: true, db, spreadsheetId: ss.getId(), spreadsheetUrl: ss.getUrl() };
-}
-
-function saveDB(db) {
-  const ss = getSpreadsheet(true);
-  ensureStructure(ss);
-  const sh = ss.getSheetByName(DB_SHEET);
-  sh.getRange('A1').setValue('json');
-  sh.getRange('A2').setValue(JSON.stringify(db || {}));
-  sh.getRange('B1').setValue('updatedAt');
-  sh.getRange('B2').setValue(new Date());
-  sh.getRange('C1').setValue('updatedBy');
-  sh.getRange('C2').setValue(Session.getActiveUser().getEmail() || 'usuário não identificado');
-  audit('saveDB', 'Base salva pelo frontend');
-  return { ok: true, updatedAt: new Date().toISOString() };
-}
-
-function resetDB() {
-  const ss = getSpreadsheet(true);
-  ensureStructure(ss);
-  ss.getSheetByName(DB_SHEET).getRange('A2:C2').clearContent();
-  audit('resetDB', 'Base limpa');
-  return { ok: true };
-}
-
-function getSpreadsheet(required) {
+function getDb_(){
   const id = PropertiesService.getScriptProperties().getProperty(PROP_DB_ID);
-  if (!id) {
-    if (required) throw new Error('Banco ainda não configurado. Clique em Configurar Banco Google no sistema.');
-    return null;
-  }
+  if(!id) return SpreadsheetApp.openById(setupDatabase_().spreadsheetId);
   return SpreadsheetApp.openById(id);
 }
-
-function ensureStructure(ss) {
-  let db = ss.getSheetByName(DB_SHEET);
-  if (!db) db = ss.insertSheet(DB_SHEET);
-  db.getRange('A1').setValue('json');
-  db.getRange('B1').setValue('updatedAt');
-  db.getRange('C1').setValue('updatedBy');
-
-  let auditSheet = ss.getSheetByName(AUDIT_SHEET);
-  if (!auditSheet) auditSheet = ss.insertSheet(AUDIT_SHEET);
-  if (auditSheet.getLastRow() === 0) {
-    auditSheet.appendRow(['dataHora', 'usuario', 'acao', 'descricao']);
+function ensureSheet_(ss,name,headers){
+  let sh = ss.getSheetByName(name) || ss.insertSheet(name);
+  if(sh.getLastRow()===0) sh.appendRow(headers);
+  return sh;
+}
+function saveAll_(data){
+  const ss = getDb_(); const sh = ensureSheet_(ss,'Storage',TABLES.Storage);
+  const values = sh.getDataRange().getValues();
+  const json = JSON.stringify(data); const now = new Date();
+  let row = -1;
+  for(let i=1;i<values.length;i++){ if(values[i][0]==='main') row=i+1; }
+  if(row>0) sh.getRange(row,1,1,3).setValues([['main',json,now]]);
+  else sh.appendRow(['main',json,now]);
+  log_('saveAll','Base salva pelo frontend');
+  return {ok:true, updatedAt:now};
+}
+function loadAll_(){
+  const ss = getDb_(); const sh = ensureSheet_(ss,'Storage',TABLES.Storage);
+  const values = sh.getDataRange().getValues();
+  for(let i=1;i<values.length;i++){
+    if(values[i][0]==='main') return {ok:true, data: JSON.parse(values[i][1]||'{}'), updatedAt: values[i][2]};
   }
+  return {ok:true, data:null};
 }
-
-function audit(action, description) {
-  try {
-    const ss = getSpreadsheet(false);
-    if (!ss) return;
-    ensureStructure(ss);
-    ss.getSheetByName(AUDIT_SHEET).appendRow([
-      new Date(),
-      Session.getActiveUser().getEmail() || 'usuário não identificado',
-      action,
-      description
-    ]);
-  } catch (e) {}
-}
-
-function jsonOutput(obj) {
-  return ContentService
-    .createTextOutput(JSON.stringify(obj))
-    .setMimeType(ContentService.MimeType.JSON);
+function log_(acao, detalhe){
+  try{
+    const ss=getDb_(); const sh=ensureSheet_(ss,'Log',TABLES.Log);
+    sh.appendRow([new Date(), Session.getActiveUser().getEmail() || 'usuario', acao, detalhe]);
+  }catch(e){}
 }

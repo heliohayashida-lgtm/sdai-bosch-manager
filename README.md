@@ -1,24 +1,12 @@
-# SDAI Bosch Manager
+# SDAI Bosch Manager V5
 
-Sistema web para gestão operacional do SDAI Bosch.
+Projeto publicado no GitHub Pages com backend Google Apps Script e banco Google Sheets.
 
-## Publicação recomendada
+## Publicação
+Suba todos os arquivos deste pacote na raiz do repositório GitHub.
 
-Frontend: GitHub Pages  
-Backend: Google Apps Script  
-Banco: Google Sheets
+## Backend
+O arquivo `apps-script/Code.gs` deve ser copiado para o projeto Apps Script.
 
-## Estrutura
-
-- `index.html` — interface web do sistema.
-- `apps-script/Code.gs` — backend para Google Apps Script.
-- `docs/COMO_PUBLICAR_GITHUB_PAGES.txt` — passo a passo para publicar.
-- `.nojekyll` — evita processamento Jekyll no GitHub Pages.
-
-## Fluxo esperado
-
-1. Subir este pacote no GitHub.
-2. Ativar GitHub Pages.
-3. Configurar o Apps Script como Web App.
-4. Conectar o frontend ao Apps Script na próxima etapa.
-
+## Link
+GitHub Pages: https://heliohayashida-lgtm.github.io/sdai-bosch-manager/
