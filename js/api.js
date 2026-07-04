@@ -1,5 +1,6 @@
 /* SDAI Bosch Manager — API GitHub Pages + Apps Script
-   Leitura usa JSONP. Salvamento usa POST por formulário oculto para evitar CORS. */
+   Leitura usa JSONP. Salvamento usa POST por formulário oculto para evitar CORS.
+   Versão corrigida: salvar não depende de carregar antes. */
 const API_URL = 'https://script.google.com/macros/s/AKfycby45dTdw4g-pkcvY9sys3_gmvVcmnSyf6PZzJbRsbSFjhtuWbV1D5XSBEc-J1UtOBYftA/exec';
 
 function apiJsonp(action, payload = {}) {
@@ -41,9 +42,13 @@ function apiJsonp(action, payload = {}) {
   });
 }
 
+function encodeBase64Utf8(str) {
+  return btoa(unescape(encodeURIComponent(str)));
+}
+
 function postNoCors(action, payload = {}) {
   return new Promise((resolve, reject) => {
-    const iframeName = 'sdai_post_' + Date.now();
+    const iframeName = 'sdai_post_' + Date.now() + '_' + Math.random().toString(36).slice(2);
     const iframe = document.createElement('iframe');
     iframe.name = iframeName;
     iframe.style.display = 'none';
@@ -70,22 +75,20 @@ function postNoCors(action, payload = {}) {
 
     document.body.appendChild(form);
 
-    let done = false;
-    const timer = setTimeout(() => {
-      if (done) return;
-      done = true;
-      cleanup();
-      resolve({ ok: true, mode: 'posted' });
-    }, 2500);
-
-    function cleanup() {
-      clearTimeout(timer);
+    const cleanup = () => {
       try { form.remove(); } catch(e) {}
       try { iframe.remove(); } catch(e) {}
-    }
+    };
+
+    // No-cors não permite ler a resposta do Apps Script. Se o submit não quebrar,
+    // consideramos enviado e validamos depois usando getAll quando necessário.
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve({ ok: true, mode: 'posted' });
+    }, 1800);
 
     try { form.submit(); }
-    catch(e) { cleanup(); reject(e); }
+    catch(e) { clearTimeout(timer); cleanup(); reject(e); }
   });
 }
 
@@ -94,6 +97,6 @@ window.SDAI_API = {
   setupDatabase: (name = 'Banco - SDAI Bosch Manager') => apiJsonp('setupDatabase', { name }),
   getDatabaseInfo: () => apiJsonp('getDatabaseInfo'),
   getAll: () => apiJsonp('getAll'),
-  saveAll: (data) => postNoCors('saveAll', { data: btoa(unescape(encodeURIComponent(JSON.stringify(data)))) }),
+  saveAll: (data) => postNoCors('saveAll', { data: encodeBase64Utf8(JSON.stringify(data || {})) }),
   clearDatabase: () => apiJsonp('clearDatabase')
 };

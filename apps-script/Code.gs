@@ -94,7 +94,7 @@ function getAll_() {
     }
   }
   const data = json ? JSON.parse(json) : {};
-  return { ok:true, data:data, spreadsheetId:ss.getId(), url:ss.getUrl(), now:new Date().toISOString() };
+  return { ok:true, data:data, hasData: hasContent_(data), spreadsheetId:ss.getId(), url:ss.getUrl(), now:new Date().toISOString() };
 }
 
 function saveAll_(payload) {
@@ -144,6 +144,12 @@ function ensureDbSheet_(ss) {
     sh.setFrozenRows(1);
   }
   return sh;
+}
+
+function hasContent_(data) {
+  if (!data || typeof data !== 'object') return false;
+  const keys = ['paineis','lacos','flms','portas','locais','equipamentos','falhas','planos','inconsistencias','imports'];
+  return keys.some(function(k){ return Array.isArray(data[k]) && data[k].length > 0; });
 }
 
 function json_(obj) {

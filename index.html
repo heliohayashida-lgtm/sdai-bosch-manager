@@ -94,18 +94,23 @@ async function setupGoogleDb(){
     alert(e.message);
   }
 }
+function dbHasContent(data){
+  if(!data || typeof data !== 'object') return false;
+  const keys=['paineis','lacos','flms','portas','locais','equipamentos','falhas','planos','inconsistencias','imports'];
+  return keys.some(k => Array.isArray(data[k]) && data[k].length > 0);
+}
 async function loadGoogleDb(){
   try{
     setSyncStatus('Carregando base do Google...');
     const res=await window.SDAI_API.getAll();
-    if(res && res.data){
+    if(res && res.ok && dbHasContent(res.data)){
       db=normalizeAllStatuses(Object.assign(emptyDB(),res.data));
       localStorage.setItem(KEY,JSON.stringify(db));
       setSyncStatus('Base carregada do Google em '+new Date().toLocaleString('pt-BR'));
       render();
     }else{
-      setSyncStatus('Banco Google vazio. Mantida base local.',false);
-      alert('Banco Google ainda está vazio.');
+      setSyncStatus('Banco Google está vazio. Base local foi preservada. Clique em Salvar agora para enviar estes dados ao Google.',false);
+      alert('Banco Google vazio. Não apaguei seus dados locais. Clique em Salvar agora para gravar esta base no Google.');
     }
   }catch(e){
     setSyncStatus('Erro ao carregar Google: '+e.message,false);
@@ -114,10 +119,10 @@ async function loadGoogleDb(){
 }
 async function saveGoogleDb(){
   try{
-    setSyncStatus('Enviando base para o Google...');
+    setSyncStatus('Enviando base local para o Google...');
     await window.SDAI_API.saveAll(db);
-    setSyncStatus('Base enviada ao Google em '+new Date().toLocaleString('pt-BR'));
-    alert('Base enviada ao Google. Recarregue em outro computador e clique em Carregar Google.');
+    setSyncStatus('Base local salva no Google em '+new Date().toLocaleString('pt-BR'));
+    alert('Base local enviada ao Google com sucesso. Em outro computador, clique em Carregar Google.');
   }catch(e){
     setSyncStatus('Erro ao salvar Google: '+e.message,false);
     alert(e.message);
