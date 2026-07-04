@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SDAI Bosch Manager</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand"><div class="logo">S</div><div><b>SDAI Bosch</b><span>FLM físico • portas • histórico</span></div></div>
+    <div class="nav">
+      <div class="navTitle">Gestão</div>
+      <button class="active" data-view="dashboard">📊 Dashboard</button>
+      <div class="navTitle">Base técnica</div>
+      <button data-view="paineis">🖥️ Painéis</button>
+      <button data-view="lacos">🔁 Laços</button>
+      <button data-view="flms">🧩 FLMs / Portas</button>
+      <button data-view="locais">🏬 Lojas / Áreas</button>
+      <button data-view="equipamentos">📍 Equipamentos</button>
+      <div class="navTitle">Operação</div>
+      <button data-view="falhas">⚠️ Falhas</button>
+      <button data-view="plano">✅ Plano de Ação</button>
+      <div class="navTitle">Dados</div>
+      <button data-view="relatorios">📄 Relatórios</button>
+      <div class="navTitle">Sistema</div>
+      <button data-view="importacao">⬆️ Importação</button>
+      <button data-view="exportacao">⬇️ Exportação</button>
+    </div>
+  </aside>
+  <main class="main">
+    <header class="top"><div><h1 id="pageTitle">Dashboard</h1><p>Base técnica estruturada para diagnóstico SDAI Bosch</p></div><div id="clock"></div></header>
+    <div class="content">
+      <section id="dashboard" class="view active"></section>
+      <section id="paineis" class="view"></section>
+      <section id="lacos" class="view"></section>
+      <section id="flms" class="view"></section>
+      <section id="locais" class="view"></section>
+      <section id="equipamentos" class="view"></section>
+      <section id="falhas" class="view"></section>
+      <section id="plano" class="view"></section>
+      <section id="importacao" class="view"></section>
+      <section id="exportacao" class="view"></section>
+      <section id="relatorios" class="view printTarget"></section>
+    </div>
+  </main>
+</div>
+<div class="modal" id="modal"><div class="drawer" id="drawer"></div></div>
+<script>
+const KEY='sdai_bosch_manager_v4_flm_portas';
+const emptyDB=()=>({empreendimento:{nome:'Empreendimento',cliente:'Cliente'},paineis:[],lacos:[],flms:[],portas:[],locais:[],equipamentos:[],falhas:[],planos:[],inconsistencias:[],imports:[]});
+let db=load(); let currentView='dashboard'; let filters={};
+let searchRenderTimer=null;
+let lastSearchFocus=null;
+function onSearchInput(el){
+  const val=el.value;
+  const group=el.dataset.filterGroup;
+  const key=el.dataset.filterKey;
+  const path=el.dataset.filterPath;
+  if(group && key){ filters[group]={...(filters[group]||{}),[key]:val}; }
+  else if(path){ filters[path]=val; }
+  lastSearchFocus={key:el.dataset.focusKey||path||((group||'')+'.'+(key||'')),start:el.selectionStart??val.length,end:el.selectionEnd??val.length};
+  clearTimeout(searchRenderTimer);
+  searchRenderTimer=setTimeout(()=>render(),120);
+}
+function attachSearchInputs(){
+  document.querySelectorAll('[data-filter-input="1"]').forEach(el=>{
+    if(el.dataset.boundSearch==='1')return;
+    el.dataset.boundSearch='1';
+    el.addEventListener('input',()=>onSearchInput(el));
+  });
+}
+function restoreSearchFocus(){
+  if(!lastSearchFocus)return;
+  const f=lastSearchFocus;
+  setTimeout(()=>{
+    const el=document.querySelector(`[data-focus-key="${CSS.escape(f.key)}"]`);
+    if(el){el.focus();try{el.setSelectionRange(f.start,f.end)}catch(e){}}
+  },0);
+}
+
+function load(){try{return normalizeAllStatuses(Object.assign(emptyDB(),JSON.parse(localStorage.getItem(KEY))||{}))}catch(e){return emptyDB()}}
+function save(){localStorage.setItem(KEY,JSON.stringify(db));render()}
+const id=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+const n=s=>String(s??'').trim(); const up=s=>n(s).toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+function normalizeStatus(st){const raw=n(st); const x=up(raw); if(!x||x==='ATIVO'||x==='OK'||x==='NORMAL'||x.includes('OPERACAO')||x.includes('FUNCION'))return 'Em operação'; if(x.includes('LOGISTA'))return 'Falha logista'; if(x.includes('SISTEMA'))return 'Falha sistema'; if(x.includes('FALHA'))return raw||'Falha sistema'; if(x.includes('DESATIV')||x==='INATIVO')return 'Desativada'; if(x.includes('TESTE'))return 'Em teste'; return raw||'Em operação'}
+function normalizeAllStatuses(base){['equipamentos','flms','locais','falhas'].forEach(k=>(base[k]||[]).forEach(o=>{if(o.status)o.status=normalizeStatus(o.status)}));return base}
+function now(){return new Date().toLocaleString('pt-BR')}
+function isoNow(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+'T'+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')}
+function esc(s){return n(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function csvEscape(s){s=n(s);return /[;,"\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s}
+function normKey(k){return up(k).replace(/^\uFEFF/,'').replace(/[^A-Z0-9]/g,'')}
+function get(row,names){const keys=Object.keys(row); for(const name of names){const nk=normKey(name); const k=keys.find(x=>normKey(x)===nk); if(k!==undefined)return n(row[k])} return ''}
+function classifyDevice(model,tipo,local){const m=up(model+' '+tipo); if(/FLM4204CONS|FLM420I2WE|FLM/.test(m))return 'Módulo'; if(/FAP|DFO/.test(m))return 'Detector de Fumaça'; if(/FAH/.test(m))return 'Detector Térmico'; if(/ACM|DM210|SM210|FMC210|FMC420RW|ACIONADOR/.test(m))return 'Acionador Manual'; if(/FNM|FNS|SIRENE|SINALIZ/.test(m))return 'Sirene / Sinalizador'; if(/DETECTOR/.test(m))return 'Detector'; return n(tipo)||'Não classificado'}
+function localClass(name){const x=up(name); if(!x)return ''; if(/AREA COMUM|MALL|CORREDOR|HALL|PRACA|CIRCULACAO|ACESSO/.test(x))return 'Área Comum'; if(/TECNIC|CASA|SALA|BARRILETE|SUBEST|SHAFT|DML|DOCAS|DEPOSITO|SEGURANCA|ADMIN|CPD|TI|BOMBA|GERADOR/.test(x))return 'Área Técnica'; return 'Loja'}
+function isEquipAreaLabel(name,model,tipo){const x=up((name||'')+' '+(model||'')+' '+(tipo||'')); return /(^|\s)(DFO|FAP|ACM|DM210|SM210|FMC210|FMC420RW)(\s|$)/.test(x)}
+function equipAreaClass(name,model,tipo){const cls=localClass(name); if(cls==='Área Técnica'||cls==='Área Comum')return cls; return isEquipAreaLabel(name,model,tipo)?'Área Comum':''}
+function statusClass(s){s=up(normalizeStatus(s)); if(/OPER/.test(s))return 'ok'; if(/LOGISTA|SISTEMA|FALHA/.test(s))return 'bad'; if(/TESTE/.test(s))return 'warn'; if(/DESATIV/.test(s))return 'off'; return ''}
+function unique(arr){return [...new Set(arr.filter(Boolean).map(n))].sort((a,b)=>a.localeCompare(b,'pt-BR'))}
+function findOrCreate(arr,match,obj){let x=arr.find(match); if(x)return {obj:x,created:false}; x={id:id(),...obj}; arr.push(x); return {obj:x,created:true}}
+function painelById(v){return db.paineis.find(x=>x.id===v)||db.paineis.find(x=>x.nome===v)}
+function lacoById(v){return db.lacos.find(x=>x.id===v)||db.lacos.find(x=>x.nome===v)}
+function localById(v){return db.locais.find(x=>x.id===v)}
+function flmById(v){return db.flms.find(x=>x.id===v)}
+function locName(v){return localById(v)?.nome||''}
+function paiName(v){return painelById(v)?.nome||''}
+function lacName(v){return lacoById(v)?.nome||''}
+function ensurePanel(nome,modelo='',localizacao='',obs='Importado'){return findOrCreate(db.paineis,x=>up(x.nome)===up(nome),{nome:nome||'Painel não informado',modelo,localizacao,obs}).obj}
+function ensureLaco(painelId,nome,piso=''){return findOrCreate(db.lacos,x=>x.painelId===painelId&&up(x.nome)===up(nome),{painelId,nome:nome||'Laço não informado',piso,obs:'Importado'}).obj}
+function ensureFlm(painelId,lacoId,endereco,modelo,piso){return findOrCreate(db.flms,x=>x.painelId===painelId&&x.lacoId===lacoId&&up(x.endereco)===up(endereco),{painelId,lacoId,endereco:endereco||'S/E',modelo:modelo||'FLM',piso,obs:'Importado'}).obj}
+function ensurePorta(flmId,numero,localId='',ligacao=''){return findOrCreate(db.portas,x=>x.flmId===flmId&&String(x.numero)===String(numero||'1'),{flmId,numero:numero||'1',localId,ligacao,obs:'Importado'}).obj}
+function ensureLocal(nome,tipo,painelId,lacoId,piso,flmId,portaId){let r=findOrCreate(db.locais,x=>up(x.nome)===up(nome),{nome,tipo:tipo||localClass(nome),painelId,lacoId,piso,flmId,portaId,status:'Em operação',ultimaAlteracao:isoNow(),obs:'Importado'}); Object.assign(r.obj,{painelId:r.obj.painelId||painelId,lacoId:r.obj.lacoId||lacoId,piso:r.obj.piso||piso,flmId:r.obj.flmId||flmId,portaId:r.obj.portaId||portaId}); return r.obj}
+function deviceKey(d){return [d.painelId,d.lacoId,up(d.tipo),up(d.endereco),up(d.modelo),d.flmId||''].join('|')}
+function ensureEquip(obj,mode='diff'){obj.status=normalizeStatus(obj.status); let key=deviceKey(obj); let ex=db.equipamentos.find(e=>deviceKey(e)===key); if(ex){ ex.status=normalizeStatus(ex.status||obj.status); if(mode==='overwrite')Object.assign(ex,{...obj,id:ex.id,status:normalizeStatus(ex.status||obj.status),ultimaAlteracao:ex.ultimaAlteracao||obj.ultimaAlteracao}); return {obj:ex,created:false,updated:mode==='overwrite'} } obj.id=id(); db.equipamentos.push(obj); return {obj,created:true}}
+function clearAll(){db=emptyDB();localStorage.setItem(KEY,JSON.stringify(db));render()}
+function counts(){let tipos=unique(db.equipamentos.map(e=>e.tipo).concat(['Módulo'])); let c={paineis:db.paineis.length,lacos:db.lacos.length,flms:db.flms.length,portas:db.portas.length,locais:db.locais.length,equipamentos:db.equipamentos.length,totalDispositivos:db.equipamentos.length+db.flms.length,tipos:{},status:{}}; tipos.forEach(t=>c.tipos[t]=0); db.flms.forEach(()=>c.tipos['Módulo']=(c.tipos['Módulo']||0)+1); db.equipamentos.forEach(e=>{c.tipos[e.tipo]=(c.tipos[e.tipo]||0)+1;{let st=normalizeStatus(e.status); c.status[st]=(c.status[st]||0)+1}}); db.flms.forEach(f=>{{let st=normalizeStatus(f.status||'Em operação'); c.status[st]=(c.status[st]||0)+1}}); return c}
+function table(rows,cols,actions){if(!rows.length)return '<p class="msg warn">Sem registros.</p>';return `<div class="tableWrap"><table><thead><tr>${cols.map(c=>`<th>${c[0]}</th>`).join('')}${actions?'<th>Ações</th>':''}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${c[2]?c[2](r):esc(r[c[1]])}</td>`).join('')}${actions?`<td>${actions(r)}</td>`:''}</tr>`).join('')}</tbody></table></div>`}
+function selectOpts(vals,sel=''){return '<option value="">Todos</option>'+vals.map<script src="js/config.js"></script>
+<script src="js/api.js"></script>
+<script src="js/app.js"></script>
