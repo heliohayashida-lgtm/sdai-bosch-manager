@@ -603,7 +603,8 @@ function restoreSearchFocus(){
 function load(){try{return normalizeAllStatuses(Object.assign(emptyDB(),JSON.parse(localStorage.getItem(KEY))||{}))}catch(e){return emptyDB()}}
 function syncCfg(){try{return Object.assign({configured:false,auto:true,intervalSec:30,lastSync:'',sheetUrl:'',dirty:false},JSON.parse(localStorage.getItem(SYNC_KEY)||'{}'))}catch(e){return {configured:false,auto:true,intervalSec:30,lastSync:'',sheetUrl:'',dirty:false}}}
 function setSyncCfg(o){localStorage.setItem(SYNC_KEY,JSON.stringify(Object.assign(syncCfg(),o))); updateSyncFooter()}
-function persistLocal(){localStorage.setItem(KEY,JSON.stringify(db))}
+let _persistLocalFalhouAvisado=false;
+function persistLocal(){try{localStorage.setItem(KEY,JSON.stringify(db));_persistLocalFalhouAvisado=false;return true}catch(e){if(!_persistLocalFalhouAvisado){_persistLocalFalhouAvisado=true;alert('Atenção: não foi possível salvar localmente ('+e.message+'). Isso pode acontecer em modo de navegação privada ou quando o armazenamento do navegador está cheio. Suas alterações podem se perder ao atualizar a página — recomenda-se configurar/sincronizar com o Google em Sistema \u2192 Banco de Dados.')}return false}}
 function markDirty(reason='alteração'){persistLocal(); setSyncCfg({dirty:true,lastReason:reason}); scheduleAutoSync(1500)}
 function save(){markDirty('salvamento');render()}
 function updateSyncFooter(status){const c=syncCfg(); const dot=document.getElementById('syncDot'), txt=document.getElementById('syncText'); if(!dot||!txt)return; dot.className='syncDot '+(status==='saving'?'warn':status==='error'?'bad':(!c.configured?'warn':c.dirty?'warn':'ok')); txt.textContent=status==='saving'?'Sincronizando...':status==='error'?'Falha ao sincronizar':(!c.configured?'Banco Google não configurado':c.dirty?'Alterações pendentes':'Sincronizado '+(c.lastSync||''));}
