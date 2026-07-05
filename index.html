@@ -269,6 +269,8 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .btn.secondary:hover{background:var(--l3a-hover);border-color:var(--l3a-border-strong)}
 .btn.danger{background:var(--l3a-danger);box-shadow:0 6px 16px rgba(180,35,24,.22)}
 .btn.danger:hover{background:#992019}
+.btn.small.danger{background:transparent;color:var(--l3a-text-muted);border:1px solid var(--l3a-border);box-shadow:none}
+.btn.small.danger:hover{background:var(--l3a-danger-bg);color:var(--l3a-danger);border-color:var(--l3a-danger-line);box-shadow:none}
 .btn.small{padding:6px 10px;border-radius:var(--l3a-radius-sm);font-size:12px;gap:6px}
 .btn.small svg{flex:0 0 auto}
 .btn:disabled,.btn[disabled]{opacity:.5;cursor:not-allowed;box-shadow:none;transform:none}
@@ -439,7 +441,21 @@ tbody tr:last-child td{border-bottom:0}
 /* ---------- 16. UTILITÁRIOS -------------------------------------------------- */
 .hidden{display:none!important}
 
-/* ---------- 16b. DASHBOARD — status por piso e lojas com falha (v8.1) ------- */
+/* ---------- 16c. SUBTOTAL POR TIPO — lista organizada (v8.9) ----------------- */
+.subTipoGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:0 22px;max-width:820px}
+.subTipoRow{display:flex;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid var(--l3a-border)}
+.subTipoRow:nth-last-child(-n+2){border-bottom:0}
+.subTipoDot{width:8px;height:8px;border-radius:50%;flex:0 0 8px}
+.subTipoDot.cat-modulo{background:var(--l3a-info)}
+.subTipoDot.cat-fumaca{background:var(--l3a-warning)}
+.subTipoDot.cat-termico{background:var(--l3a-danger)}
+.subTipoDot.cat-acionador{background:var(--l3a-primary)}
+.subTipoDot.cat-sirene{background:var(--l3a-success)}
+.subTipoDot.cat-outro{background:var(--l3a-neutral)}
+.subTipoLabel{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.3}
+.subTipoLabel b{font-size:12.5px;font-weight:700;color:var(--l3a-text-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.subTipoLabel small{font-size:10.5px;color:var(--l3a-text-muted);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.subTipoCount{font-size:13.5px;font-weight:800;color:var(--l3a-text);min-width:24px;text-align:right;flex:0 0 auto}
 .dashRow{display:grid;grid-template-columns:1.3fr 1fr;gap:16px;margin-bottom:18px}
 @media(max-width:1000px){.dashRow{grid-template-columns:1fr}}
 .chartLegendRow{display:flex;flex-wrap:wrap;gap:14px;margin:0 0 12px;font-size:11.5px;color:var(--l3a-text-soft);font-weight:700}
@@ -838,7 +854,8 @@ function pisoPorLacoHtml(){
 }
 function renderPaineis(){let rows=db.paineis.map(p=>({...p,totalDisp:db.flms.filter(f=>f.painelId===p.id).length+db.equipamentos.filter(e=>e.painelId===p.id).length,sub:subTipos(x=>x.painelId===p.id)}));document.getElementById('paineis').innerHTML=`<div class="card"><button class="btn" onclick="formPainel()">+ Criar novo painel</button></div><div class="card"><h3 class="sectionTitle">Painéis cadastrados</h3>${table(rows,[['Painel','nome'],['Modelo','modelo'],['Localização','localizacao'],['Total disp.','totalDisp'],['Subtotal por tipo','sub',r=>r.sub]],r=>`<button class="btn small secondary" onclick="formPainel('${r.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1-4.2L15.5 5.3a1.5 1.5 0 0 1 2.1 0l1.1 1.1a1.5 1.5 0 0 1 0 2.1L8.2 19 4 20Z"/><path d="M13.8 7 17 10.2"/></svg></button> <button class="btn small danger" onclick="del('paineis','${r.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2"/><path d="M6.5 7 7.3 19a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4L17.5 7"/><path d="M10 11v6M14 11v6"/></svg></button>`)}</div>${pisoPorLacoHtml()}`}
 function renderLacos(){let fp=filters.lacoPainel||'',fl=filters.lacoNome||'',fs=filters.lacoStatus||''; let rows=db.lacos.filter(l=>(!fp||paiName(l.painelId)===fp)&&(!fl||l.nome===fl)).map(l=>{let eq=db.equipamentos.filter(e=>e.lacoId===l.id);let status=eq.some(e=>up(e.status).includes('FALHA'))?'Com falha':'Em operação';return {...l,painel:paiName(l.painelId),totalDisp:db.flms.filter(f=>f.lacoId===l.id).length+eq.length,status,sub:subTipos(x=>x.lacoId===l.id),sistemaAtual:l.sistema||sistemaAutoDetect(l.nome)}}).filter(r=>(!fs||r.status===fs));document.getElementById('lacos').innerHTML=`<div class="card"><button class="btn" onclick="formLaco()">+ Criar novo laço</button><div class="toolbar"><div class="field"><label>Painel</label><select onchange="filters.lacoPainel=this.value;render()">${selectOpts(unique(db.paineis.map(p=>p.nome)),fp)}</select></div><div class="field"><label>Laço</label><select onchange="filters.lacoNome=this.value;render()">${selectOpts(unique(db.lacos.map(l=>l.nome)),fl)}</select></div><div class="field"><label>Status</label><select onchange="filters.lacoStatus=this.value;render()">${selectOpts(['Em operação','Com falha'],fs)}</select></div></div></div><div class="card"><h3 class="sectionTitle">Laços cadastrados</h3><p class="msg warn">Trocar o Sistema aqui aplica imediatamente a todas as Lojas/Áreas já cadastradas neste laço — útil para corrigir em massa um laço inteiro de CO2 ou SDAI.</p>${table(rows,[['Painel','painel'],['Laço','nome'],['Piso','piso'],['Sistema','sistemaAtual',r=>`<select onchange="setLacoSistema('${r.id}',this.value)" title="Aplica a todas as lojas deste laço">${SISTEMA_LACO_OPTIONS.map(op=>`<option value="${esc(op)}" ${r.sistemaAtual===op?'selected':''}>${op}</option>`).join('')}</select>`],['Total disp.','totalDisp'],['Status','status',r=>`<span class="pill ${r.status==='Com falha'?'bad':'ok'}">${r.status}</span>`],['Subtotal por tipo/modelo','sub',r=>r.sub]],r=>`<button class="btn small secondary" onclick="formLaco('${r.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1-4.2L15.5 5.3a1.5 1.5 0 0 1 2.1 0l1.1 1.1a1.5 1.5 0 0 1 0 2.1L8.2 19 4 20Z"/><path d="M13.8 7 17 10.2"/></svg></button> <button class="btn small danger" onclick="del('lacos','${r.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2"/><path d="M6.5 7 7.3 19a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4L17.5 7"/><path d="M10 11v6M14 11v6"/></svg></button>`)}</div>`}
-function subTipos(match){let map={}; db.flms.filter(match).forEach(f=>{let k='Módulo • '+(f.modelo||'FLM');map[k]=(map[k]||0)+1}); db.equipamentos.filter(match).forEach(e=>{let k=(e.tipo||'Equipamento')+' • '+(e.modelo||'S/modelo');map[k]=(map[k]||0)+1}); let entries=Object.entries(map); if(!entries.length)return '-'; return '<div class="subTipoTags">'+entries.map(([k,v])=>`<span class="pill">${esc(k)}: ${v}</span>`).join('')+'</div>'}
+function subTipoCatClass(cat){const c=up(cat); if(c.includes('MODULO'))return 'modulo'; if(c.includes('FUMACA'))return 'fumaca'; if(c.includes('TERMICO'))return 'termico'; if(c.includes('ACIONADOR'))return 'acionador'; if(c.includes('SIRENE')||c.includes('SINALIZ'))return 'sirene'; return 'outro'}
+function subTipos(match){let map={}; db.flms.filter(match).forEach(f=>{let k='Módulo • '+(f.modelo||'FLM');map[k]=(map[k]||0)+1}); db.equipamentos.filter(match).forEach(e=>{let k=(e.tipo||'Equipamento')+' • '+(e.modelo||'S/modelo');map[k]=(map[k]||0)+1}); let entries=Object.entries(map).sort((a,b)=>b[1]-a[1]); if(!entries.length)return '<span class="mutedLine">Sem dispositivos cadastrados</span>'; return '<div class="subTipoGrid">'+entries.map(([k,v])=>{const [cat,modelo]=k.split(' • '); return `<div class="subTipoRow"><span class="subTipoDot cat-${subTipoCatClass(cat)}"></span><span class="subTipoLabel"><b>${esc(cat)}</b><small>${esc(modelo||'')}</small></span><span class="subTipoCount">${v}</span></div>`}).join('')+'</div>'}
 function renderFlms(){let f=filters.flm||{};let paineis=unique(db.paineis.map(p=>p.nome));let lacos=unique(db.lacos.map(l=>l.nome));let pisos=unique(db.flms.map(x=>x.piso).concat(db.lacos.map(x=>x.piso),db.locais.map(x=>x.piso),db.equipamentos.map(x=>x.piso)));let lojas=unique(db.locais.map(x=>x.nome));let rows=db.flms.map(flm=>{let ps=db.portas.filter(p=>p.flmId===flm.id);let portas=ps.map(p=>`P${p.numero}: ${locName(p.localId)||'Sem vínculo'}${p.ligacao?' • '+esc(p.ligacao):''}`).join('<br>');let nomesPortas=ps.map(p=>locName(p.localId)).filter(Boolean).join(' | ');return {...flm,painel:paiName(flm.painelId),laco:lacName(flm.lacoId),portas,lojas:nomesPortas}}).filter(r=>(!f.painel||r.painel===f.painel)&&(!f.laco||r.laco===f.laco)&&(!f.piso||r.piso===f.piso)&&(!f.loja||up(r.lojas).includes(up(f.loja))));document.getElementById('flms').innerHTML=`<div class="card"><button class="btn" onclick="formFlm()">+ Criar novo FLM</button><div class="toolbar"><div class="field"><label>Painel</label><select onchange="filters.flm={...filters.flm,painel:this.value};render()">${selectOpts(paineis,f.painel)}</select></div><div class="field"><label>Laço</label><select onchange="filters.flm={...filters.flm,laco:this.value};render()">${selectOpts(lacos,f.laco)}</select></div><div class="field"><label>Piso</label><select onchange="filters.flm={...filters.flm,piso:this.value};render()">${selectOpts(pisos,f.piso)}</select></div><div class="field"><label>Loja / Área</label><select onchange="filters.flm={...filters.flm,loja:this.value};render()">${selectOpts(lojas,f.loja)}</select></div><button class="btn secondary" onclick="filters.flm={};render()">Limpar filtros</button></div></div><div class="card"><h3 class="sectionTitle">FLMs físicos e portas</h3>${table(rows,[['Painel','painel'],['Laço','laco'],['Piso','piso'],['Endereço FLM','endereco'],['Modelo','modelo'],['Portas / Ligações','portas',r=>r.portas||'-']],r=>`<button class="btn small secondary" onclick="formFlm('${r.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1-4.2L15.5 5.3a1.5 1.5 0 0 1 2.1 0l1.1 1.1a1.5 1.5 0 0 1 0 2.1L8.2 19 4 20Z"/><path d="M13.8 7 17 10.2"/></svg></button> <button class="btn small secondary" onclick="managePortas('${r.id}')">Portas</button> <button class="btn small danger" onclick="del('flms','${r.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2"/><path d="M6.5 7 7.3 19a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4L17.5 7"/><path d="M10 11v6M14 11v6"/></svg></button>`)}</div>`}
 function renderLocais(){let q=filters.locaisQ||'';let rows=db.locais.filter(l=>!q||JSON.stringify(l).toUpperCase().includes(up(q))).map(l=>({...l,painel:paiName(l.painelId),laco:lacName(l.lacoId),flm:flmById(l.flmId)?.endereco||'',porta:db.portas.find(p=>p.id===l.portaId)?.numero||'',qtd:db.equipamentos.filter(e=>e.localId===l.id).length}));document.getElementById('locais').innerHTML=`<div class="card"><button class="btn" onclick="formLocal()">+ Criar nova loja/área</button><div class="toolbar"><div class="field"><label>Busca</label><input value="${esc(q)}" data-filter-input="1" data-filter-path="locaisQ" data-focus-key="locaisBusca" placeholder="Loja, piso, painel, laço..."></div></div></div><div class="card"><h3 class="sectionTitle">Lojas / Áreas (Técnico) vinculadas às portas</h3>${table(rows,[['Nome','nome'],['Classificação','tipo'],['Painel','painel'],['Laço','laco'],['Piso','piso'],['FLM','flm'],['Porta','porta'],['Qtd. equip.','qtd'],['Status','status',r=>`<span class="pill ${statusClass(r.status)}">${esc(r.status)}</span>`]],r=>`<button class="btn small secondary" onclick="openLocal('${r.id}')">Histórico</button> <button class="btn small secondary" onclick="formLocal('${r.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1-4.2L15.5 5.3a1.5 1.5 0 0 1 2.1 0l1.1 1.1a1.5 1.5 0 0 1 0 2.1L8.2 19 4 20Z"/><path d="M13.8 7 17 10.2"/></svg></button> <button class="btn small danger" onclick="del('locais','${r.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2"/><path d="M6.5 7 7.3 19a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4L17.5 7"/><path d="M10 11v6M14 11v6"/></svg></button>`)}</div>`}
 function renderEquipamentos(){let f=filters.eq||{};let tipos=unique(db.equipamentos.map(e=>e.tipo));let modelos=unique(db.equipamentos.map(e=>e.modelo));let status=unique(db.equipamentos.map(e=>normalizeStatus(e.status)));let rows=db.equipamentos.filter(e=>(!f.painel||paiName(e.painelId)===f.painel)&&(!f.laco||lacName(e.lacoId)===f.laco)&&(!f.tipo||e.tipo===f.tipo)&&(!f.modelo||e.modelo===f.modelo)&&(!f.status||normalizeStatus(e.status)===f.status)&&(!f.q||JSON.stringify(e).toUpperCase().includes(up(f.q)))).map(e=>({...e,painel:paiName(e.painelId),laco:lacName(e.lacoId),loja:locName(e.localId),porta:db.portas.find(p=>p.id===e.portaId)?.numero||'',status:normalizeStatus(e.status)}));document.getElementById('equipamentos').innerHTML=`<div class="card"><button class="btn" onclick="formEquip()">+ Criar novo equipamento</button><div class="toolbar"><div class="field"><label>Painel</label><select onchange="filters.eq={...filters.eq,painel:this.value};render()">${selectOpts(unique(db.paineis.map(p=>p.nome)),f.painel)}</select></div><div class="field"><label>Laço</label><select onchange="filters.eq={...filters.eq,laco:this.value};render()">${selectOpts(unique(db.lacos.map(l=>l.nome)),f.laco)}</select></div><div class="field"><label>Tipo</label><select onchange="filters.eq={...filters.eq,tipo:this.value};render()">${selectOpts(tipos,f.tipo)}</select></div><div class="field"><label>Modelo</label><select onchange="filters.eq={...filters.eq,modelo:this.value};render()">${selectOpts(modelos,f.modelo)}</select></div><div class="field"><label>Status</label><select onchange="filters.eq={...filters.eq,status:this.value};render()">${selectOpts(status,f.status)}</select></div><div class="field"><label>Busca</label><input value="${esc(f.q)}" data-filter-input="1" data-filter-group="eq" data-filter-key="q" data-focus-key="equipBusca"></div></div></div><div class="card"><h3 class="sectionTitle">Equipamentos cadastrados — status operacional</h3>${table(rows,[['Painel','painel'],['Laço','laco'],['Piso','piso'],['Tipo','tipo'],['Endereço','endereco'],['Modelo','modelo'],['Loja/Área','loja'],['Porta','porta'],['Status','status',r=>`<span class="pill ${statusClass(r.status)}">${esc(r.status)}</span>`],['Última alteração','ultimaAlteracao']],r=>`<button class="btn small secondary" onclick="openEquip('${r.id}')">Histórico</button> <button class="btn small secondary" onclick="formEquip('${r.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1-4.2L15.5 5.3a1.5 1.5 0 0 1 2.1 0l1.1 1.1a1.5 1.5 0 0 1 0 2.1L8.2 19 4 20Z"/><path d="M13.8 7 17 10.2"/></svg></button> <button class="btn small danger" onclick="del('equipamentos','${r.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2"/><path d="M6.5 7 7.3 19a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4L17.5 7"/><path d="M10 11v6M14 11v6"/></svg></button>`)}</div>`}
@@ -1351,6 +1368,30 @@ function timeSince(isoStr){if(!isoStr)return '—';const then=new Date(isoStr).g
 function dashPisoStats(){const map={};const bump=(obj)=>{const p=pisoEfetivo(obj)||'Sem piso';if(!map[p])map[p]={piso:p,operacao:0,teste:0,falha:0,desativada:0};map[p][dashStatusBucket(obj.status)]++};(db.equipamentos||[]).forEach(bump);(db.flms||[]).forEach(bump);return Object.values(map).sort((a,b)=>pisoSortKey(a.piso)-pisoSortKey(b.piso)||a.piso.localeCompare(b.piso,'pt-BR'))}
 function dashLojasComFalha(){return (db.locais||[]).filter(l=>dashStatusBucket(l.status)==='falha').map(l=>({nome:l.nome||'—',piso:pisoEfetivo(l)||'—',laco:lacName(l.lacoId)||'—',desde:l.ultimaAlteracao||'',status:l.status})).sort((a,b)=>(a.desde||'').localeCompare(b.desde||''))}
 function dashPorLaco(){const map={};(db.locais||[]).filter(l=>dashStatusBucket(l.status)==='falha').forEach(l=>{const key=(paiName(l.painelId)||'—')+' · '+(lacName(l.lacoId)||'—');map[key]=(map[key]||0)+1});return Object.entries(map).map(([label,value])=>({label,value})).sort((a,b)=>b.value-a.value).slice(0,8)}
+// Panorama completo: TODOS os laços da central (não só os com falha), com
+// quantidade de dispositivos (FLM+Equipamento), piso, sistema e disponibilidade —
+// para dar uma leitura completa da central só pelo Dashboard.
+function dashPanoramaLacos(){
+  return (db.lacos||[]).map(l=>{
+    const fl=db.flms.filter(f=>f.lacoId===l.id);
+    const eq=db.equipamentos.filter(e=>e.lacoId===l.id);
+    const dev=[...fl,...eq];
+    const total=dev.length;
+    const falha=dev.filter(x=>dashStatusBucket(x.status)==='falha').length;
+    const teste=dev.filter(x=>dashStatusBucket(x.status)==='teste').length;
+    const op=total-falha-teste;
+    return {
+      painel:paiName(l.painelId)||'—',
+      laco:l.nome||'—',
+      pisoDisplay:l.piso||'—',
+      sistema:l.sistema||sistemaAutoDetect(l.nome),
+      flms:fl.length,
+      equip:eq.length,
+      total,op,falha,teste,
+      disp:total?Math.round((op/total)*100):0
+    };
+  }).sort((a,b)=>a.painel.localeCompare(b.painel,'pt-BR')||pisoSortKey(a.pisoDisplay)-pisoSortKey(b.pisoDisplay)||a.laco.localeCompare(b.laco,'pt-BR',{numeric:true}));
+}
 
 window._dashCharts=window._dashCharts||{};
 function dashDestroyChart(k){if(window._dashCharts[k]){try{window._dashCharts[k].destroy()}catch(e){}delete window._dashCharts[k]}}
@@ -1366,6 +1407,21 @@ function renderDashboard(){
   const lojasFalha=dashLojasComFalha();
   const planosAbertos=(db.planos||[]).filter(p=>p.situacao!=='Concluído').length;
   const porLaco=dashPorLaco();
+  const panorama=dashPanoramaLacos();
+
+  const panoramaRows=panorama.map(r=>`<tr>
+      <td>${esc(r.painel)}</td>
+      <td>${esc(r.laco)}</td>
+      <td>${esc(r.pisoDisplay)}</td>
+      <td><span class="pill ${r.sistema==='CO2'?'warn':'ok'}">${esc(r.sistema)}</span></td>
+      <td>${r.flms}</td>
+      <td>${r.equip}</td>
+      <td><b>${r.total}</b></td>
+      <td>${r.falha?`<span class="pill bad">${r.falha}</span>`:'0'}</td>
+      <td>${r.teste?`<span class="pill warn">${r.teste}</span>`:'0'}</td>
+      <td><div class="bar" style="max-width:90px"><i class="${r.disp>=90?'ok':r.disp>=70?'':'bad'}" style="width:${r.disp}%"></i></div><small class="mutedLine">${r.disp}%</small></td>
+    </tr>`).join('');
+  const panoramaTable=panorama.length?`<div class="tableWrap"><table><thead><tr><th>Painel</th><th>Laço</th><th>Piso</th><th>Sistema</th><th>FLMs</th><th>Equip.</th><th>Total disp.</th><th>Falha</th><th>Teste</th><th>Disponibilidade</th></tr></thead><tbody>${panoramaRows}</tbody></table></div>`:'<div class="emptyState">Nenhum laço cadastrado ainda.</div>';
 
   const failRows=lojasFalha.length?lojasFalha.map(r=>{const t=timeSince(r.desde);const cls=(t.endsWith('d')&&parseInt(t)>=1)?'urgent':(t.endsWith('h')?'recent':'');return `<div class="failRow"><b>${esc(r.nome)}</b><span>${esc(r.piso)}</span><span>${esc(r.laco)}</span><span class="tsince ${cls}">${esc(t)}</span></div>`}).join(''):'<div class="emptyState">Nenhuma loja em falha no momento.</div>';
 
@@ -1400,6 +1456,11 @@ function renderDashboard(){
         <canvas id="dashLacoCanvas" role="img" aria-label="Falhas ativas por painel e laço"></canvas>
       </div>
     </div>
+  </div>
+  <div class="premiumPanel">
+    <h3>Panorama completo por Laço</h3>
+    <p class="mutedLine">Todos os laços da central — não só os com falha — com quantidade de dispositivos, sistema e disponibilidade. Leitura completa da central só por aqui.</p>
+    <div style="margin-top:14px">${panoramaTable}</div>
   </div>`;
 
   if(!el.classList.contains('active'))return; // evita desenhar em canvas oculto (largura zero)
