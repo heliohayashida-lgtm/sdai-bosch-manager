@@ -660,7 +660,37 @@ function ensurePanel(nome,modelo='',localizacao='',obs='Importado'){return findO
 function ensureLaco(painelId,nome,piso=''){return findOrCreate(db.lacos,x=>x.painelId===painelId&&up(x.nome)===up(nome),{painelId,nome:nome||'Laço não informado',piso,obs:'Importado'}).obj}
 function ensureFlm(painelId,lacoId,endereco,modelo,piso){return findOrCreate(db.flms,x=>x.painelId===painelId&&x.lacoId===lacoId&&up(x.endereco)===up(endereco),{painelId,lacoId,endereco:endereco||'S/E',modelo:modelo||'FLM',piso,obs:'Importado'}).obj}
 function ensurePorta(flmId,numero,localId='',ligacao=''){return findOrCreate(db.portas,x=>x.flmId===flmId&&String(x.numero)===String(numero||'1'),{flmId,numero:numero||'1',localId,ligacao,obs:'Importado'}).obj}
-function ensureLocal(nome,tipo,painelId,lacoId,piso,flmId,portaId){let r=findOrCreate(db.locais,x=>up(x.nome)===up(nome),{nome,tipo:tipo||localClass(nome),painelId,lacoId,piso,flmId,portaId,status:'Em operação',ultimaAlteracao:isoNow(),obs:'Importado'}); Object.assign(r.obj,{painelId:r.obj.painelId||painelId,lacoId:r.obj.lacoId||lacoId,piso:r.obj.piso||piso,flmId:r.obj.flmId||flmId,portaId:r.obj.portaId||portaId}); return r.obj}
+function ensureLocal(nome,tipo,painelId,lacoId,piso,flmId,portaId){
+  // Chave de casamento: se existe um endereço físico (porta de FLM), usamos ELE como
+  // identidade estável da loja/área — não mais o nome técnico. Isso evita duplicar
+  // registros quando o nome muda um pouco na central, e permite atualizar de verdade
+  // piso/painel/laço/porta quando isso muda de fato na reimportação diária.
+  const match = portaId ? (x=>x.portaId===portaId) : (x=>up(x.nome)===up(nome));
+  let r=findOrCreate(db.locais,match,{nome,tipo:tipo||localClass(nome),painelId,lacoId,piso,flmId,portaId,status:'Em operação',ultimaAlteracao:isoNow(),obs:'Importado'});
+  if(!r.created){
+    const nomeAnterior=r.obj.nome;
+    const trocouNome=nomeAnterior && nome && up(nomeAnterior)!==up(nome);
+    const tinhaLuc=!!(r.obj.luc||r.obj.baseLojaId);
+    // Atualiza de verdade os dados físicos/técnicos vindos da central (antes ficavam
+    // travados no primeiro valor cadastrado e nunca eram atualizados).
+    r.obj.nome=nome||r.obj.nome;
+    r.obj.tipo=tipo||r.obj.tipo||localClass(nome);
+    r.obj.painelId=painelId||r.obj.painelId;
+    r.obj.lacoId=lacoId||r.obj.lacoId;
+    r.obj.piso=piso||r.obj.piso;
+    r.obj.flmId=flmId||r.obj.flmId;
+    r.obj.portaId=portaId||r.obj.portaId;
+    r.obj.ultimaAlteracao=isoNow();
+    // Se o nome técnico mudou nesse mesmo endereço físico e já havia LUC vinculado,
+    // NÃO herdamos automaticamente o vínculo antigo pro novo nome — sinalizamos como
+    // conflito para conferência manual (mesma tela de Conflitos de Associação).
+    if(trocouNome&&tinhaLuc){
+      db.conflitosAssociacao=db.conflitosAssociacao||[];
+      db.conflitosAssociacao.push({id:id(),lojaCadastrada:r.obj.nomeOficial||nomeAnterior,lojaCadastradaAtual:nome,lojaBaseLuc:r.obj.nomeOficial||'',motivo:`Reimportação técnica: mesma porta física, nome mudou de "${nomeAnterior}" para "${nome}". Confirme se o LUC/associação ainda é o correto.`,percentualSimilaridade:0,data:isoNow(),localId:r.obj.id,baseLojaId:r.obj.baseLojaId||'',pisoCadastro:r.obj.piso||'',pisoBaseLuc:''});
+    }
+  }
+  return r.obj;
+}
 function deviceKey(d){return [d.painelId,d.lacoId,up(d.tipo),up(d.endereco),up(d.modelo),d.flmId||''].join('|')}
 function ensureEquip(obj,mode='diff'){obj.status=normalizeStatus(obj.status); let key=deviceKey(obj); let ex=db.equipamentos.find(e=>deviceKey(e)===key); if(ex){ ex.status=normalizeStatus(ex.status||obj.status); if(mode==='overwrite')Object.assign(ex,{...obj,id:ex.id,status:normalizeStatus(ex.status||obj.status),ultimaAlteracao:ex.ultimaAlteracao||obj.ultimaAlteracao}); return {obj:ex,created:false,updated:mode==='overwrite'} } obj.id=id(); db.equipamentos.push(obj); return {obj,created:true}}
 function clearAll(){db=emptyDB();persistLocal();markDirty('limpeza');render()}
