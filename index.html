@@ -559,7 +559,7 @@ tbody tr:last-child td{border-bottom:0}
     <div class="field"><label>Senha</label><input id="loginPass" type="password" autocomplete="current-password" placeholder="Senha de acesso"></div>
     <label style="display:flex;gap:8px;align-items:center;font-size:13px;color:#61728a"><input id="loginRemember" type="checkbox" checked> Manter conectado neste computador</label>
     <div class="loginActions"><button class="btn" onclick="login()">Entrar</button></div>
-    <div class="loginHint"><b>Primeiro acesso:</b> usuário <b>admin@local</b> e senha <b>1234</b>. Depois crie usuários reais em Sistema → Usuários e Acessos.</div>
+    
     <div id="loginMsg" class="msg err" style="display:none"></div>
   </div>
 </div>
@@ -608,7 +608,7 @@ function persistLocal(){try{localStorage.setItem(KEY,JSON.stringify(db));_persis
 function markDirty(reason='alteração'){persistLocal(); setSyncCfg({dirty:true,lastReason:reason}); scheduleAutoSync(1500)}
 function save(){markDirty('salvamento');render()}
 function updateSyncFooter(status){const c=syncCfg(); const dot=document.getElementById('syncDot'), txt=document.getElementById('syncText'); if(!dot||!txt)return; dot.className='syncDot '+(status==='saving'?'warn':status==='error'?'bad':(!c.configured?'warn':c.dirty?'warn':'ok')); txt.textContent=status==='saving'?'Sincronizando...':status==='error'?'Falha ao sincronizar':(!c.configured?'Banco Google não configurado':c.dirty?'Alterações pendentes':'Sincronizado '+(c.lastSync||''));}
-let autoSyncTimer=null; function scheduleAutoSync(ms){const c=syncCfg(); if(!c.configured||!c.auto)return; clearTimeout(autoSyncTimer); autoSyncTimer=setTimeout(()=>syncNow(false),ms||((c.intervalSec||30)*1000));}
+let autoSyncTimer=null; let _recuperandoBaseInicial=false; function scheduleAutoSync(ms){const c=syncCfg(); if(!c.configured||!c.auto||_recuperandoBaseInicial)return; clearTimeout(autoSyncTimer); autoSyncTimer=setTimeout(()=>syncNow(false),ms||((c.intervalSec||30)*1000));}
 function jsonp(action, params={}){return new Promise((resolve,reject)=>{const cb='cb_'+Date.now()+'_'+Math.random().toString(36).slice(2); window[cb]=(data)=>{delete window[cb]; s.remove(); resolve(data)}; const q=new URLSearchParams({action,callback:cb,...params}); const s=document.createElement('script'); s.src=API_URL+'?'+q.toString(); s.onerror=()=>{delete window[cb]; s.remove(); reject(new Error('Falha de comunicação com Apps Script'))}; document.body.appendChild(s); setTimeout(()=>{if(window[cb]){delete window[cb]; try{s.remove()}catch(e){} reject(new Error('Tempo esgotado na API'))}},30000)})}
 async function apiPost(action,payload){return fetch(API_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action,payload})})}
 async function setupGoogle(){try{updateSyncFooter('saving'); const r=await jsonp('setup'); if(!r.ok)throw new Error(r.error||'Erro ao configurar banco'); setSyncCfg({configured:true,sheetUrl:r.sheetUrl||'',dirty:true}); renderSistema(); updateSyncFooter(); alert('Banco Google configurado/validado.');}catch(e){updateSyncFooter('error'); alert('Falha ao configurar banco: '+e.message)}}
@@ -1425,27 +1425,35 @@ async function verificarBaseAoAbrir(){
   const c=syncCfg();
   if(!baseParecevazia())return; // banco local ok, nada a fazer
   if(!c.configured){alert('A base local está vazia e o banco Google ainda não foi configurado neste sistema. Vá em Sistema \u2192 Banco de Dados \u2192 "Inicializar/validar" e depois "Carregar base Google".');return}
+  _recuperandoBaseInicial=true;
   updateSyncFooter('saving');
+  const dEl=document.getElementById('dashboard');
+  if(dEl)dEl.innerHTML='<div class="card"><p class="msg warn">Banco local vazio — recarregando automaticamente do Google Sheets, aguarde alguns segundos...</p></div>';
   try{
     const r=await jsonp('load');
     if(r.ok && r.db && Object.keys(r.db).length){
       db=normalizeAllStatuses(Object.assign(emptyDB(),r.db));
       persistLocal();
       setSyncCfg({dirty:false,lastSync:new Date().toLocaleTimeString('pt-BR')});
+      _recuperandoBaseInicial=false;
       render();
       alert('A base local estava vazia (provável falha ao salvar no navegador). Os dados foram recarregados automaticamente do Google Sheets — nada foi perdido.');
     } else {
+      _recuperandoBaseInicial=false;
       updateSyncFooter();
+      render();
       alert('A base local está vazia e a base no Google também não retornou dados. Verifique manualmente em Sistema \u2192 Banco de Dados antes de sincronizar ou continuar usando o sistema, para não gravar uma base vazia por cima da planilha.');
     }
   }catch(e){
+    _recuperandoBaseInicial=false;
     updateSyncFooter('error');
+    render();
     alert('A base local está vazia e não foi possível recarregar automaticamente do Google (' + e.message + '). Vá em Sistema \u2192 Banco de Dados \u2192 "Carregar base Google" manualmente antes de continuar.');
   }
 }
 
 render();
-setTimeout(verificarBaseAoAbrir,800);
+setTimeout(verificarBaseAoAbrir,50);
 </script>
 </body>
 </html>
