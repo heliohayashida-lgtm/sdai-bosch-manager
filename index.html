@@ -1454,6 +1454,154 @@ async function verificarBaseAoAbrir(){
   }
 }
 
+
+/* =========================================================================
+   V8.3 — Base Mestra de Lojas com LUC
+   Bloco aditivo e compatível: não altera importação antiga nem fluxo existente.
+   Fonte oficial: Base Mestra > Importação de equipamentos > Cadastro manual.
+   ========================================================================= */
+(function initBaseMestraLojas(){
+  function ensureBaseMestraSchema(){
+    db.baseMestraLojas=db.baseMestraLojas||[];
+    db.baseMestraConflitos=db.baseMestraConflitos||[];
+    db.baseMestraAssociacoes=db.baseMestraAssociacoes||[];
+    db.locais=db.locais||[];db.equipamentos=db.equipamentos||[];db.paineis=db.paineis||[];db.lacos=db.lacos||[];
+  }
+  ensureBaseMestraSchema();
+  if(typeof VIEW_LABELS==='object')VIEW_LABELS.baseMestra='Base Mestra de Lojas';
+  try{
+    if(DEFAULT_VIEWS_BY_ROLE?.Administrador&&!DEFAULT_VIEWS_BY_ROLE.Administrador.includes('baseMestra'))DEFAULT_VIEWS_BY_ROLE.Administrador.push('baseMestra');
+    if(DEFAULT_VIEWS_BY_ROLE?.Supervisor&&!DEFAULT_VIEWS_BY_ROLE.Supervisor.includes('baseMestra'))DEFAULT_VIEWS_BY_ROLE.Supervisor.push('baseMestra');
+  }catch(e){}
+  function ensureBaseMestraDom(){
+    const content=document.querySelector('.content');
+    if(content&&!document.getElementById('baseMestra')){
+      const s=document.createElement('section');s.id='baseMestra';s.className='view';content.insertBefore(s,document.getElementById('sistema')||null);
+    }
+    const nav=document.querySelector('.nav');
+    if(nav&&!document.querySelector('.nav button[data-view="baseMestra"]')){
+      const ref=document.querySelector('.nav button[data-view="importacao"]')||document.querySelector('.nav button[data-view="exportacao"]');
+      const btn=document.createElement('button');btn.setAttribute('data-view','baseMestra');
+      btn.innerHTML='<i><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h10"/><path d="M17 15l3 3 3-5"/></svg></i><span>Base Mestra de Lojas</span>';
+      btn.addEventListener('click',()=>{document.querySelectorAll('.nav button').forEach(x=>x.classList.remove('active'));btn.classList.add('active');currentView='baseMestra';render()});
+      if(ref)ref.parentNode.insertBefore(btn,ref);else nav.appendChild(btn);
+    }
+  }
+  ensureBaseMestraDom();
+
+  const oldEmpty=emptyDB;
+  emptyDB=function(){const b=oldEmpty();b.baseMestraLojas=[];b.baseMestraConflitos=[];b.baseMestraAssociacoes=[];return b};
+  const oldNormalize=normalizeAllStatuses;
+  normalizeAllStatuses=function(base){base=oldNormalize(base);base.baseMestraLojas=base.baseMestraLojas||[];base.baseMestraConflitos=base.baseMestraConflitos||[];base.baseMestraAssociacoes=base.baseMestraAssociacoes||[];return base};
+
+  function normTxt(s){return up(s).replace(/[^A-Z0-9]+/g,' ').trim()}
+  function normAddr(a){return String(a||'').trim().replace(/-/g,'.').split('.').filter(Boolean).map(x=>String(Number(String(x).replace(/\D/g,'')||0))).join('.')}
+  function addrParts(a){return normAddr(a).split('.').map(x=>Number(x||0))}
+  function addrBase(a){return addrParts(a).slice(0,3).join('.')}
+  function addrInRange(addr,ini,fim){
+    const a=addrParts(addr),i=addrParts(ini),f=addrParts(fim||ini); if(a.length<3||i.length<3)return false;
+    if(a.slice(0,3).join('.')!==i.slice(0,3).join('.'))return false;
+    if(f.length<3)return true; if(a.slice(0,3).join('.')!==f.slice(0,3).join('.'))return a.slice(0,3).join('.')===i.slice(0,3).join('.');
+    const av=a[3]??0,iv=i[3]??0,fv=f[3]??iv; return av>=Math.min(iv,fv)&&av<=Math.max(iv,fv);
+  }
+  function levenshtein(a,b){a=normTxt(a);b=normTxt(b);if(a===b)return 0;if(!a)return b.length;if(!b)return a.length;let v0=[...Array(b.length+1)].map((_,i)=>i),v1=[];for(let i=0;i<a.length;i++){v1[0]=i+1;for(let j=0;j<b.length;j++){v1[j+1]=Math.min(v1[j]+1,v0[j+1]+1,v0[j]+(a[i]===b[j]?0:1))}v0=v1.slice()}return v0[b.length]}
+  function similarity(a,b){a=normTxt(a);b=normTxt(b);if(!a||!b)return 0;if(a===b)return 1;if(a.includes(b)||b.includes(a))return .88;return 1-(levenshtein(a,b)/Math.max(a.length,b.length,1))}
+  function painelNome(id){return paiName(id)||id||''}
+  function lacoNome(id){return lacName(id)||id||''}
+  function lojaOfficialName(m){return n(m.nomeOficial||m.nome||m.loja||m.local)}
+  function localEndereco(local){
+    const eq=db.equipamentos.find(e=>e.localId===local.id&&e.endereco); if(eq)return eq.endereco;
+    const fl=flmById(local.flmId); return fl?.endereco||'';
+  }
+  function scoreLocal(m,l){
+    let score=0,det=[];
+    const sim=similarity(lojaOfficialName(m),l.nome||l.nomeOficial); score+=sim*45; if(sim>=.82)det.push('nome similar');
+    if(m.piso&&l.piso&&normTxt(m.piso)===normTxt(l.piso)){score+=12;det.push('piso')}
+    if(m.painel&&painelNome(l.painelId)&&normTxt(m.painel)===normTxt(painelNome(l.painelId))){score+=12;det.push('painel')}
+    if(m.laco&&lacoNome(l.lacoId)&&normTxt(m.laco)===normTxt(lacoNome(l.lacoId))){score+=12;det.push('laço')}
+    const end=localEndereco(l); if(end&&m.enderecoInicial&&addrInRange(end,m.enderecoInicial,m.enderecoFinal)){score+=25;det.push('endereço')}
+    if(m.luc&&l.luc&&normTxt(m.luc)===normTxt(l.luc)){score+=35;det.push('LUC')}
+    return {score:Math.min(100,Math.round(score)),detalhe:det.join(', ')};
+  }
+  function applyOfficialData(local,m,confidence,detalhe){
+    const old={nome:local.nome,luc:local.luc,piso:local.piso,painelId:local.painelId,lacoId:local.lacoId};
+    local.luc=m.luc||local.luc||'';
+    local.nomeOficial=lojaOfficialName(m)||local.nome;
+    local.localOficial=lojaOfficialName(m)||local.nome;
+    if(lojaOfficialName(m))local.nome=lojaOfficialName(m);
+    if(m.piso)local.piso=m.piso;
+    local.baseMestraId=m.id;local.associacaoConfianca=confidence;local.associacaoDetalhe=detalhe;local.atualizadoBaseMestraEm=isoNow();
+    db.equipamentos.filter(e=>e.localId===local.id).forEach(e=>{e.luc=local.luc;e.nomeOficial=local.nomeOficial;e.localOficial=local.localOficial;e.baseMestraId=m.id});
+    db.baseMestraAssociacoes.push({id:id(),data:isoNow(),baseMestraId:m.id,localId:local.id,luc:m.luc,nomeOficial:lojaOfficialName(m),confianca:confidence,detalhe,antes:old,depois:{nome:local.nome,luc:local.luc,piso:local.piso}});
+  }
+  function reexecutarAssociacaoBaseMestra(silent=false){
+    ensureBaseMestraSchema();db.baseMestraConflitos=[];db.baseMestraAssociacoes=[];
+    let atualizados=0,conflitos=0,sem=0;
+    db.baseMestraLojas.forEach(m=>{
+      const candidatos=db.locais.map(l=>({local:l,...scoreLocal(m,l)})).filter(x=>x.score>=45).sort((a,b)=>b.score-a.score);
+      const top=candidatos[0]; const second=candidatos[1];
+      if(top&&top.score>=78&&(!second||top.score-second.score>=8)){
+        applyOfficialData(top.local,m,top.score,top.detalhe);atualizados++;
+      }else{
+        const motivo=top?`Baixa confiança ou empate técnico. Melhor candidato: ${top.local.nome} (${top.score}%).`:'Nenhuma correspondência mínima encontrada.';
+        db.baseMestraConflitos.push({id:id(),data:isoNow(),baseMestraId:m.id,luc:m.luc,nomeOficial:lojaOfficialName(m),piso:m.piso,painel:m.painel,laco:m.laco,enderecoInicial:m.enderecoInicial,enderecoFinal:m.enderecoFinal,motivo,candidatos:candidatos.slice(0,5).map(c=>({localId:c.local.id,nome:c.local.nome,confianca:c.score,detalhe:c.detalhe}))});
+        conflitos++; if(!top)sem++;
+      }
+    });
+    persistLocal();markDirty('associação Base Mestra');renderBaseMestra();renderLocais();renderEquipamentos();
+    if(!silent)alert(`Associação concluída. Atualizados: ${atualizados}. Conflitos: ${conflitos}. Sem candidato: ${sem}.`);
+    return {atualizados,conflitos,sem};
+  }
+  window.reexecutarAssociacaoBaseMestra=reexecutarAssociacaoBaseMestra;
+  window.aplicarConflitoBaseMestra=function(conflitoId,localId){const c=db.baseMestraConflitos.find(x=>x.id===conflitoId);const m=db.baseMestraLojas.find(x=>x.id===c?.baseMestraId);const l=db.locais.find(x=>x.id===localId);if(!c||!m||!l)return;applyOfficialData(l,m,100,'conferência manual');db.baseMestraConflitos=db.baseMestraConflitos.filter(x=>x.id!==conflitoId);markDirty('conflito Base Mestra aplicado');render()}
+  window.ignorarConflitoBaseMestra=function(conflitoId){db.baseMestraConflitos=db.baseMestraConflitos.filter(x=>x.id!==conflitoId);markDirty('conflito Base Mestra ignorado');render()}
+
+  async function readBaseMestraRows(){
+    let f=document.getElementById('fileBaseMestra')?.files?.[0]; if(!f)throw new Error('Selecione a planilha da Base Mestra.');
+    let ext=f.name.split('.').pop().toLowerCase(); let data=await f.arrayBuffer();
+    if(ext==='csv'){let txt=new TextDecoder('utf-8').decode(data);return parseCSV(txt)}
+    if(typeof XLSX==='undefined')throw new Error('Biblioteca XLSX não carregada. Use CSV ou abra com internet.');
+    let wb=XLSX.read(data,{type:'array'}); let rows=[]; wb.SheetNames.forEach(sn=>{rows=rows.concat(XLSX.utils.sheet_to_json(wb.Sheets[sn],{defval:''}))}); return rows;
+  }
+  function mapBaseMestraRow(r){
+    return {id:id(),luc:get(r,['LUC','Luc','Código LUC','Codigo LUC']),nomeOficial:get(r,['Nome oficial da loja','Nome Oficial','Loja','Nome da loja','Nome']),piso:get(r,['Piso','Pavimento']),painel:get(r,['Painel','Central']),laco:get(r,['Laço','Laco','Loop']),enderecoInicial:normAddr(get(r,['Endereço inicial','Endereco inicial','End Inicial','Endereço Inicio','Endereco Inicio'])),enderecoFinal:normAddr(get(r,['Endereço final','Endereco final','End Final','Endereço Fim','Endereco Fim'])),observacoes:get(r,['Observações','Observacoes','Obs','Observação','Observacao']),importadoEm:isoNow()};
+  }
+  window.importBaseMestraFile=async function(){
+    try{
+      const modo=document.getElementById('modeBaseMestra')?.value||'merge'; const rows=await readBaseMestraRows();
+      if(modo==='replace'){db.baseMestraLojas=[];db.baseMestraConflitos=[];db.baseMestraAssociacoes=[]}
+      let lidos=0,gravados=0,atualizados=0,ignorados=0;
+      rows.forEach(r=>{const m=mapBaseMestraRow(r);lidos++; if(!m.luc&&!m.nomeOficial){ignorados++;return} const ex=db.baseMestraLojas.find(x=>(m.luc&&normTxt(x.luc)===normTxt(m.luc))||(!m.luc&&normTxt(x.nomeOficial)===normTxt(m.nomeOficial)&&normTxt(x.piso)===normTxt(m.piso))); if(ex){Object.assign(ex,{...m,id:ex.id,importadoEm:ex.importadoEm||isoNow(),atualizadoEm:isoNow()});atualizados++}else{db.baseMestraLojas.push(m);gravados++}});
+      const assoc=reexecutarAssociacaoBaseMestra(true);markDirty('importação Base Mestra');render();alert(`Base Mestra importada. Lidos: ${lidos}. Novos: ${gravados}. Atualizados: ${atualizados}. Ignorados: ${ignorados}. Associações seguras: ${assoc.atualizados}. Conflitos: ${assoc.conflitos}.`)
+    }catch(e){const el=document.getElementById('baseMestraMsg');if(el)el.innerHTML=`<div class="msg err">${esc(e.message)}</div>`;else alert(e.message)}
+  }
+  window.previewBaseMestraFile=async function(){
+    try{const rows=await readBaseMestraRows();const mapped=rows.map(mapBaseMestraRow);document.getElementById('baseMestraPreview').innerHTML=`<div class="msg ok">${mapped.length} registros lidos para validação.</div>${table(mapped.slice(0,20),[['LUC','luc'],['Nome oficial','nomeOficial'],['Piso','piso'],['Painel','painel'],['Laço','laco'],['End. inicial','enderecoInicial'],['End. final','enderecoFinal'],['Obs.','observacoes']])}`}
+    catch(e){document.getElementById('baseMestraMsg').innerHTML=`<div class="msg err">${esc(e.message)}</div>`}
+  }
+  window.exportBaseMestraModelo=function(){const csv='LUC;Nome oficial da loja;Piso;Painel;Laço;Endereço inicial;Endereço final;Observações\nLUC-001;LOJA EXEMPLO;P1;Painel 1;Laço 1;1.1.100.1;1.1.100.2;Modelo de importação';download(csv,'modelo_base_mestra_lojas_luc.csv','text/csv;charset=utf-8')}
+
+  window.renderBaseMestra=function(){
+    ensureBaseMestraSchema();const el=document.getElementById('baseMestra');if(!el)return;
+    const q=filters.baseMestraQ||'';
+    const lojas=db.baseMestraLojas.filter(x=>!q||JSON.stringify(x).toUpperCase().includes(up(q))).sort((a,b)=>String(a.piso).localeCompare(String(b.piso),'pt-BR')||String(a.nomeOficial).localeCompare(String(b.nomeOficial),'pt-BR'));
+    const lucs=unique(db.baseMestraLojas.map(x=>x.luc));
+    const vinculados=db.locais.filter(l=>l.baseMestraId).map(l=>({luc:l.luc,nome:l.nome,piso:l.piso,painel:paiName(l.painelId),laco:lacName(l.lacoId),equipamentos:db.equipamentos.filter(e=>e.localId===l.id).length,confianca:l.associacaoConfianca||'',detalhe:l.associacaoDetalhe||''}));
+    const equipamentosVinculados=db.equipamentos.filter(e=>e.baseMestraId||localById(e.localId)?.baseMestraId).map(e=>{const l=localById(e.localId)||{};return {luc:e.luc||l.luc||'',loja:e.nomeOficial||l.nomeOficial||l.nome||'',tipo:e.tipo,endereco:e.endereco,modelo:e.modelo,piso:e.piso||l.piso,painel:paiName(e.painelId),laco:lacName(e.lacoId)}});
+    const conflitos=db.baseMestraConflitos.map(c=>({...c,cands:(c.candidatos||[]).map(k=>`${locName(k.localId)||k.nome} (${k.confianca}%)`).join('<br>')}));
+    el.innerHTML=`<div class="card"><h3 class="sectionTitle">Base Mestra de Lojas com LUC</h3><p class="msg warn"><b>Prioridade oficial:</b> Base Mestra de Lojas &gt; Importação de equipamentos &gt; Cadastro manual. Se não houver Base Mestra, o sistema continua operando normalmente.</p><div class="toolbar"><div class="field"><label>Planilha</label><input type="file" id="fileBaseMestra" accept=".csv,.xls,.xlsx"></div><div class="field"><label>Modo</label><select id="modeBaseMestra"><option value="merge">Adicionar/atualizar sem apagar</option><option value="replace">Substituir Base Mestra</option></select></div><button class="btn secondary" onclick="previewBaseMestraFile()">Pré-visualizar</button><button class="btn" onclick="importBaseMestraFile()">Importar Base Mestra</button><button class="btn secondary" onclick="reexecutarAssociacaoBaseMestra()">Reexecutar associação automática</button><button class="btn secondary" onclick="exportBaseMestraModelo()">Baixar modelo CSV</button></div><div id="baseMestraMsg"></div><div id="baseMestraPreview"></div></div>
+    <div class="card"><h3 class="sectionTitle">Indicadores da Base Mestra</h3><div class="grid">${kpi('Lojas na Base Mestra',db.baseMestraLojas.length)}${kpi('LUCs cadastrados',lucs.length)}${kpi('Lojas vinculadas',vinculados.length)}${kpi('Conflitos pendentes',db.baseMestraConflitos.length)}</div><div class="toolbar"><div class="field"><label>Busca</label><input value="${esc(q)}" data-filter-input="1" data-filter-path="baseMestraQ" data-focus-key="baseMestraBusca" placeholder="LUC, loja, piso, painel, laço..."></div></div></div>
+    <div class="card"><h3 class="sectionTitle">Lojas oficiais importadas</h3>${table(lojas,[['LUC','luc'],['Nome oficial','nomeOficial'],['Piso','piso'],['Painel','painel'],['Laço','laco'],['End. inicial','enderecoInicial'],['End. final','enderecoFinal'],['Observações','observacoes']])}</div>
+    <div class="card"><h3 class="sectionTitle">LUCs cadastrados</h3>${table(lucs.map(luc=>({luc,qtd:db.baseMestraLojas.filter(x=>x.luc===luc).length,lojas:db.baseMestraLojas.filter(x=>x.luc===luc).map(x=>x.nomeOficial).join(' | ')})),[['LUC','luc'],['Qtd.','qtd'],['Lojas','lojas']])}</div>
+    <div class="card"><h3 class="sectionTitle">Lojas vinculadas pela Base Mestra</h3>${table(vinculados,[['LUC','luc'],['Loja / Local oficial','nome'],['Piso','piso'],['Painel','painel'],['Laço','laco'],['Qtd. equipamentos','equipamentos'],['Confiança','confianca'],['Critérios','detalhe']])}</div>
+    <div class="card"><h3 class="sectionTitle">Equipamentos vinculados</h3>${table(equipamentosVinculados,[['LUC','luc'],['Loja oficial','loja'],['Tipo','tipo'],['Endereço','endereco'],['Modelo','modelo'],['Piso','piso'],['Painel','painel'],['Laço','laco']])}</div>
+    <div class="card"><h3 class="sectionTitle">Conflitos para conferência manual</h3>${table(conflitos,[['LUC','luc'],['Nome oficial','nomeOficial'],['Piso','piso'],['Painel','painel'],['Laço','laco'],['Motivo','motivo'],['Candidatos','cands',r=>r.cands||'-']],r=>`${(r.candidatos||[]).map(c=>`<button class="btn small secondary" onclick="aplicarConflitoBaseMestra('${r.id}','${c.localId}')">Aplicar: ${esc(locName(c.localId)||c.nome)}</button>`).join(' ')} <button class="btn small danger" onclick="ignorarConflitoBaseMestra('${r.id}')">Ignorar</button>`)}</div>`;
+  }
+
+  const oldRender=render;
+  render=function(){ensureBaseMestraDom();oldRender();renderBaseMestra();attachSearchInputs();restoreSearchFocus();};
+})();
+
 render();
 setTimeout(verificarBaseAoAbrir,50);
 </script>
