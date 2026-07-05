@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Contratos L3A — Gestão Operacional SDAI</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -436,6 +437,22 @@ tbody tr:last-child td{border-bottom:0}
 
 /* ---------- 16. UTILITÁRIOS -------------------------------------------------- */
 .hidden{display:none!important}
+
+/* ---------- 16b. DASHBOARD — status por piso e lojas com falha (v8.1) ------- */
+.dashRow{display:grid;grid-template-columns:1.3fr 1fr;gap:16px;margin-bottom:18px}
+@media(max-width:1000px){.dashRow{grid-template-columns:1fr}}
+.chartLegendRow{display:flex;flex-wrap:wrap;gap:14px;margin:0 0 12px;font-size:11.5px;color:var(--l3a-text-soft);font-weight:700}
+.chartLegendRow span{display:inline-flex;align-items:center;gap:6px}
+.chartLegendRow i{width:10px;height:10px;border-radius:3px;display:inline-block}
+.chartCanvasWrap{position:relative;width:100%}
+.failList{display:grid;gap:8px}
+.failRow{display:grid;grid-template-columns:1.5fr .6fr .7fr .8fr;gap:10px;align-items:center;
+  border:1px solid var(--l3a-border);border-radius:var(--l3a-radius-sm);padding:9px 12px;font-size:12.5px}
+.failRow.head{border:0;padding:0 12px;color:var(--l3a-text-muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;font-weight:800}
+.failRow b{font-weight:750;color:var(--l3a-text)}
+.failRow .tsince{font-weight:750}
+.failRow .tsince.urgent{color:var(--l3a-danger)}
+.failRow .tsince.recent{color:var(--l3a-warning)}
 
 /* ---------- 17. IMPRESSÃO (geração de relatório em PDF) --------------------- */
 @media print{
@@ -1226,6 +1243,90 @@ function renderConfiguracoes(){
 function renderBackup(){const el=document.getElementById('backup'); if(!el)return; el.innerHTML=`<div class="premiumPanel"><div class="systemHeaderSlim"><div class="titleBlock"><h3>Backup local</h3><p>Exportação e restauração de segurança.</p></div></div><div class="premiumGrid">${premiumStat('Painéis',db.paineis.length)}${premiumStat('Equipamentos',db.equipamentos.length)}${premiumStat('Falhas',db.falhas.length)}${premiumStat('Planos',db.planos.length)}</div><div class="premiumActions"><button class="btn" onclick="exportJson()">Exportar JSON</button><button class="btn secondary" onclick="exportAllCsv()">Exportar CSV</button><button class="btn secondary" onclick="document.getElementById('restoreJsonInput').click()">Restaurar JSON</button><input type="file" id="restoreJsonInput" accept="application/json,.json" style="display:none" onchange="restoreBackupFile(this.files[0])"></div></div>`}
 function renderLogs(){const el=document.getElementById('logs'); if(!el)return; const rows=(db.historico||[]).slice(-200).reverse(); el.innerHTML=`<div class="premiumPanel"><h3>Logs e auditoria</h3><p>Registro das ações operacionais e administrativas.</p>${rows.length?`<div class="softTable" style="margin-top:14px">${table(rows,[['Data','data'],['Usuário','usuario'],['Entidade','entidade'],['Ação','acao'],['Descrição','descricao']])}</div>`:'<div class="emptyState" style="margin-top:14px">Nenhum log registrado ainda.</div>'}</div>`}
 function renderSobre(){const el=document.getElementById('sobre'); if(!el)return; const u=currentUserSafe(); const cfg=db.config||{}; el.innerHTML=`<div class="premiumPanel"><h3>${esc(cfg.appName||'Contratos L3A')}</h3><p>Módulo SDAI para cadastro técnico, histórico de falhas, plano de ação, relatórios e sincronização Google Sheets.</p><div class="premiumGrid" style="margin-top:14px">${premiumStat('Versão','6.6 SDAI')}${premiumStat('Usuário',u.nome||'Usuário')}${premiumStat('Perfil',u.perfil||'Administrador')}${premiumStat('Banco',syncCfg().configured?'Google Sheets':'Local')}</div></div><div class="premiumPanel"><h3>Arquitetura</h3><p>GitHub Pages + Google Apps Script + Google Sheets. Projeto focado exclusivamente em SDAI.</p></div>`}
+
+
+/* =========================================================================
+   V8.1 — Dashboard orientado a "onde/quem", não só "quanto".
+   Bloco 100% ADITIVO: nenhuma função existente foi alterada ou removida.
+   Reaproveita os campos já existentes (piso, painelId, lacoId, status,
+   ultimaAlteracao) — nenhuma mudança de schema, nenhuma mudança no Code.gs.
+   ========================================================================= */
+function pisoSortKey(p){const m=String(p||'').match(/\d+/);return m?parseInt(m[0],10):999}
+function dashStatusBucket(st){const s=up(normalizeStatus(st||''));if(s.includes('FALHA'))return 'falha';if(s.includes('TESTE'))return 'teste';if(s.includes('DESATIV'))return 'desativada';return 'operacao'}
+function timeSince(isoStr){if(!isoStr)return '—';const then=new Date(isoStr).getTime();if(isNaN(then))return '—';const diffMs=Math.max(0,Date.now()-then);const h=diffMs/3600000;if(h<1)return Math.max(1,Math.round(diffMs/60000))+' min';if(h<24)return Math.round(h)+'h';return Math.round(h/24)+'d'}
+function dashPisoStats(){const map={};(db.equipamentos||[]).forEach(e=>{const p=n(e.piso)||'Sem piso';if(!map[p])map[p]={piso:p,operacao:0,teste:0,falha:0,desativada:0};map[p][dashStatusBucket(e.status)]++});return Object.values(map).sort((a,b)=>pisoSortKey(a.piso)-pisoSortKey(b.piso)||a.piso.localeCompare(b.piso,'pt-BR'))}
+function dashLojasComFalha(){return (db.locais||[]).filter(l=>dashStatusBucket(l.status)==='falha').map(l=>({nome:l.nome||'—',piso:n(l.piso)||'—',laco:lacName(l.lacoId)||'—',desde:l.ultimaAlteracao||'',status:l.status})).sort((a,b)=>(a.desde||'').localeCompare(b.desde||''))}
+function dashPorLaco(){const map={};(db.locais||[]).filter(l=>dashStatusBucket(l.status)==='falha').forEach(l=>{const key=(paiName(l.painelId)||'—')+' · '+(lacName(l.lacoId)||'—');map[key]=(map[key]||0)+1});return Object.entries(map).map(([label,value])=>({label,value})).sort((a,b)=>b.value-a.value).slice(0,8)}
+
+window._dashCharts=window._dashCharts||{};
+function dashDestroyChart(k){if(window._dashCharts[k]){try{window._dashCharts[k].destroy()}catch(e){}delete window._dashCharts[k]}}
+
+const _renderDashboardAnterior=null; // (mantido apenas como marcador de versão; a versão anterior de renderDashboard() continua no arquivo, apenas superada por esta)
+function renderDashboard(){
+  const el=document.getElementById('dashboard');if(!el)return;
+  const pisos=dashPisoStats();
+  const totalEquip=(db.equipamentos||[]).length;
+  const totalOp=pisos.reduce((a,p)=>a+p.operacao,0);
+  const totalTeste=pisos.reduce((a,p)=>a+p.teste,0);
+  const disponibilidade=totalEquip?Math.round((totalOp/totalEquip)*100):0;
+  const lojasFalha=dashLojasComFalha();
+  const planosAbertos=(db.planos||[]).filter(p=>p.situacao!=='Concluído').length;
+  const porLaco=dashPorLaco();
+
+  const failRows=lojasFalha.length?lojasFalha.map(r=>{const t=timeSince(r.desde);const cls=(t.endsWith('d')&&parseInt(t)>=1)?'urgent':(t.endsWith('h')?'recent':'');return `<div class="failRow"><b>${esc(r.nome)}</b><span>${esc(r.piso)}</span><span>${esc(r.laco)}</span><span class="tsince ${cls}">${esc(t)}</span></div>`}).join(''):'<div class="emptyState">Nenhuma loja em falha no momento.</div>';
+
+  el.innerHTML=`
+  <div class="grid" style="margin-bottom:18px">
+    ${kpi('Disponibilidade',disponibilidade+'%')}
+    ${kpi('Lojas em falha',lojasFalha.length)}
+    ${kpi('Em teste',totalTeste)}
+    ${kpi('Planos em aberto',planosAbertos)}
+  </div>
+  <div class="chartPanel" style="margin-bottom:18px">
+    <h4>Status por piso</h4>
+    <p class="mutedLine" style="margin-bottom:10px">Onde os problemas estão concentrados, não só quantos existem</p>
+    <div class="chartLegendRow"><span><i style="background:#15803D"></i>Em operação</span><span><i style="background:#B45309"></i>Em teste</span><span><i style="background:#B42318"></i>Falha</span></div>
+    <div class="chartCanvasWrap" style="height:${Math.max(160,pisos.length*46+40)}px">
+      <canvas id="dashPisoCanvas" role="img" aria-label="Status dos equipamentos por piso, em operação, teste e falha"></canvas>
+    </div>
+  </div>
+  <div class="dashRow">
+    <div class="premiumPanel">
+      <h3>Lojas com falha agora</h3>
+      <p>Nome, piso, laço e tempo em aberto — não apenas a contagem</p>
+      <div class="failList" style="margin-top:14px">
+        <div class="failRow head"><span>Loja</span><span>Piso</span><span>Laço</span><span>Aberto há</span></div>
+        ${failRows}
+      </div>
+    </div>
+    <div class="chartPanel">
+      <h4>Compilado por painel / laço</h4>
+      <p class="mutedLine" style="margin-bottom:10px">Onde concentrar a próxima visita técnica</p>
+      <div class="chartCanvasWrap" style="height:${Math.max(160,porLaco.length*34+40)}px">
+        <canvas id="dashLacoCanvas" role="img" aria-label="Falhas ativas por painel e laço"></canvas>
+      </div>
+    </div>
+  </div>`;
+
+  if(!el.classList.contains('active'))return; // evita desenhar em canvas oculto (largura zero)
+  if(typeof Chart==='undefined')return;
+
+  dashDestroyChart('piso');
+  const ctxPiso=document.getElementById('dashPisoCanvas');
+  if(ctxPiso){
+    window._dashCharts.piso=new Chart(ctxPiso,{type:'bar',data:{labels:pisos.map(p=>p.piso),datasets:[
+      {label:'Em operação',data:pisos.map(p=>p.operacao),backgroundColor:'#15803D'},
+      {label:'Em teste',data:pisos.map(p=>p.teste),backgroundColor:'#B45309'},
+      {label:'Falha',data:pisos.map(p=>p.falha),backgroundColor:'#B42318'}
+    ]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,scales:{x:{stacked:true,grid:{display:false}},y:{stacked:true,grid:{display:false}}},plugins:{legend:{display:false}}}});
+  }
+  dashDestroyChart('laco');
+  const ctxLaco=document.getElementById('dashLacoCanvas');
+  if(ctxLaco){
+    window._dashCharts.laco=new Chart(ctxLaco,{type:'bar',data:{labels:porLaco.map(p=>p.label),datasets:[{data:porLaco.map(p=>p.value),backgroundColor:'#B42318'}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,scales:{x:{grid:{display:false},ticks:{precision:0}},y:{grid:{display:false}}},plugins:{legend:{display:false}}}});
+  }
+}
+/* ===== Fim V8.1 — Dashboard por piso/loja ===== */
 
 render();
 </script>
