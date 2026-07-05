@@ -453,6 +453,10 @@ tbody tr:last-child td{border-bottom:0}
 .failRow .tsince{font-weight:750}
 .failRow .tsince.urgent{color:var(--l3a-danger)}
 .failRow .tsince.recent{color:var(--l3a-warning)}
+.chartLine.clickable{cursor:pointer;border-radius:8px;transition:background var(--l3a-dur) var(--l3a-ease)}
+.chartLine.clickable:hover{background:var(--l3a-hover)}
+.chartLine.selected{background:var(--l3a-primary-50)}
+.chartLine.selected b{color:var(--l3a-primary-700)}
 
 /* ---------- 17. IMPRESSÃO (geração de relatório em PDF) --------------------- */
 @media print{
@@ -1327,6 +1331,92 @@ function renderDashboard(){
   }
 }
 /* ===== Fim V8.1 — Dashboard por piso/loja ===== */
+
+/* =========================================================================
+   V8.2 — Falhas, Plano de Ação e Relatórios: mesmo padrão "onde/quem"
+   aplicado ao Dashboard. Bloco 100% ADITIVO — nenhuma função removida.
+   ========================================================================= */
+function toggleFalhaPiso(label){filters.falhas=filters.falhas||{};filters.falhas.piso=(filters.falhas.piso===label?'':label);render()}
+function renderFalhas(){
+  let f=filters.falhas||{};
+  let allRows=db.falhas.filter(x=>(!f.status||normalizeStatus(x.status)===f.status)&&(!f.tipo||x.tipo===f.tipo)&&(!f.q||JSON.stringify(x).toUpperCase().includes(up(f.q)))).map(x=>({...x,painel:paiName(x.painelId),laco:lacName(x.lacoId),loja:locName(x.localId)}));
+  const pisoMap={};allRows.forEach(x=>{const p=n(x.piso)||'Sem piso';pisoMap[p]=(pisoMap[p]||0)+1});
+  const pisoRows=Object.entries(pisoMap).map(([label,value])=>({label,value})).sort((a,b)=>pisoSortKey(a.label)-pisoSortKey(b.label));
+  const maxPiso=Math.max(1,...pisoRows.map(r=>r.value));
+  const pisoChartHtml=pisoRows.length?`<div class="chartBars">${pisoRows.map(r=>`<div class="chartLine clickable ${f.piso===r.label?'selected':''}" onclick="toggleFalhaPiso('${esc(r.label)}')"><b>${esc(r.label)}</b><div class="chartTrack"><i style="width:${Math.max(2,pct(r.value,maxPiso))}%"></i></div><strong>${r.value}</strong></div>`).join('')}</div>`:'<div class="emptyState">Sem lançamentos para os filtros atuais.</div>';
+  const rows=f.piso?allRows.filter(x=>(n(x.piso)||'Sem piso')===f.piso):allRows;
+  document.getElementById('falhas').innerHTML=`<div class="card"><button class="btn" onclick="formFalha()">+ Registrar falha / operação</button><div class="toolbar"><div class="field"><label>Tipo</label><select onchange="filters.falhas={...filters.falhas,tipo:this.value};render()">${selectOpts(unique(db.falhas.map(x=>x.tipo)),f.tipo)}</select></div><div class="field"><label>Status</label><select onchange="filters.falhas={...filters.falhas,status:this.value};render()">${selectOpts(unique(db.falhas.map(x=>normalizeStatus(x.status))),f.status)}</select></div><div class="field"><label>Piso</label><select onchange="filters.falhas={...filters.falhas,piso:this.value};render()">${selectOpts(pisoRows.map(r=>r.label),f.piso)}</select></div><div class="field"><label>Busca</label><input value="${esc(f.q)}" data-filter-input="1" data-filter-group="falhas" data-filter-key="q" data-focus-key="falhasBusca"></div></div></div><div class="chartPanel"><h4>Lançamentos por piso</h4><p class="mutedLine" style="margin-bottom:10px">Clique em um piso para filtrar a tabela abaixo</p>${pisoChartHtml}</div><div class="card"><h3 class="sectionTitle">Histórico e falhas${f.piso?` — Piso: ${esc(f.piso)}`:''}</h3>${table(rows,[['Data','data'],['Painel','painel'],['Laço','laco'],['Piso','piso'],['Tipo','tipo'],['Item','itemNome'],['Loja','loja'],['Status','status',r=>`<span class="pill ${statusClass(r.status)}">${esc(r.status)}</span>`],['Origem','origem'],['Motivo','motivo'],['Resolvida em','resolvidaEm']],r=>`<button class="btn small secondary" onclick="formFalha('${r.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1-4.2L15.5 5.3a1.5 1.5 0 0 1 2.1 0l1.1 1.1a1.5 1.5 0 0 1 0 2.1L8.2 19 4 20Z"/><path d="M13.8 7 17 10.2"/></svg></button> <button class="btn small danger" onclick="del('falhas','${r.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2"/><path d="M6.5 7 7.3 19a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4L17.5 7"/><path d="M10 11v6M14 11v6"/></svg></button>`)}</div>`;
+}
+
+function setPlanoCategoriaFiltro(cat){const el=document.getElementById('plCat');if(el)el.value=(el.value===cat?'':cat);renderPlano()}
+function renderPlano(){
+  let planos=db.planos||[];
+  let q=(document.getElementById('plBuscaPlano')?.value||'').toUpperCase();
+  let fcat=document.getElementById('plCat')?.value||'', fprio=document.getElementById('plPrio')?.value||'', fsit=document.getElementById('plSit')?.value||'', fresp=document.getElementById('plResp')?.value||'', ini=document.getElementById('plIni')?.value||'', fim=document.getElementById('plFim')?.value||'';
+  let falhas=falhasAtivasParaPlano();
+  let rows=[];
+  planos.forEach(p=>{
+    let f=db.falhas.find(x=>x.id===p.falhaId)||{};
+    let inf=f.id?itemInfoFromFalha(f):{};
+    rows.push({origemLinha:'Plano',falhaId:p.falhaId||'',planoId:p.id,prioridade:p.prioridade||'Média',painel:inf.painel||p.painel||'',laco:inf.laco||p.laco||'',piso:inf.piso||p.piso||'',local:inf.local||p.local||'',itemNome:inf.itemNome||p.item||'',statusFalha:f.status||p.statusFalha||'',categoria:p.categoria||'',responsavel:p.responsavel||'',desde:f.data||p.criadoEm||'',criadoEm:p.criadoEm||'',concluidoEm:p.concluidoEm||'',situacao:p.situacao||'Aberto',justificativa:p.justificativa||'',providencia:p.providencia||'',necessitaCompra:p.necessitaCompra?'Sim':'Não'});
+  });
+  falhas.forEach(f=>{
+    if(planoForFalha(f.id))return;
+    let inf=itemInfoFromFalha(f);
+    rows.push({origemLinha:'Falha sem plano',falhaId:f.id,planoId:'',prioridade:'Média',painel:inf.painel||'',laco:inf.laco||'',piso:inf.piso||'',local:inf.local||'',itemNome:inf.itemNome||'',statusFalha:f.status||'',categoria:'',responsavel:'',desde:f.data||'',criadoEm:'',concluidoEm:'',situacao:'Sem plano',justificativa:f.motivo||f.obs||'',providencia:'',necessitaCompra:'Não'});
+  });
+  function inPeriodo(x){if(!ini&&!fim)return true;let datas=[x.desde,x.criadoEm,x.concluidoEm].filter(Boolean).map(String);return datas.some(d=>(!ini||d>=ini)&&(!fim||d<=fim+'T23:59'))}
+  function situacaoPeso(s){return {'Sem plano':0,'Aberto':1,'Em andamento':2,'Concluído':3}[s]??9}
+
+  // gráfico por categoria calculado ANTES do filtro de categoria, pra sempre mostrar todas as barras
+  let rowsPreCat=rows.filter(x=>(!q||JSON.stringify(x).toUpperCase().includes(q))&&(!fprio||x.prioridade===fprio)&&(!fsit||x.situacao===fsit)&&(!fresp||x.responsavel===fresp)&&inPeriodo(x));
+  let catMap={};rowsPreCat.forEach(x=>{const c=x.categoria||'Sem categoria';catMap[c]=(catMap[c]||0)+1});
+  let catRows=Object.entries(catMap).map(([label,value])=>({label,value})).sort((a,b)=>b.value-a.value);
+  let maxCat=Math.max(1,...catRows.map(r=>r.value));
+  let catChartHtml=catRows.length?`<div class="chartBars">${catRows.map(r=>`<div class="chartLine clickable ${fcat===r.label?'selected':''}" onclick="setPlanoCategoriaFiltro('${esc(r.label)}')"><b>${esc(r.label)}</b><div class="chartTrack"><i style="width:${Math.max(2,pct(r.value,maxCat))}%"></i></div><strong>${r.value}</strong></div>`).join('')}</div>`:'<div class="emptyState">Sem itens para os filtros atuais.</div>';
+
+  let filtrados=rowsPreCat.filter(x=>!fcat||(x.categoria||'Sem categoria')===fcat)
+    .sort((a,b)=>situacaoPeso(a.situacao)-situacaoPeso(b.situacao)||prioridadePeso(a.prioridade)-prioridadePeso(b.prioridade)||String(a.desde||a.criadoEm).localeCompare(String(b.desde||b.criadoEm)));
+
+  document.getElementById('plano').innerHTML=`
+    <div class="card"><h3 class="sectionTitle">Filtros do Plano de Ação</h3><div class="toolbar"><div class="field"><label>Busca</label><input id="plBuscaPlano" placeholder="Loja, laço, item, motivo..." value="${esc(document.getElementById('plBuscaPlano')?.value||'')}"></div><div class="field"><label>Categoria</label><select id="plCat">${selectOpts(planoCategorias(),fcat)}</select></div><div class="field"><label>Prioridade</label><select id="plPrio">${selectOpts(planoPrioridades(),fprio)}</select></div><div class="field"><label>Situação</label><select id="plSit">${selectOpts(['Sem plano','Aberto','Em andamento','Concluído'],fsit)}</select></div><div class="field"><label>Responsável</label><select id="plResp">${selectOpts(planoResponsaveis(),fresp)}</select></div><div class="field"><label>Inicial</label><input id="plIni" type="date" value="${esc(ini)}"></div><div class="field"><label>Final</label><input id="plFim" type="date" value="${esc(fim)}"></div><button class="btn" onclick="renderPlano()">Filtrar</button></div><p class="msg warn">Planos concluídos permanecem registrados para relatório e rastreabilidade.</p></div>
+    <div class="chartPanel"><h4>Itens por categoria</h4><p class="mutedLine" style="margin-bottom:10px">Clique em uma categoria para filtrar a lista abaixo</p>${catChartHtml}</div>
+    <div class="card"><h3 class="sectionTitle">Lançamentos e acompanhamento${fcat?` — Categoria: ${esc(fcat)}`:''}</h3>${table(filtrados,[['Prioridade','prioridade'],['Painel','painel'],['Laço','laco'],['Piso','piso'],['Loja / Área','local'],['Item','itemNome'],['Falha','statusFalha',r=>`<span class="pill ${statusClass(r.statusFalha)}">${esc(r.statusFalha)}</span>`],['Categoria','categoria'],['Responsável','responsavel'],['Desde','desde'],['Situação','situacao',r=>`<span class="pill ${r.situacao==='Concluído'?'ok':r.situacao==='Sem plano'?'warn':''}">${esc(r.situacao)}</span>`],['Concluído em','concluidoEm']],r=>`${r.planoId?`<button class="btn small secondary" onclick="formPlano('${r.planoId}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1-4.2L15.5 5.3a1.5 1.5 0 0 1 2.1 0l1.1 1.1a1.5 1.5 0 0 1 0 2.1L8.2 19 4 20Z"/><path d="M13.8 7 17 10.2"/></svg> Editar</button>`:`<button class="btn small" onclick="formPlano('', '${r.falhaId}')">+ Criar</button>`} ${r.planoId&&r.situacao!=='Concluído'?`<button class="btn small" onclick="concluirPlano('${r.planoId}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5 9 17l10.5-10.5"/></svg> Concluir</button>`:''}`)}</div>`;
+  ['plBuscaPlano','plCat','plPrio','plSit','plResp','plIni','plFim'].forEach(id=>{let el=document.getElementById(id); if(el)el.onchange=renderPlano});
+}
+
+function drawReport(){
+  let r=reportData();
+  let geral=Object.values(r.byPainel).reduce((a,d)=>{a.op+=d.op;a.falha+=d.falha;Object.entries(d.tipos).forEach(([t,v])=>{a.tipos[t]=a.tipos[t]||{op:0,falha:0};a.tipos[t].op+=(v.op||0);a.tipos[t].falha+=(v.falha||0)});return a},{op:0,falha:0,tipos:{}});
+  let maxPain=Math.max(1,...Object.values(r.byPainel).map(d=>d.op+d.falha));
+  let painelChart=chartBarRows(Object.entries(r.byPainel).map(([pn,d])=>({label:pn,value:d.op+d.falha})),maxPain);
+  let tipoRows=Object.entries(geral.tipos).map(([t,v])=>({label:t,value:(v.op||0)+(v.falha||0)}));
+  let tipoChart=chartBarRows(tipoRows,Math.max(1,...tipoRows.map(x=>x.value)));
+
+  // ===== V8.2: quebra por piso (onde estão os problemas, não só quantos) =====
+  let byPiso={};
+  db.equipamentos.filter(e=>!r.painel||paiName(e.painelId)===r.painel).forEach(e=>{const p=n(e.piso)||'Sem piso';byPiso[p]=byPiso[p]||{op:0,falha:0};byPiso[p][dashStatusBucket(e.status)==='falha'?'falha':'op']++});
+  db.flms.filter(f=>!r.painel||paiName(f.painelId)===r.painel).forEach(f=>{const p=n(f.piso)||'Sem piso';byPiso[p]=byPiso[p]||{op:0,falha:0};byPiso[p][dashStatusBucket(f.status)==='falha'?'falha':'op']++});
+  let pisoEntries=Object.entries(byPiso).sort((a,b)=>pisoSortKey(a[0])-pisoSortKey(b[0]));
+  let pisoRowsChart=pisoEntries.map(([p,d])=>({label:p,value:d.op+d.falha}));
+  let pisoChart=chartBarRows(pisoRowsChart,Math.max(1,...pisoRowsChart.map(x=>x.value)));
+  let pisoTable=table(pisoEntries.map(([p,d])=>({piso:p,operacao:d.op,falha:d.falha,total:d.op+d.falha,disponibilidade:pct(d.op,d.op+d.falha)+'%'})),[['Piso','piso'],['Em operação','operacao'],['Falha','falha'],['Total','total'],['Disponibilidade','disponibilidade']]);
+
+  let painBlocks=Object.entries(r.byPainel).map(([pn,d])=>{
+    let lacos=db.lacos.filter(l=>paiName(l.painelId)===pn).map(l=>{
+      let eq=db.equipamentos.filter(e=>e.lacoId===l.id);let fl=db.flms.filter(f=>f.lacoId===l.id);let tipos={};
+      eq.forEach(e=>{tipos[e.tipo]=tipos[e.tipo]||{op:0,falha:0};tipos[e.tipo][up(e.status).includes('FALHA')?'falha':'op']++});
+      fl.forEach(f=>{tipos['Módulo']=tipos['Módulo']||{op:0,falha:0};tipos['Módulo'][up(f.status).includes('FALHA')?'falha':'op']++});
+      let totalL=Object.values(tipos).reduce((a,v)=>a+(v.op||0)+(v.falha||0),0);
+      let falhaL=Object.values(tipos).reduce((a,v)=>a+(v.falha||0),0);
+      return `<div class="reportBlock"><b>${esc(l.nome)} — ${totalL} itens / ${falhaL} em falha</b><div class="premiumTable">${table(Object.entries(tipos).map(([t,v])=>({tipo:t,operacao:v.op||0,falha:v.falha||0,total:(v.op||0)+(v.falha||0)})),[['Tipo','tipo'],['Em operação','operacao'],['Falha','falha'],['Total','total']])}</div></div>`;
+    }).join('');
+    let rowsTipo=Object.entries(d.tipos).map(([t,v])=>({tipo:t,operacao:v.op||0,falha:v.falha||0,total:(v.op||0)+(v.falha||0)}));
+    return `<div class="reportBlock"><h3>${esc(pn)}</h3><div class="miniChart"><div class="chartCard"><h4>Em operação</h4><b>${d.op}</b></div><div class="chartCard"><h4>Em falha</h4><b>${d.falha}</b></div><div class="chartCard"><h4>Disponibilidade</h4><b>${pct(d.op,d.op+d.falha)}%</b></div></div><div class="chartPanel"><h4>Status do painel</h4>${donutChart(d.op,d.falha)}</div><h4>Compilado por tipo</h4><div class="premiumTable">${table(rowsTipo,[['Tipo','tipo'],['Em operação','operacao'],['Falha','falha'],['Total','total']])}</div><h4>Por laço</h4>${lacos}</div>`;
+  }).join('');
+
+  document.getElementById('reportOut').innerHTML=`<div class="card"><div class="reportCover"><h2>Relatório Técnico SDAI Bosch</h2><p>Setup Soluções Integradas • Diagnóstico operacional do sistema de detecção e alarme de incêndio</p><div class="reportMeta"><span>Período: ${esc(r.ini||'início')} até ${esc(r.fim||'atual')}</span><span>Painel: ${esc(r.painel||'Todos')}</span><span>Gerado em: ${now()}</span></div></div><div class="grid">${kpi('Falhas lançadas no período',r.lanc)}${kpi('Falhas resolvidas no período',r.resol)}${kpi('Itens em operação',geral.op)}${kpi('Itens em falha',geral.falha)}${kpi('Disponibilidade',pct(geral.op,geral.op+geral.falha)+'%')}${kpi('Total avaliado',geral.op+geral.falha)}</div><div class="chartGrid"><div class="chartPanel"><h4>Status geral do sistema</h4>${donutChart(geral.op,geral.falha)}</div><div class="chartPanel"><h4>Dispositivos por tipo</h4>${tipoChart}</div><div class="chartPanel"><h4>Total por painel</h4>${painelChart}</div><div class="chartPanel"><h4>Total por piso</h4>${pisoChart}</div></div><div class="reportBlock"><h3>Compilado por piso</h3><p class="mutedLine">Onde a falha está concentrada, não apenas o total do sistema.</p>${pisoTable}</div><div class="reportBlock"><h3>Compilado geral por tipo</h3><div class="premiumTable">${table(Object.entries(geral.tipos).map(([t,v])=>({tipo:t,operacao:v.op||0,falha:v.falha||0,total:(v.op||0)+(v.falha||0)})),[['Tipo','tipo'],['Em operação','operacao'],['Falha','falha'],['Total','total']])}</div></div>${painBlocks}${reportPlanoBlock(r)}<div class="reportBlock"><h3>Conclusão técnica</h3><p>Relatório compilado com indicadores por painel, laço, piso, tipo de dispositivo e status operacional. A base segue a estrutura Empreendimento → Painel → Laço → FLM físico → Porta → Loja/Área → Equipamentos → Histórico de falhas.</p></div><div class="reportFooter"><span>Setup Soluções Integradas</span><span>Documento técnico gerado pelo SDAI Bosch Manager</span></div></div>`;
+}
 
 render();
 </script>
