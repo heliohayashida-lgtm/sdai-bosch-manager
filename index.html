@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- build: 2026-07-05 v6.14 - Novo commit para forçar deploy limpo -->
+<!-- build: 2026-07-05 v6.16 - PDF do Plano de Ação por Piso/Laço/Endereço -->
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
@@ -1182,6 +1182,79 @@ function saveFalha(i){
   if(!i){db.falhas.push(rec); if(isFalhaStatus(rec.status)&&!db.planos.find(p=>p.falhaId===rec.id)){db.planos.push({id:id(),falhaId:rec.id,criadoEm:isoNow(),categoria:'Manutenção corretiva',prioridade:'Média',responsavel:'L3A Engenharia',situacao:'Aberto',painel:paiName(rec.painelId),laco:lacName(rec.lacoId),piso:rec.piso,local:locName(rec.localId),item:rec.itemNome,statusFalha:rec.status,justificativa:rec.motivo||rec.obs||'',providencia:'',necessitaCompra:false});}} closeModal(); save()
 }
 
+function fotosThumbsHtml(fotos){
+  if(!fotos||!fotos.length)return '<span class="mutedLine">—</span>';
+  return `<div style="display:flex;gap:5px;flex-wrap:wrap;max-width:180px">${fotos.map(u=>`<a href="${esc(u.replace('&sz=w1000','&sz=w2000'))}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="Foto do serviço" style="width:38px;height:38px;object-fit:cover;border-radius:6px;border:1px solid var(--l3a-border)"></a>`).join('')}</div>`;
+}
+function ensurePhotoUploadFrame(){
+  if(document.getElementById('photoUploadFrame'))return;
+  const iframe=document.createElement('iframe');
+  iframe.name='photoUploadFrame'; iframe.id='photoUploadFrame'; iframe.style.display='none';
+  document.body.appendChild(iframe);
+  window.addEventListener('message',e=>{if(e.data&&e.data.type==='fotoUploadResult')handleFotoUploadResult(e.data)});
+}
+function compressImageFile(file,maxWidth=1200,quality=0.72){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      const img=new Image();
+      img.onload=()=>{
+        let w=img.width,h=img.height;
+        if(w>maxWidth){h=Math.round(h*maxWidth/w);w=maxWidth}
+        const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;
+        canvas.getContext('2d').drawImage(img,0,0,w,h);
+        resolve(canvas.toDataURL('image/jpeg',quality));
+      };
+      img.onerror=reject; img.src=ev.target.result;
+    };
+    reader.onerror=reject; reader.readAsDataURL(file);
+  });
+}
+let _fotoUploadQueue=[]; let _fotoUploadBusy=false; const _fotoUploadPending={};
+function queueFotoUploads(planoId,files){
+  ensurePhotoUploadFrame();
+  [...files].forEach(file=>_fotoUploadQueue.push({planoId,file}));
+  updateFotoUploadStatus(); processFotoQueue();
+}
+function updateFotoUploadStatus(){
+  const el=document.getElementById('mFotoStatus'); if(!el)return;
+  const pend=_fotoUploadQueue.length+Object.keys(_fotoUploadPending).length;
+  el.textContent=pend?`Enviando ${pend} foto(s)... não feche esta janela.`:'';
+}
+async function processFotoQueue(){
+  if(_fotoUploadBusy||!_fotoUploadQueue.length)return;
+  _fotoUploadBusy=true;
+  const job=_fotoUploadQueue.shift();
+  try{
+    const dataUrl=await compressImageFile(job.file);
+    const reqId=id();
+    _fotoUploadPending[reqId]={planoId:job.planoId};
+    updateFotoUploadStatus();
+    const form=document.createElement('form');
+    form.method='POST'; form.action=API_URL; form.target='photoUploadFrame'; form.style.display='none';
+    const fields={action:'uploadFoto',reqId,planoId:job.planoId,filename:job.file.name||'foto.jpg',imageData:dataUrl};
+    Object.entries(fields).forEach(([k,v])=>{const inp=document.createElement('input');inp.type='hidden';inp.name=k;inp.value=v;form.appendChild(inp)});
+    document.body.appendChild(form); form.submit(); setTimeout(()=>form.remove(),1500);
+  }catch(e){
+    alert('Não foi possível preparar a foto: '+e.message);
+    _fotoUploadBusy=false; processFotoQueue();
+  }
+}
+function handleFotoUploadResult(data){
+  _fotoUploadBusy=false;
+  const pend=_fotoUploadPending[data.reqId];
+  if(pend){
+    if(data.ok&&data.url){
+      const plano=(db.planos||[]).find(p=>p.id===pend.planoId);
+      if(plano){plano.fotos=plano.fotos||[];plano.fotos.push(data.url);markDirty('foto anexada ao plano');renderPlano();const grid=document.getElementById('mFotoGrid');if(grid)grid.innerHTML=fotosThumbsHtml(plano.fotos)}
+    } else {
+      alert('Falha ao enviar uma foto: '+(data.error||'erro desconhecido no Apps Script'));
+    }
+    delete _fotoUploadPending[data.reqId];
+  }
+  updateFotoUploadStatus();
+  processFotoQueue();
+}
 function formPlano(i='',falhaId=''){
   let o=db.planos.find(x=>x.id===i)||{}; let f=db.falhas.find(x=>x.id===(falhaId||o.falhaId))||{}; let inf=f.id?itemInfoFromFalha(f):{};
   openModal(`<h2>${i?'Editar':'Criar'} plano de ação</h2><p class="msg warn">Base: ${esc(inf.painel||'')} • ${esc(inf.laco||'')} • ${esc(inf.local||'')} • ${esc(inf.itemNome||'')}</p><div class="formGrid">
@@ -1194,6 +1267,7 @@ function formPlano(i='',falhaId=''){
     <div class="field" style="grid-column:1/-1"><label>Material necessário / quantidade</label><input id="mMaterial" value="${esc(o.material)}" placeholder="Ex.: FLM-420/4-CON-S/D - 01 unidade"></div>
     <div class="field" style="grid-column:1/-1"><label>Justificativa técnica</label><textarea id="mJust">${esc(o.justificativa||f.motivo||f.obs||'')}</textarea></div>
     <div class="field" style="grid-column:1/-1"><label>Providência executada / próxima ação</label><textarea id="mProv">${esc(o.providencia)}</textarea></div>
+    ${i?`<div class="field" style="grid-column:1/-1"><label>Fotos do serviço (galeria do dispositivo, sem limite de quantidade)</label><input type="file" id="mFotoInput" accept="image/*" multiple onchange="queueFotoUploads('${i}',this.files);this.value=''"><small id="mFotoStatus" class="note"></small><div id="mFotoGrid" style="margin-top:8px">${fotosThumbsHtml(o.fotos)}</div></div>`:`<div class="field" style="grid-column:1/-1"><p class="mutedLine">Salve o plano primeiro para poder anexar fotos.</p></div>`}
   </div><br><button class="btn" onclick="savePlano('${i}','${falhaId||o.falhaId||''}')">Salvar plano</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`)
 }
 function savePlano(i,falhaId=''){
@@ -1393,7 +1467,7 @@ function renderConfiguracoes(){
 }
 function renderBackup(){const el=document.getElementById('backup'); if(!el)return; el.innerHTML=`<div class="premiumPanel"><div class="systemHeaderSlim"><div class="titleBlock"><h3>Backup local</h3><p>Exportação e restauração de segurança.</p></div></div><div class="premiumGrid">${premiumStat('Painéis',db.paineis.length)}${premiumStat('Equipamentos',db.equipamentos.length)}${premiumStat('Falhas',db.falhas.length)}${premiumStat('Planos',db.planos.length)}</div><div class="premiumActions"><button class="btn" onclick="exportJson()">Exportar JSON</button><button class="btn secondary" onclick="exportAllCsv()">Exportar CSV</button><button class="btn secondary" onclick="document.getElementById('restoreJsonInput').click()">Restaurar JSON</button><input type="file" id="restoreJsonInput" accept="application/json,.json" style="display:none" onchange="restoreBackupFile(this.files[0])"></div></div>`}
 function renderLogs(){const el=document.getElementById('logs'); if(!el)return; const rows=(db.historico||[]).slice(-200).reverse(); el.innerHTML=`<div class="premiumPanel"><h3>Logs e auditoria</h3><p>Registro das ações operacionais e administrativas.</p>${rows.length?`<div class="softTable" style="margin-top:14px">${table(rows,[['Data','data'],['Usuário','usuario'],['Entidade','entidade'],['Ação','acao'],['Descrição','descricao']])}</div>`:'<div class="emptyState" style="margin-top:14px">Nenhum log registrado ainda.</div>'}</div>`}
-function renderSobre(){const el=document.getElementById('sobre'); if(!el)return; const u=currentUserSafe(); const cfg=db.config||{}; el.innerHTML=`<div class="premiumPanel"><h3>${esc(cfg.appName||'Contratos L3A')}</h3><p>Módulo SDAI para cadastro técnico, histórico de falhas, plano de ação, relatórios e sincronização Google Sheets.</p><div class="premiumGrid" style="margin-top:14px">${premiumStat('Versão','6.14 SDAI • 05/07')}${premiumStat('Usuário',u.nome||'Usuário')}${premiumStat('Perfil',u.perfil||'Administrador')}${premiumStat('Banco',syncCfg().configured?'Google Sheets':'Local')}</div></div><div class="premiumPanel"><h3>Arquitetura</h3><p>GitHub Pages + Google Apps Script + Google Sheets. Projeto focado exclusivamente em SDAI.</p></div>`}
+function renderSobre(){const el=document.getElementById('sobre'); if(!el)return; const u=currentUserSafe(); const cfg=db.config||{}; el.innerHTML=`<div class="premiumPanel"><h3>${esc(cfg.appName||'Contratos L3A')}</h3><p>Módulo SDAI para cadastro técnico, histórico de falhas, plano de ação, relatórios e sincronização Google Sheets.</p><div class="premiumGrid" style="margin-top:14px">${premiumStat('Versão','6.16 SDAI • 05/07')}${premiumStat('Usuário',u.nome||'Usuário')}${premiumStat('Perfil',u.perfil||'Administrador')}${premiumStat('Banco',syncCfg().configured?'Google Sheets':'Local')}</div></div><div class="premiumPanel"><h3>Arquitetura</h3><p>GitHub Pages + Google Apps Script + Google Sheets. Projeto focado exclusivamente em SDAI.</p></div>`}
 
 
 /* =========================================================================
@@ -1554,7 +1628,7 @@ function renderPlano(){
   planos.forEach(p=>{
     let f=db.falhas.find(x=>x.id===p.falhaId)||{};
     let inf=f.id?itemInfoFromFalha(f):{};
-    rows.push({origemLinha:'Plano',falhaId:p.falhaId||'',planoId:p.id,prioridade:p.prioridade||'Média',painel:inf.painel||p.painel||'',laco:inf.laco||p.laco||'',piso:inf.piso||p.piso||'',local:inf.local||p.local||'',itemNome:inf.itemNome||p.item||'',statusFalha:f.status||p.statusFalha||'',categoria:p.categoria||'',responsavel:p.responsavel||'',desde:f.data||p.criadoEm||'',criadoEm:p.criadoEm||'',concluidoEm:p.concluidoEm||'',situacao:p.situacao||'Aberto',justificativa:p.justificativa||'',providencia:p.providencia||'',necessitaCompra:p.necessitaCompra?'Sim':'Não'});
+    rows.push({origemLinha:'Plano',falhaId:p.falhaId||'',planoId:p.id,prioridade:p.prioridade||'Média',painel:inf.painel||p.painel||'',laco:inf.laco||p.laco||'',piso:inf.piso||p.piso||'',local:inf.local||p.local||'',itemNome:inf.itemNome||p.item||'',statusFalha:f.status||p.statusFalha||'',categoria:p.categoria||'',responsavel:p.responsavel||'',desde:f.data||p.criadoEm||'',criadoEm:p.criadoEm||'',concluidoEm:p.concluidoEm||'',situacao:p.situacao||'Aberto',justificativa:p.justificativa||'',providencia:p.providencia||'',necessitaCompra:p.necessitaCompra?'Sim':'Não',fotos:p.fotos||[]});
   });
   falhas.forEach(f=>{
     if(planoForFalha(f.id))return;
@@ -1575,12 +1649,50 @@ function renderPlano(){
     .sort((a,b)=>situacaoPeso(a.situacao)-situacaoPeso(b.situacao)||prioridadePeso(a.prioridade)-prioridadePeso(b.prioridade)||String(a.desde||a.criadoEm).localeCompare(String(b.desde||b.criadoEm)));
 
   document.getElementById('plano').innerHTML=`
-    <div class="card"><h3 class="sectionTitle">Filtros do Plano de Ação</h3><div class="toolbar"><div class="field"><label>Busca</label><input id="plBuscaPlano" placeholder="Loja, laço, item, motivo..." value="${esc(document.getElementById('plBuscaPlano')?.value||'')}"></div><div class="field"><label>Categoria</label><select id="plCat">${selectOpts(planoCategorias(),fcat)}</select></div><div class="field"><label>Prioridade</label><select id="plPrio">${selectOpts(planoPrioridades(),fprio)}</select></div><div class="field"><label>Situação</label><select id="plSit">${selectOpts(['Sem plano','Aberto','Em andamento','Concluído'],fsit)}</select></div><div class="field"><label>Responsável</label><select id="plResp">${selectOpts(planoResponsaveis(),fresp)}</select></div><div class="field"><label>Inicial</label><input id="plIni" type="date" value="${esc(ini)}"></div><div class="field"><label>Final</label><input id="plFim" type="date" value="${esc(fim)}"></div><button class="btn" onclick="renderPlano()">Filtrar</button></div><p class="msg warn">Planos concluídos permanecem registrados para relatório e rastreabilidade.</p></div>
+    <div class="card"><h3 class="sectionTitle">Filtros do Plano de Ação</h3><div class="toolbar"><div class="field"><label>Busca</label><input id="plBuscaPlano" placeholder="Loja, laço, item, motivo..." value="${esc(document.getElementById('plBuscaPlano')?.value||'')}"></div><div class="field"><label>Categoria</label><select id="plCat">${selectOpts(planoCategorias(),fcat)}</select></div><div class="field"><label>Prioridade</label><select id="plPrio">${selectOpts(planoPrioridades(),fprio)}</select></div><div class="field"><label>Situação</label><select id="plSit">${selectOpts(['Sem plano','Aberto','Em andamento','Concluído'],fsit)}</select></div><div class="field"><label>Responsável</label><select id="plResp">${selectOpts(planoResponsaveis(),fresp)}</select></div><div class="field"><label>Inicial</label><input id="plIni" type="date" value="${esc(ini)}"></div><div class="field"><label>Final</label><input id="plFim" type="date" value="${esc(fim)}"></div><button class="btn" onclick="renderPlano()">Filtrar</button> <button class="btn secondary" onclick="gerarPdfPlanoAcao()">Gerar PDF (por Piso/Laço/Endereço)</button></div><p class="msg warn">Planos concluídos permanecem registrados para relatório e rastreabilidade. O PDF organiza os itens em aberto por Piso → Laço → Endereço crescente, pra facilitar o roteiro da equipe em campo.</p></div>
     <div class="chartPanel"><h4>Itens por categoria</h4><p class="mutedLine" style="margin-bottom:10px">Clique em uma categoria para filtrar a lista abaixo</p>${catChartHtml}</div>
-    <div class="card"><h3 class="sectionTitle">Lançamentos e acompanhamento${fcat?` — Categoria: ${esc(fcat)}`:''}</h3>${table(filtrados,[['Prioridade','prioridade'],['Painel','painel'],['Laço','laco'],['Piso','piso'],['Loja / Área','local'],['Item','itemNome'],['Falha','statusFalha',r=>`<span class="pill ${statusClass(r.statusFalha)}">${esc(r.statusFalha)}</span>`],['Categoria','categoria'],['Responsável','responsavel'],['Desde','desde'],['Situação','situacao',r=>`<span class="pill ${r.situacao==='Concluído'?'ok':r.situacao==='Sem plano'?'warn':''}">${esc(r.situacao)}</span>`],['Concluído em','concluidoEm']],r=>`${r.planoId?`<button class="btn small secondary" onclick="formPlano('${r.planoId}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1-4.2L15.5 5.3a1.5 1.5 0 0 1 2.1 0l1.1 1.1a1.5 1.5 0 0 1 0 2.1L8.2 19 4 20Z"/><path d="M13.8 7 17 10.2"/></svg> Editar</button>`:`<button class="btn small" onclick="formPlano('', '${r.falhaId}')">+ Criar</button>`} ${r.planoId&&r.situacao!=='Concluído'?`<button class="btn small" onclick="concluirPlano('${r.planoId}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5 9 17l10.5-10.5"/></svg> Concluir</button>`:''}`)}</div>`;
+    <div class="card"><h3 class="sectionTitle">Lançamentos e acompanhamento${fcat?` — Categoria: ${esc(fcat)}`:''}</h3>${table(filtrados,[['Prioridade','prioridade'],['Painel','painel'],['Laço','laco'],['Piso','piso'],['Loja / Área','local'],['Item','itemNome'],['Falha','statusFalha',r=>`<span class="pill ${statusClass(r.statusFalha)}">${esc(r.statusFalha)}</span>`],['Categoria','categoria'],['Responsável','responsavel'],['Desde','desde'],['Situação','situacao',r=>`<span class="pill ${r.situacao==='Concluído'?'ok':r.situacao==='Sem plano'?'warn':''}">${esc(r.situacao)}</span>`],['Concluído em','concluidoEm'],['Fotos','fotos',r=>fotosThumbsHtml(r.fotos)]],r=>`${r.planoId?`<button class="btn small secondary" onclick="formPlano('${r.planoId}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1-4.2L15.5 5.3a1.5 1.5 0 0 1 2.1 0l1.1 1.1a1.5 1.5 0 0 1 0 2.1L8.2 19 4 20Z"/><path d="M13.8 7 17 10.2"/></svg> Editar</button>`:`<button class="btn small" onclick="formPlano('', '${r.falhaId}')">+ Criar</button>`} ${r.planoId&&r.situacao!=='Concluído'?`<button class="btn small" onclick="concluirPlano('${r.planoId}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5 9 17l10.5-10.5"/></svg> Concluir</button>`:''}`)}</div>`;
   ['plBuscaPlano','plCat','plPrio','plSit','plResp','plIni','plFim'].forEach(id=>{let el=document.getElementById(id); if(el)el.onchange=renderPlano});
 }
 
+function itemEnderecoOrdenavel(itemId){
+  if(!itemId)return 9999;
+  let raw='';
+  if(String(itemId).startsWith('flm:')){
+    const flmId=String(itemId).split(':')[1];
+    const f=flmById(flmId);
+    raw=f?f.endereco:'';
+  } else {
+    const e=db.equipamentos.find(x=>x.id===itemId);
+    raw=e?e.endereco:'';
+  }
+  const num=parseFloat(String(raw||'').replace(',','.'));
+  return isNaN(num)?9999:num;
+}
+function gerarPdfPlanoAcao(){
+  let planos=db.planos||[];
+  let falhas=falhasAtivasParaPlano();
+  let rows=[];
+  planos.forEach(p=>{
+    if(p.situacao==='Concluído')return;
+    let f=db.falhas.find(x=>x.id===p.falhaId)||{};
+    let inf=f.id?itemInfoFromFalha(f):{};
+    rows.push({prioridade:p.prioridade||'Média',painel:inf.painel||p.painel||'',laco:inf.laco||p.laco||'',piso:inf.piso||p.piso||'',local:inf.local||p.local||'',itemNome:inf.itemNome||p.item||'',categoria:p.categoria||'',responsavel:p.responsavel||'',situacao:p.situacao||'Aberto',endereco:itemEnderecoOrdenavel(f.itemId||'')});
+  });
+  falhas.forEach(f=>{
+    if(planoForFalha(f.id))return;
+    let inf=itemInfoFromFalha(f);
+    rows.push({prioridade:'Média',painel:inf.painel||'',laco:inf.laco||'',piso:inf.piso||'',local:inf.local||'',itemNome:inf.itemNome||'',categoria:'',responsavel:'',situacao:'Sem plano',endereco:itemEnderecoOrdenavel(f.itemId||'')});
+  });
+  rows.sort((a,b)=>pisoSortKey(a.piso)-pisoSortKey(b.piso)||String(a.laco).localeCompare(String(b.laco),'pt-BR',{numeric:true})||a.endereco-b.endereco);
+
+  const grupos={};
+  rows.forEach(r=>{const k=(r.piso||'Sem piso')+' | '+(r.laco||'Sem laço');grupos[k]=grupos[k]||{piso:r.piso||'Sem piso',laco:r.laco||'Sem laço',itens:[]};grupos[k].itens.push(r)});
+  const blocos=Object.values(grupos).map(g=>`<div class="reportBlock"><h3>${esc(g.piso)} — ${esc(g.laco)}</h3>${table(g.itens,[['Prioridade','prioridade'],['Loja / Área','local'],['Item','itemNome'],['Categoria','categoria'],['Responsável','responsavel'],['Situação','situacao',r=>`<span class="pill ${r.situacao==='Sem plano'?'warn':''}">${esc(r.situacao)}</span>`]])}</div>`).join('');
+
+  document.getElementById('reportOut').innerHTML=`<div class="card"><div class="reportCover"><h2>Plano de Ação — Roteiro de Campo</h2><p>Setup Soluções Integradas • Itens em aberto organizados por Piso, Laço e Endereço crescente</p><div class="reportMeta"><span>Total de itens: ${rows.length}</span><span>Gerado em: ${now()}</span></div></div>${blocos||'<div class="emptyState">Nenhum item em aberto no momento.</div>'}<div class="reportFooter"><span>Setup Soluções Integradas</span><span>Documento técnico gerado pelo SDAI Bosch Manager</span></div></div>`;
+  setTimeout(()=>window.print(),250);
+}
 function drawReport(){
   let r=reportData();
   let geral=Object.values(r.byPainel).reduce((a,d)=>{a.op+=d.op;a.falha+=d.falha;Object.entries(d.tipos).forEach(([t,v])=>{a.tipos[t]=a.tipos[t]||{op:0,falha:0};a.tipos[t].op+=(v.op||0);a.tipos[t].falha+=(v.falha||0)});return a},{op:0,falha:0,tipos:{}});
