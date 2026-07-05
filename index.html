@@ -1456,151 +1456,404 @@ async function verificarBaseAoAbrir(){
 
 
 /* =========================================================================
-   V8.3 — Base Mestra de Lojas com LUC
-   Bloco aditivo e compatível: não altera importação antiga nem fluxo existente.
-   Fonte oficial: Base Mestra > Importação de equipamentos > Cadastro manual.
+   V8.3 — Importação LUC/Loja
+   Implementação incremental dentro da aba Dados > Importação.
    ========================================================================= */
-(function initBaseMestraLojas(){
-  function ensureBaseMestraSchema(){
-    db.baseMestraLojas=db.baseMestraLojas||[];
-    db.baseMestraConflitos=db.baseMestraConflitos||[];
-    db.baseMestraAssociacoes=db.baseMestraAssociacoes||[];
-    db.locais=db.locais||[];db.equipamentos=db.equipamentos||[];db.paineis=db.paineis||[];db.lacos=db.lacos||[];
-  }
-  ensureBaseMestraSchema();
-  if(typeof VIEW_LABELS==='object')VIEW_LABELS.baseMestra='Base Mestra de Lojas';
-  try{
-    if(DEFAULT_VIEWS_BY_ROLE?.Administrador&&!DEFAULT_VIEWS_BY_ROLE.Administrador.includes('baseMestra'))DEFAULT_VIEWS_BY_ROLE.Administrador.push('baseMestra');
-    if(DEFAULT_VIEWS_BY_ROLE?.Supervisor&&!DEFAULT_VIEWS_BY_ROLE.Supervisor.includes('baseMestra'))DEFAULT_VIEWS_BY_ROLE.Supervisor.push('baseMestra');
-  }catch(e){}
-  function ensureBaseMestraDom(){
-    const content=document.querySelector('.content');
-    if(content&&!document.getElementById('baseMestra')){
-      const s=document.createElement('section');s.id='baseMestra';s.className='view';content.insertBefore(s,document.getElementById('sistema')||null);
-    }
-    const nav=document.querySelector('.nav');
-    if(nav&&!document.querySelector('.nav button[data-view="baseMestra"]')){
-      const ref=document.querySelector('.nav button[data-view="importacao"]')||document.querySelector('.nav button[data-view="exportacao"]');
-      const btn=document.createElement('button');btn.setAttribute('data-view','baseMestra');
-      btn.innerHTML='<i><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h10"/><path d="M17 15l3 3 3-5"/></svg></i><span>Base Mestra de Lojas</span>';
-      btn.addEventListener('click',()=>{document.querySelectorAll('.nav button').forEach(x=>x.classList.remove('active'));btn.classList.add('active');currentView='baseMestra';render()});
-      if(ref)ref.parentNode.insertBefore(btn,ref);else nav.appendChild(btn);
-    }
-  }
-  ensureBaseMestraDom();
+function ensureLucSchema(){
+  db.baseLojas=db.baseLojas||[];
+  db.conflitosAssociacao=db.conflitosAssociacao||[];
+  (db.baseLojas||[]).forEach(l=>{if(!l.id)l.id=id(); if(!l.origem)l.origem='IMPORTACAO_LUC'; if(!l.statusAssociacao)l.statusAssociacao='Pendente';});
+}
+function lucNormText(s){return up(s).replace(/&/g,' E ').replace(/[^A-Z0-9 ]/g,' ').replace(/\b(LTDA|ME|EPP|LOJA|STORE|QUIOSQUE|SHOP|SHOPPING|PISO|P[123]|PAVIMENTO|UNIDADE|RESTAURANTE|ALIMENTACAO)\b/g,' ').replace(/\b(O|A|OS|AS|DA|DE|DO|DAS|DOS)\b/g,' ').replace(/\s+/g,' ').trim()}
+function lucCompactText(s){return lucNormText(s).replace(/\s+/g,'')}
+function lucTokenSet(s){return lucNormText(s).split(' ').filter(Boolean)}
+function lucEditDistance(a,b){a=lucCompactText(a);b=lucCompactText(b); if(!a||!b)return 99; const m=[]; for(let i=0;i<=a.length;i++){m[i]=[i]} for(let j=0;j<=b.length;j++){m[0][j]=j} for(let i=1;i<=a.length;i++){for(let j=1;j<=b.length;j++){m[i][j]=Math.min(m[i-1][j]+1,m[i][j-1]+1,m[i-1][j-1]+(a[i-1]===b[j-1]?0:1))}} return m[a.length][b.length]}
+function lucSimilarity(a,b){const A=lucTokenSet(a),B=lucTokenSet(b); const sa=lucNormText(a),sb=lucNormText(b),ca=lucCompactText(a),cb=lucCompactText(b); if(!ca||!cb)return 0; if(ca===cb||sa===sb)return 100; let common=A.filter(x=>B.includes(x)).length; let j=common/Math.max(1,new Set([...A,...B]).size); let inc=(ca.includes(cb)||cb.includes(ca)||sa.includes(sb)||sb.includes(sa))?0.30:0; let prefix=ca.slice(0,5)===cb.slice(0,5)?0.12:0; let dist=lucEditDistance(a,b), maxLen=Math.max(ca.length,cb.length,1); let edit=Math.max(0,1-(dist/maxLen)); return Math.round(Math.max(Math.min(1,j+inc+prefix),edit)*100)}
+function lucPisoKey(v){const x=up(v); if(/(^|\D)1(\D|$)|PISO 1|P1/.test(x))return '1'; if(/(^|\D)2(\D|$)|PISO 2|P2/.test(x))return '2'; if(/(^|\D)3(\D|$)|PISO 3|P3/.test(x))return '3'; return ''}
+function lucPisosCompat(localPiso,basePiso){const a=lucPisoKey(localPiso),b=lucPisoKey(basePiso); return !!a&&!!b&&a===b}
+function pisoFromLuc(luc,tipo){const first=(n(luc).match(/[0-9]/)||[''])[0]; if(first==='1')return 'Piso 1'; if(first==='2')return 'Piso 2'; if(first==='3')return 'Piso 3'; return up(tipo)==='ALIMENTACAO'?'Piso 3':'Conferir'}
+async function readRowsFromFile(f){let ext=f.name.split('.').pop().toLowerCase(); let data=await f.arrayBuffer(); if(ext==='csv'){let txt=new TextDecoder('utf-8').decode(data); return parseCSV(txt)} if(!['xls','xlsx'].includes(ext))throw new Error('Formato não aceito. Use XLSX, XLS ou CSV.'); if(typeof XLSX==='undefined')throw new Error('Biblioteca XLSX não carregada. Para XLS/XLSX, abra com internet ou use CSV.'); let wb=XLSX.read(data,{type:'array'}); let rows=[]; wb.SheetNames.forEach(sn=>{rows=rows.concat(XLSX.utils.sheet_to_json(wb.Sheets[sn],{defval:''}))}); return rows}
+function readLucRowsFile(){const input=document.getElementById('fileLucImp'); if(!input||!input.files||!input.files[0])throw new Error('Selecione um arquivo XLSX ou CSV para Importação LUC/Loja.'); return readRowsFromFile(input.files[0])}
+function normalizeLucImportRows(rows){const out=[],errors=[]; const dt=isoNow(); rows.forEach((r,i)=>{const linha=i+2; const luc=get(r,['LUC','LC','Código LUC','Codigo LUC','Luc']); const tipo=get(r,['Tipo de Loja','Tipo','Categoria']); const loja=get(r,['Loja','Nome da Loja','Nome','Razão Social','Razao Social']); const area=get(r,['Área Contrato (m²)','Area Contrato (m2)','Área Contrato','Area Contrato','Área','Area']); if(!luc&&!loja){errors.push({linha,motivo:'Registro sem LUC e sem Loja',registro:JSON.stringify(r)});return} out.push({id:id(),luc:n(luc),nome:n(loja)||n(luc),tipo:n(tipo),areaContrato:n(area),piso:pisoFromLuc(luc,tipo),origem:'IMPORTACAO_LUC',dataImportacao:dt,ultimaAtualizacao:dt,statusAssociacao:'Pendente',observacoes:''})}); return {lojas:out,errors}}
+function lucFindBestLocal(base){let best={local:null,score:0,motivo:''}; (db.locais||[]).forEach(l=>{let score=lucSimilarity(l.nomeOficial||l.nome,base.nome); let motivo='Similaridade textual'; if(l.luc&&base.luc&&String(l.luc)===String(base.luc)){score=100; motivo='Mesmo LUC'} else if(lucPisosCompat(l.piso,base.piso)&&score>=55){score=Math.max(score,90); motivo='Mesmo piso + nome compatível; prevalece nome oficial da Base LUC'} else if(lucPisosCompat(l.piso,base.piso)&&score>=40){score=Math.max(score,70); motivo='Mesmo piso, mas nome exige conferência'} if(score>best.score)best={local:l,score,motivo}}); return best}
+function applyLucToLocal(local,base,score){if(!local||!base)return; if(!local.nomeOriginalCadastro)local.nomeOriginalCadastro=local.nome; local.nome=base.nome||local.nome; local.nomeOficial=base.nome||local.nome; local.luc=base.luc||local.luc||''; local.tipoLojaBaseLuc=base.tipo||''; local.piso=base.piso||local.piso||''; local.areaContrato=base.areaContrato||local.areaContrato||''; local.origem='Base LUC'; local.origemNome='Base LUC'; local.statusAssociacao='Vinculado'; local.baseLojaId=base.id; local.ultimaAtualizacao=isoNow(); base.statusAssociacao='Vinculada'; base.localId=local.id; base.percentualSimilaridade=score; base.ultimaAtualizacao=isoNow()}
+function lucConfirmarConflito(conflitoId){ensureLucSchema(); const c=(db.conflitosAssociacao||[]).find(x=>x.id===conflitoId); if(!c)return; const local=(db.locais||[]).find(x=>x.id===c.localId); const base=(db.baseLojas||[]).find(x=>x.id===c.baseLojaId); if(!local||!base){alert('Conflito sem vínculo válido.');return} applyLucToLocal(local,base,c.percentualSimilaridade||0); db.conflitosAssociacao=(db.conflitosAssociacao||[]).filter(x=>x.id!==conflitoId); markDirty('confirmação conflito LUC'); renderImportacao()}
+function lucIgnorarConflito(conflitoId){ensureLucSchema(); const c=(db.conflitosAssociacao||[]).find(x=>x.id===conflitoId); if(c){const base=(db.baseLojas||[]).find(x=>x.id===c.baseLojaId); if(base){base.statusAssociacao='Pendente'; base.observacoes='Conflito ignorado manualmente em '+isoNow()}} db.conflitosAssociacao=(db.conflitosAssociacao||[]).filter(x=>x.id!==conflitoId); markDirty('conflito LUC ignorado'); renderImportacao()}
+function executarAssociacaoLuc(autoSilent=false){ensureLucSchema(); db.conflitosAssociacao=[]; let vinculadas=0,pendentes=0,conflitos=0; (db.baseLojas||[]).forEach(base=>{const best=lucFindBestLocal(base); if(best.local&&best.score>=82){applyLucToLocal(best.local,base,best.score);vinculadas++} else if(best.local&&best.score>=45){base.statusAssociacao='Conflito'; base.percentualSimilaridade=best.score; base.localId=''; conflitos++; db.conflitosAssociacao.push({id:id(),lojaCadastrada:best.local.nomeOriginalCadastro||best.local.nome,lojaCadastradaAtual:best.local.nome,lojaBaseLuc:base.nome,motivo:best.motivo||'Baixa confiança na associação automática',percentualSimilaridade:best.score,data:isoNow(),localId:best.local.id,baseLojaId:base.id,pisoCadastro:best.local.piso||'',pisoBaseLuc:base.piso||''})} else {base.statusAssociacao='Pendente'; base.percentualSimilaridade=best.score||0; pendentes++}}); if(!autoSilent){markDirty('associação LUC/Loja');render();alert(`Associação concluída. Vinculadas: ${vinculadas}. Pendentes: ${pendentes}. Conflitos: ${conflitos}.`)} return {vinculadas,pendentes,conflitos}}
+async function previewLucImport(){try{ensureLucSchema(); const rows=await readLucRowsFile(); const v=normalizeLucImportRows(rows); document.getElementById('lucImportMsg').innerHTML=`<div class="msg ${v.errors.length?'warn':'ok'}">Pré-validação concluída: ${v.lojas.length} lojas válidas e ${v.errors.length} inconsistência(s). Colunas extras foram ignoradas.</div>`; document.getElementById('lucPreviewBox').innerHTML=`${table(v.lojas.slice(0,30),[['LUC','luc'],['Loja','nome'],['Tipo de Loja','tipo'],['Área Contrato (m²)','areaContrato'],['Piso calculado','piso']])}${v.errors.length?'<h3 class="sectionTitle">Inconsistências</h3>'+table(v.errors,[['Linha','linha'],['Motivo','motivo'],['Registro','registro']]):''}`}catch(e){document.getElementById('lucImportMsg').innerHTML=`<div class="msg err">${esc(e.message)}</div>`}}
+async function importLucLojas(){try{ensureLucSchema(); const rows=await readLucRowsFile(); const v=normalizeLucImportRows(rows); db.baseLojas=v.lojas; const assoc=executarAssociacaoLuc(true); db.imports=db.imports||[]; db.imports.push({data:isoNow(),tipo:'IMPORTACAO_LUC_LOJA',stats:{registrosLidos:rows.length,lojasImportadas:v.lojas.length,vinculadas:assoc.vinculadas,pendentes:assoc.pendentes,conflitos:assoc.conflitos,ignorados:v.errors.length},errors:v.errors}); if(db.imports.length>10)db.imports=db.imports.slice(-10); persistLocal(); markDirty('importação LUC/Loja'); render(); const m=document.getElementById('lucImportMsg'); if(m)m.innerHTML=`<div class="msg ok">Importação LUC/Loja concluída. Somente a baseLojas foi substituída. Demais dados preservados.</div>`}catch(e){const m=document.getElementById('lucImportMsg'); if(m)m.innerHTML=`<div class="msg err">${esc(e.message)}</div>`}}
+function lucResumo(){ensureLucSchema(); const lojas=db.baseLojas||[]; const pisos=unique(lojas.map(x=>x.piso)); const tipos=unique(lojas.map(x=>x.tipo)); return {lojas:lojas.length,pisos:pisos.length,tipos:tipos.length,vinculadas:lojas.filter(x=>x.statusAssociacao==='Vinculada').length,pendentes:lojas.filter(x=>x.statusAssociacao==='Pendente').length,conflitos:(db.conflitosAssociacao||[]).length,ultima:(lojas.map(x=>x.dataImportacao).sort().at(-1)||'—')}}
+function lucTipoRows(){const map={};(db.baseLojas||[]).forEach(l=>{const k=l.tipo||'Sem tipo';map[k]=(map[k]||0)+1});return Object.entries(map).map(([tipo,qtd])=>({tipo,qtd})).sort((a,b)=>b.qtd-a.qtd)}
+function lucPisoRows(){const map={};(db.baseLojas||[]).forEach(l=>{const k=l.piso||'Conferir';map[k]=(map[k]||0)+1});return Object.entries(map).map(([piso,qtd])=>({piso,qtd})).sort((a,b)=>pisoSortKey(a.piso)-pisoSortKey(b.piso))}
+function lucSetTab(tab){filters.lucTab=tab;renderImportacao()}
+function lucOfficialName(local){if(!local)return ''; if(local.baseLojaId){const b=(db.baseLojas||[]).find(x=>x.id===local.baseLojaId); if(b&&b.nome)return b.nome} return local.nomeOficial||local.nome||''}
+const _locNameBaseLuc=locName;
+locName=function(v){return lucOfficialName(localById(v))||_locNameBaseLuc(v)};
+function lucImportInterface(){ensureLucSchema(); const r=lucResumo(); const tab=filters.lucTab||'resumo'; const tabs=['resumo','lojas','conflitos','associacao']; const labels={resumo:'Resumo',lojas:'Lojas',conflitos:'Conflitos',associacao:'Associação Automática'}; const btns=tabs.map(t=>`<button class="btn small ${tab===t?'':'secondary'}" onclick="lucSetTab('${t}')">${labels[t]}</button>`).join(' '); let body=''; if(tab==='resumo')body=`<div class="premiumGrid">${premiumStat('Quantidade de lojas',r.lojas)}${premiumStat('Quantidade de pisos',r.pisos)}${premiumStat('Quantidade por tipo',r.tipos)}${premiumStat('Quantidade vinculada',r.vinculadas)}${premiumStat('Quantidade pendente',r.pendentes)}${premiumStat('Conflitos',r.conflitos)}${premiumStat('Última importação',r.ultima)}</div><div class="split2" style="margin-top:14px"><div class="premiumPanel"><h3>Quantidade por tipo</h3>${table(lucTipoRows(),[['Tipo','tipo'],['Qtd.','qtd']])}</div><div class="premiumPanel"><h3>Quantidade por piso</h3>${table(lucPisoRows(),[['Piso','piso'],['Qtd.','qtd']])}</div></div>`; if(tab==='lojas')body=table((db.baseLojas||[]),[['LUC','luc'],['Loja oficial','nome'],['Tipo de Loja','tipo'],['Área Contrato (m²)','areaContrato'],['Piso','piso'],['Status','statusAssociacao',x=>`<span class="pill ${x.statusAssociacao==='Vinculada'?'ok':x.statusAssociacao==='Conflito'?'bad':'warn'}">${esc(x.statusAssociacao)}</span>`],['Similaridade','percentualSimilaridade',x=>x.percentualSimilaridade?x.percentualSimilaridade+'%':'—']]); if(tab==='conflitos')body=table((db.conflitosAssociacao||[]),[['Loja cadastrada','lojaCadastrada'],['Loja da Base LUC','lojaBaseLuc'],['Piso cadastro','pisoCadastro'],['Piso Base LUC','pisoBaseLuc'],['Motivo','motivo'],['Similaridade','percentualSimilaridade',x=>x.percentualSimilaridade+'%'],['Data','data']],c=>`<button class="btn small" onclick="lucConfirmarConflito('${c.id}')">Confirmar Base LUC</button> <button class="btn small secondary" onclick="lucIgnorarConflito('${c.id}')">Ignorar</button>`); if(tab==='associacao')body=`<p class="msg warn">A associação usa Nome da Loja + Piso como critério decisivo. Ex.: Oboticário, O Boticário ou O Boticário P2, estando no mesmo piso, passam a usar o nome oficial da Base LUC. Acima de 82% atualiza automaticamente Nome Oficial, LUC, Piso, Área Contrato e Origem = Base LUC. Baixa confiança vai para Conflitos de Associação.</p><div class="premiumActions"><button class="btn" onclick="executarAssociacaoLuc()">Reexecutar associação automática</button></div>${table((db.baseLojas||[]).map(b=>({...b,localVinculado:locName(b.localId)})),[['Base LUC','nome'],['LUC','luc'],['Local vinculado','localVinculado'],['Status','statusAssociacao'],['Similaridade','percentualSimilaridade',x=>x.percentualSimilaridade?x.percentualSimilaridade+'%':'—']])}`; return `<div class="premiumPanel"><div class="systemHeaderSlim"><div class="titleBlock"><h3>Importação LUC/Loja</h3><p>Importa LUC, Tipo de Loja, Loja e Área Contrato (m²), preservando todo o banco técnico atual.</p></div></div><div class="toolbar"><div class="field"><label>Arquivo LUC/Loja</label><input type="file" id="fileLucImp" accept=".csv,.xls,.xlsx"></div><button class="btn secondary" onclick="previewLucImport()">Pré-visualizar / validar</button><button class="btn" onclick="importLucLojas()">Importar LUC/Loja</button></div><p class="msg warn"><b>Colunas aceitas:</b> LUC, Tipo de Loja, Loja, Área Contrato (m²). Colunas adicionais são ignoradas. Campos opcionais vazios não bloqueiam a importação.</p><div id="lucImportMsg"></div><div id="lucPreviewBox"></div></div><div class="premiumPanel"><div class="premiumActions" style="margin-top:0">${btns}</div><div style="margin-top:14px">${body}</div></div>`}
+function renderImportacao(){const el=document.getElementById('importacao'); if(!el)return; if(!can('importar')){el.innerHTML='<div class="card"><h3 class="sectionTitle">Importação bloqueada</h3><p class="msg warn">Seu perfil não possui permissão para importar ou substituir base cadastral.</p></div>';return} ensureLucSchema(); el.innerHTML=`${lucImportInterface()}<div class="card"><h3 class="sectionTitle">Importação técnica existente</h3><p class="mutedLine">Mantida sem alteração para equipamentos, painéis, laços, FLMs, portas e lojas/áreas.</p><div class="toolbar"><div class="field"><label>Arquivo</label><input type="file" id="fileImp" accept=".csv,.xls,.xlsx"></div><div class="field"><label>Modo</label><select id="modeImp"><option value="diff">Somente diferença</option><option value="overwrite">Sobrescrever iguais preservando histórico</option><option value="replace">Apagar dados atuais e importar do zero</option></select></div></div><p class="msg warn"><b>Colunas esperadas:</b> Painel, Laço, Piso, Endereço FLM, Porta, Loja, Tipo, Modelo, Endereço, Fabricante, Status, Observação.</p><button class="btn secondary" onclick="previewImport()">Pré-visualizar / validar</button> <button class="btn" onclick="importFile()">Importar</button><div id="impMsg"></div><div id="previewBox"></div></div><div class="card"><h3 class="sectionTitle">Último diagnóstico de importação técnica</h3>${lastImportHtml()}</div>`}
+const _normalizeAllStatusesLucOriginal=normalizeAllStatuses;
+normalizeAllStatuses=function(base){base=_normalizeAllStatusesLucOriginal(base);base.baseLojas=base.baseLojas||[];base.conflitosAssociacao=base.conflitosAssociacao||[];return base};
 
-  const oldEmpty=emptyDB;
-  emptyDB=function(){const b=oldEmpty();b.baseMestraLojas=[];b.baseMestraConflitos=[];b.baseMestraAssociacoes=[];return b};
-  const oldNormalize=normalizeAllStatuses;
-  normalizeAllStatuses=function(base){base=oldNormalize(base);base.baseMestraLojas=base.baseMestraLojas||[];base.baseMestraConflitos=base.baseMestraConflitos||[];base.baseMestraAssociacoes=base.baseMestraAssociacoes||[];return base};
 
-  function normTxt(s){return up(s).replace(/[^A-Z0-9]+/g,' ').trim()}
-  function normAddr(a){return String(a||'').trim().replace(/-/g,'.').split('.').filter(Boolean).map(x=>String(Number(String(x).replace(/\D/g,'')||0))).join('.')}
-  function addrParts(a){return normAddr(a).split('.').map(x=>Number(x||0))}
-  function addrBase(a){return addrParts(a).slice(0,3).join('.')}
-  function addrInRange(addr,ini,fim){
-    const a=addrParts(addr),i=addrParts(ini),f=addrParts(fim||ini); if(a.length<3||i.length<3)return false;
-    if(a.slice(0,3).join('.')!==i.slice(0,3).join('.'))return false;
-    if(f.length<3)return true; if(a.slice(0,3).join('.')!==f.slice(0,3).join('.'))return a.slice(0,3).join('.')===i.slice(0,3).join('.');
-    const av=a[3]??0,iv=i[3]??0,fv=f[3]??iv; return av>=Math.min(iv,fv)&&av<=Math.max(iv,fv);
-  }
-  function levenshtein(a,b){a=normTxt(a);b=normTxt(b);if(a===b)return 0;if(!a)return b.length;if(!b)return a.length;let v0=[...Array(b.length+1)].map((_,i)=>i),v1=[];for(let i=0;i<a.length;i++){v1[0]=i+1;for(let j=0;j<b.length;j++){v1[j+1]=Math.min(v1[j]+1,v0[j+1]+1,v0[j]+(a[i]===b[j]?0:1))}v0=v1.slice()}return v0[b.length]}
-  function similarity(a,b){a=normTxt(a);b=normTxt(b);if(!a||!b)return 0;if(a===b)return 1;if(a.includes(b)||b.includes(a))return .88;return 1-(levenshtein(a,b)/Math.max(a.length,b.length,1))}
-  function painelNome(id){return paiName(id)||id||''}
-  function lacoNome(id){return lacName(id)||id||''}
-  function lojaOfficialName(m){return n(m.nomeOficial||m.nome||m.loja||m.local)}
-  function localEndereco(local){
-    const eq=db.equipamentos.find(e=>e.localId===local.id&&e.endereco); if(eq)return eq.endereco;
-    const fl=flmById(local.flmId); return fl?.endereco||'';
-  }
-  function scoreLocal(m,l){
-    let score=0,det=[];
-    const sim=similarity(lojaOfficialName(m),l.nome||l.nomeOficial); score+=sim*45; if(sim>=.82)det.push('nome similar');
-    if(m.piso&&l.piso&&normTxt(m.piso)===normTxt(l.piso)){score+=12;det.push('piso')}
-    if(m.painel&&painelNome(l.painelId)&&normTxt(m.painel)===normTxt(painelNome(l.painelId))){score+=12;det.push('painel')}
-    if(m.laco&&lacoNome(l.lacoId)&&normTxt(m.laco)===normTxt(lacoNome(l.lacoId))){score+=12;det.push('laço')}
-    const end=localEndereco(l); if(end&&m.enderecoInicial&&addrInRange(end,m.enderecoInicial,m.enderecoFinal)){score+=25;det.push('endereço')}
-    if(m.luc&&l.luc&&normTxt(m.luc)===normTxt(l.luc)){score+=35;det.push('LUC')}
-    return {score:Math.min(100,Math.round(score)),detalhe:det.join(', ')};
-  }
-  function applyOfficialData(local,m,confidence,detalhe){
-    const old={nome:local.nome,luc:local.luc,piso:local.piso,painelId:local.painelId,lacoId:local.lacoId};
-    local.luc=m.luc||local.luc||'';
-    local.nomeOficial=lojaOfficialName(m)||local.nome;
-    local.localOficial=lojaOfficialName(m)||local.nome;
-    if(lojaOfficialName(m))local.nome=lojaOfficialName(m);
-    if(m.piso)local.piso=m.piso;
-    local.baseMestraId=m.id;local.associacaoConfianca=confidence;local.associacaoDetalhe=detalhe;local.atualizadoBaseMestraEm=isoNow();
-    db.equipamentos.filter(e=>e.localId===local.id).forEach(e=>{e.luc=local.luc;e.nomeOficial=local.nomeOficial;e.localOficial=local.localOficial;e.baseMestraId=m.id});
-    db.baseMestraAssociacoes.push({id:id(),data:isoNow(),baseMestraId:m.id,localId:local.id,luc:m.luc,nomeOficial:lojaOfficialName(m),confianca:confidence,detalhe,antes:old,depois:{nome:local.nome,luc:local.luc,piso:local.piso}});
-  }
-  function reexecutarAssociacaoBaseMestra(silent=false){
-    ensureBaseMestraSchema();db.baseMestraConflitos=[];db.baseMestraAssociacoes=[];
-    let atualizados=0,conflitos=0,sem=0;
-    db.baseMestraLojas.forEach(m=>{
-      const candidatos=db.locais.map(l=>({local:l,...scoreLocal(m,l)})).filter(x=>x.score>=45).sort((a,b)=>b.score-a.score);
-      const top=candidatos[0]; const second=candidatos[1];
-      if(top&&top.score>=78&&(!second||top.score-second.score>=8)){
-        applyOfficialData(top.local,m,top.score,top.detalhe);atualizados++;
-      }else{
-        const motivo=top?`Baixa confiança ou empate técnico. Melhor candidato: ${top.local.nome} (${top.score}%).`:'Nenhuma correspondência mínima encontrada.';
-        db.baseMestraConflitos.push({id:id(),data:isoNow(),baseMestraId:m.id,luc:m.luc,nomeOficial:lojaOfficialName(m),piso:m.piso,painel:m.painel,laco:m.laco,enderecoInicial:m.enderecoInicial,enderecoFinal:m.enderecoFinal,motivo,candidatos:candidatos.slice(0,5).map(c=>({localId:c.local.id,nome:c.local.nome,confianca:c.score,detalhe:c.detalhe}))});
-        conflitos++; if(!top)sem++;
-      }
+/* ===== Correção V8.4 — Importação LUC/Loja por posição fixa A-D =====
+   Regra operacional: A=LUC, B=Tipo de Loja, C=Loja oficial, D=Área Contrato.
+   Isso evita que cabeçalhos diferentes façam a loja virar o próprio número do LUC. */
+function lucMatrixToRows(matrix){
+  const rows=[];
+  let start=0;
+  const normCell=v=>normKey(String(v??''));
+  const isHeaderRow=arr=>{
+    const joined=(arr||[]).map(normCell).join('|');
+    return joined.includes('LUC') || joined.includes('TIPODELOJA') || joined.includes('LOJA') || joined.includes('AREACONTRATO');
+  };
+  while(start<matrix.length && !(matrix[start]||[]).some(v=>n(v))) start++;
+  if(start<matrix.length && isHeaderRow(matrix[start])) start++;
+  for(let i=start;i<matrix.length;i++){
+    const r=matrix[i]||[];
+    if(!r.some(v=>n(v))) continue;
+    rows.push({
+      LUC:n(r[0]),
+      'Tipo de Loja':n(r[1]),
+      Loja:n(r[2]),
+      'Área Contrato (m²)':n(r[3]),
+      __linha:i+1,
+      __raw:r
     });
-    persistLocal();markDirty('associação Base Mestra');renderBaseMestra();renderLocais();renderEquipamentos();
-    if(!silent)alert(`Associação concluída. Atualizados: ${atualizados}. Conflitos: ${conflitos}. Sem candidato: ${sem}.`);
-    return {atualizados,conflitos,sem};
   }
-  window.reexecutarAssociacaoBaseMestra=reexecutarAssociacaoBaseMestra;
-  window.aplicarConflitoBaseMestra=function(conflitoId,localId){const c=db.baseMestraConflitos.find(x=>x.id===conflitoId);const m=db.baseMestraLojas.find(x=>x.id===c?.baseMestraId);const l=db.locais.find(x=>x.id===localId);if(!c||!m||!l)return;applyOfficialData(l,m,100,'conferência manual');db.baseMestraConflitos=db.baseMestraConflitos.filter(x=>x.id!==conflitoId);markDirty('conflito Base Mestra aplicado');render()}
-  window.ignorarConflitoBaseMestra=function(conflitoId){db.baseMestraConflitos=db.baseMestraConflitos.filter(x=>x.id!==conflitoId);markDirty('conflito Base Mestra ignorado');render()}
+  return rows;
+}
+async function readLucRowsFile(){
+  const input=document.getElementById('fileLucImp');
+  if(!input||!input.files||!input.files[0])throw new Error('Selecione um arquivo XLSX ou CSV para Importação LUC/Loja.');
+  const f=input.files[0];
+  const ext=f.name.split('.').pop().toLowerCase();
+  const data=await f.arrayBuffer();
+  if(ext==='csv'){
+    const txt=new TextDecoder('utf-8').decode(data);
+    const sep=(txt.split('\n')[0].match(/;/g)||[]).length>=(txt.split('\n')[0].match(/,/g)||[]).length?';':',';
+    const matrix=txt.split(/\r?\n/).filter(x=>x.trim()).map(l=>splitCSV(l,sep));
+    return lucMatrixToRows(matrix);
+  }
+  if(!['xls','xlsx'].includes(ext))throw new Error('Formato não aceito. Use XLSX, XLS ou CSV.');
+  if(typeof XLSX==='undefined')throw new Error('Biblioteca XLSX não carregada. Para XLS/XLSX, abra com internet ou use CSV.');
+  const wb=XLSX.read(data,{type:'array'});
+  let rows=[];
+  wb.SheetNames.forEach(sn=>{
+    const matrix=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,defval:''});
+    rows=rows.concat(lucMatrixToRows(matrix));
+  });
+  return rows;
+}
+function normalizeLucImportRows(rows){
+  const out=[],errors=[]; const dt=isoNow();
+  rows.forEach((r,i)=>{
+    const linha=r.__linha||i+2;
+    /* Regra definitiva da Importação LUC/Loja:
+       leitura por posição física da planilha, sem depender do nome do cabeçalho.
+       A=luc | B=tipo | C=nome oficial da loja | D=área contrato */
+    const raw=Array.isArray(r.__raw)?r.__raw:[];
+    const luc=n(raw.length?raw[0]:r.LUC);
+    const tipo=n(raw.length?raw[1]:r['Tipo de Loja']);
+    const loja=n(raw.length?raw[2]:r.Loja);
+    const area=n(raw.length?raw[3]:r['Área Contrato (m²)']);
+    if(up(luc)==='LUC' || up(tipo)==='TIPO DE LOJA' || up(loja)==='LOJA')return;
+    if(!luc&&!loja){errors.push({linha,motivo:'Registro sem LUC e sem Loja',registro:JSON.stringify(raw.length?raw:r)});return}
+    if(!loja){errors.push({linha,motivo:'Coluna C (Loja oficial) vazia. Registro não importado para evitar loja com nome igual ao LUC.',registro:JSON.stringify(raw.length?raw:r)});return}
+    if(up(loja)===up(luc)){errors.push({linha,motivo:'Coluna C veio igual ao LUC. Confira se o arquivo possui a Loja oficial na coluna C. Registro não importado.',registro:JSON.stringify(raw.length?raw:r)});return}
+    out.push({
+      id:id(),luc,tipo,nome:loja,areaContrato:area,
+      piso:pisoFromLuc(luc,tipo),origem:'IMPORTACAO_LUC',dataImportacao:dt,ultimaAtualizacao:dt,
+      statusAssociacao:'Pendente',observacoes:''
+    })
+  });
+  return {lojas:out,errors};
+}
+function previewLucImport(){
+  return (async()=>{try{ensureLucSchema(); const rows=await readLucRowsFile(); const v=normalizeLucImportRows(rows); document.getElementById('lucImportMsg').innerHTML=`<div class="msg ${v.errors.length?'warn':'ok'}">Pré-validação concluída: ${v.lojas.length} lojas válidas e ${v.errors.length} inconsistência(s). Leitura fixa: A=LUC, B=Tipo, C=Loja oficial, D=Área.</div>`; document.getElementById('lucPreviewBox').innerHTML=`${table(v.lojas.slice(0,30),[['LUC','luc'],['Loja oficial - Coluna C','nome'],['Tipo de Loja - Coluna B','tipo'],['Área Contrato - Coluna D','areaContrato'],['Piso calculado','piso']])}${v.errors.length?'<h3 class="sectionTitle">Inconsistências</h3>'+table(v.errors,[['Linha','linha'],['Motivo','motivo'],['Registro','registro']]):''}`}catch(e){document.getElementById('lucImportMsg').innerHTML=`<div class="msg err">${esc(e.message)}</div>`}})()
+}
+function importLucLojas(){
+  return (async()=>{try{ensureLucSchema(); const rows=await readLucRowsFile(); const v=normalizeLucImportRows(rows); if(!v.lojas.length)throw new Error('Nenhuma loja válida encontrada. Confirme o layout: A=LUC, B=Tipo de Loja, C=Loja oficial, D=Área Contrato.'); db.baseLojas=v.lojas; const assoc=executarAssociacaoLuc(true); db.imports=db.imports||[]; db.imports.push({data:isoNow(),tipo:'IMPORTACAO_LUC_LOJA',stats:{registrosLidos:rows.length,lojasImportadas:v.lojas.length,vinculadas:assoc.vinculadas,pendentes:assoc.pendentes,conflitos:assoc.conflitos,ignorados:v.errors.length},errors:v.errors}); if(db.imports.length>10)db.imports=db.imports.slice(-10); persistLocal(); markDirty('importação LUC/Loja'); render(); const m=document.getElementById('lucImportMsg'); if(m)m.innerHTML=`<div class="msg ok">Importação LUC/Loja concluída com leitura fixa A-D. A coluna C foi usada como nome oficial da loja e a coluna D como área contrato.</div>`}catch(e){const m=document.getElementById('lucImportMsg'); if(m)m.innerHTML=`<div class="msg err">${esc(e.message)}</div>`}})()
+}
 
-  async function readBaseMestraRows(){
-    let f=document.getElementById('fileBaseMestra')?.files?.[0]; if(!f)throw new Error('Selecione a planilha da Base Mestra.');
-    let ext=f.name.split('.').pop().toLowerCase(); let data=await f.arrayBuffer();
-    if(ext==='csv'){let txt=new TextDecoder('utf-8').decode(data);return parseCSV(txt)}
-    if(typeof XLSX==='undefined')throw new Error('Biblioteca XLSX não carregada. Use CSV ou abra com internet.');
-    let wb=XLSX.read(data,{type:'array'}); let rows=[]; wb.SheetNames.forEach(sn=>{rows=rows.concat(XLSX.utils.sheet_to_json(wb.Sheets[sn],{defval:''}))}); return rows;
-  }
-  function mapBaseMestraRow(r){
-    return {id:id(),luc:get(r,['LUC','Luc','Código LUC','Codigo LUC']),nomeOficial:get(r,['Nome oficial da loja','Nome Oficial','Loja','Nome da loja','Nome']),piso:get(r,['Piso','Pavimento']),painel:get(r,['Painel','Central']),laco:get(r,['Laço','Laco','Loop']),enderecoInicial:normAddr(get(r,['Endereço inicial','Endereco inicial','End Inicial','Endereço Inicio','Endereco Inicio'])),enderecoFinal:normAddr(get(r,['Endereço final','Endereco final','End Final','Endereço Fim','Endereco Fim'])),observacoes:get(r,['Observações','Observacoes','Obs','Observação','Observacao']),importadoEm:isoNow()};
-  }
-  window.importBaseMestraFile=async function(){
+
+/* ===== Correção V8.6 — Leitura robusta de acentuação LUC/Loja =====
+   Corrige CSV salvo em UTF-8, Windows-1252/ANSI e mojibake comum de Excel.
+   A importação continua fixa por posição: A=LUC, B=Tipo, C=Loja, D=Área. */
+function lucDecodeArrayBufferSmart(buffer){
+  const tryDecode=(enc,fatal=false)=>{try{return new TextDecoder(enc,{fatal}).decode(buffer)}catch(e){return ''}};
+  let utf=tryDecode('utf-8',true);
+  if(utf) return utf.replace(/^\uFEFF/,'');
+  let win=tryDecode('windows-1252',false) || tryDecode('iso-8859-1',false);
+  return (win||'').replace(/^\uFEFF/,'');
+}
+function lucRepairMojibake(s){
+  s=String(s??'');
+  if(!s)return '';
+  // Repara texto UTF-8 lido como Windows-1252: SoluÃ§Ã£o -> Solução.
+  if(/[ÃÂâ€]/.test(s)){
     try{
-      const modo=document.getElementById('modeBaseMestra')?.value||'merge'; const rows=await readBaseMestraRows();
-      if(modo==='replace'){db.baseMestraLojas=[];db.baseMestraConflitos=[];db.baseMestraAssociacoes=[]}
-      let lidos=0,gravados=0,atualizados=0,ignorados=0;
-      rows.forEach(r=>{const m=mapBaseMestraRow(r);lidos++; if(!m.luc&&!m.nomeOficial){ignorados++;return} const ex=db.baseMestraLojas.find(x=>(m.luc&&normTxt(x.luc)===normTxt(m.luc))||(!m.luc&&normTxt(x.nomeOficial)===normTxt(m.nomeOficial)&&normTxt(x.piso)===normTxt(m.piso))); if(ex){Object.assign(ex,{...m,id:ex.id,importadoEm:ex.importadoEm||isoNow(),atualizadoEm:isoNow()});atualizados++}else{db.baseMestraLojas.push(m);gravados++}});
-      const assoc=reexecutarAssociacaoBaseMestra(true);markDirty('importação Base Mestra');render();alert(`Base Mestra importada. Lidos: ${lidos}. Novos: ${gravados}. Atualizados: ${atualizados}. Ignorados: ${ignorados}. Associações seguras: ${assoc.atualizados}. Conflitos: ${assoc.conflitos}.`)
-    }catch(e){const el=document.getElementById('baseMestraMsg');if(el)el.innerHTML=`<div class="msg err">${esc(e.message)}</div>`;else alert(e.message)}
+      const bytes=Uint8Array.from([...s].map(ch=>ch.charCodeAt(0)&255));
+      const fixed=new TextDecoder('utf-8',{fatal:true}).decode(bytes);
+      if(fixed && (fixed.match(/[�]/g)||[]).length <= (s.match(/[�]/g)||[]).length) s=fixed;
+    }catch(e){}
   }
-  window.previewBaseMestraFile=async function(){
-    try{const rows=await readBaseMestraRows();const mapped=rows.map(mapBaseMestraRow);document.getElementById('baseMestraPreview').innerHTML=`<div class="msg ok">${mapped.length} registros lidos para validação.</div>${table(mapped.slice(0,20),[['LUC','luc'],['Nome oficial','nomeOficial'],['Piso','piso'],['Painel','painel'],['Laço','laco'],['End. inicial','enderecoInicial'],['End. final','enderecoFinal'],['Obs.','observacoes']])}`}
-    catch(e){document.getElementById('baseMestraMsg').innerHTML=`<div class="msg err">${esc(e.message)}</div>`}
+  const map={
+    '�':'', 'Â':'',
+    'Ã¡':'á','Ã¢':'â','Ã£':'ã','Ãª':'ê','Ã©':'é','Ã­':'í','Ã³':'ó','Ã´':'ô','Ãµ':'õ','Ãº':'ú','Ã§':'ç',
+    'Ã�':'Á','Ã‚':'Â','Ãƒ':'Ã','Ã‰':'É','ÃŠ':'Ê','Ã“':'Ó','Ã”':'Ô','Ã•':'Õ','Ãš':'Ú','Ã‡':'Ç',
+    'â€“':'-','â€”':'-','â€˜':'\'','â€™':'\'','â€œ':'"','â€�':'"','Âº':'º','Âª':'ª','Â²':'²','Â³':'³'
+  };
+  Object.entries(map).forEach(([a,b])=>{s=s.split(a).join(b)});
+  return s.normalize('NFC').replace(/[\u0000-\u001F\u007F]/g,' ').replace(/\s+/g,' ').trim();
+}
+function lucCleanField(v){return lucRepairMojibake(n(v));}
+function lucCleanName(v){
+  let s=lucCleanField(v);
+  // Mantém siglas usuais e melhora apenas apresentação básica.
+  if(!s)return '';
+  return s.replace(/\s+([,.;:/])/g,'$1').replace(/([(/-])\s+/g,'$1').replace(/\s+([)/-])/g,'$1').trim();
+}
+async function readLucRowsFile(){
+  const input=document.getElementById('fileLucImp');
+  if(!input||!input.files||!input.files[0])throw new Error('Selecione um arquivo XLSX ou CSV para Importação LUC/Loja.');
+  const f=input.files[0];
+  const ext=f.name.split('.').pop().toLowerCase();
+  const data=await f.arrayBuffer();
+  if(ext==='csv'){
+    const txt=lucDecodeArrayBufferSmart(data);
+    const first=(txt.split(/\r?\n/).find(x=>x.trim())||'');
+    const sep=(first.match(/;/g)||[]).length>=(first.match(/,/g)||[]).length?';':',';
+    const matrix=txt.split(/\r?\n/).filter(x=>x.trim()).map(l=>splitCSV(l,sep).map(lucCleanField));
+    return lucMatrixToRows(matrix);
   }
-  window.exportBaseMestraModelo=function(){const csv='LUC;Nome oficial da loja;Piso;Painel;Laço;Endereço inicial;Endereço final;Observações\nLUC-001;LOJA EXEMPLO;P1;Painel 1;Laço 1;1.1.100.1;1.1.100.2;Modelo de importação';download(csv,'modelo_base_mestra_lojas_luc.csv','text/csv;charset=utf-8')}
+  if(!['xls','xlsx'].includes(ext))throw new Error('Formato não aceito. Use XLSX, XLS ou CSV.');
+  if(typeof XLSX==='undefined')throw new Error('Biblioteca XLSX não carregada. Para XLS/XLSX, abra com internet ou use CSV.');
+  const wb=XLSX.read(data,{type:'array',cellText:false,cellDates:false});
+  let rows=[];
+  wb.SheetNames.forEach(sn=>{
+    const matrix=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,defval:'',raw:false}).map(row=>row.map(lucCleanField));
+    rows=rows.concat(lucMatrixToRows(matrix));
+  });
+  return rows;
+}
+function normalizeLucImportRows(rows){
+  const out=[],errors=[]; const dt=isoNow();
+  rows.forEach((r,i)=>{
+    const linha=r.__linha||i+2;
+    const raw=Array.isArray(r.__raw)?r.__raw:[];
+    const luc=lucCleanField(raw.length?raw[0]:r.LUC);
+    const tipo=lucCleanName(raw.length?raw[1]:r['Tipo de Loja']);
+    const loja=lucCleanName(raw.length?raw[2]:r.Loja);
+    const area=lucCleanField(raw.length?raw[3]:r['Área Contrato (m²)']);
+    if(up(luc)==='LUC' || up(tipo)==='TIPO DE LOJA' || up(loja)==='LOJA')return;
+    if(!luc&&!loja){errors.push({linha,motivo:'Registro sem LUC e sem Loja',registro:JSON.stringify(raw.length?raw:r)});return}
+    if(!loja){errors.push({linha,motivo:'Coluna C (Loja oficial) vazia. Registro não importado para evitar loja com nome igual ao LUC.',registro:JSON.stringify(raw.length?raw:r)});return}
+    if(up(loja)===up(luc)){errors.push({linha,motivo:'Coluna C veio igual ao LUC. Confira se o arquivo possui a Loja oficial na coluna C. Registro não importado.',registro:JSON.stringify(raw.length?raw:r)});return}
+    out.push({id:id(),luc,tipo,nome:loja,areaContrato:area,piso:pisoFromLuc(luc,tipo),origem:'IMPORTACAO_LUC',dataImportacao:dt,ultimaAtualizacao:dt,statusAssociacao:'Pendente',observacoes:''});
+  });
+  return {lojas:out,errors};
+}
+function lucCorrigirBaseAtual(){
+  ensureLucSchema();
+  (db.baseLojas||[]).forEach(l=>{l.nome=lucCleanName(l.nome);l.tipo=lucCleanName(l.tipo);l.areaContrato=lucCleanField(l.areaContrato)});
+  (db.conflitosAssociacao||[]).forEach(c=>{c.lojaCadastrada=lucCleanName(c.lojaCadastrada);c.lojaCadastradaAtual=lucCleanName(c.lojaCadastradaAtual);c.lojaBaseLuc=lucCleanName(c.lojaBaseLuc)});
+  markDirty('correção de acentuação LUC');
+  render();
+  alert('Base LUC atual corrigida. Para resultado 100%, reimporte a planilha no novo arquivo.');
+}
 
-  window.renderBaseMestra=function(){
-    ensureBaseMestraSchema();const el=document.getElementById('baseMestra');if(!el)return;
-    const q=filters.baseMestraQ||'';
-    const lojas=db.baseMestraLojas.filter(x=>!q||JSON.stringify(x).toUpperCase().includes(up(q))).sort((a,b)=>String(a.piso).localeCompare(String(b.piso),'pt-BR')||String(a.nomeOficial).localeCompare(String(b.nomeOficial),'pt-BR'));
-    const lucs=unique(db.baseMestraLojas.map(x=>x.luc));
-    const vinculados=db.locais.filter(l=>l.baseMestraId).map(l=>({luc:l.luc,nome:l.nome,piso:l.piso,painel:paiName(l.painelId),laco:lacName(l.lacoId),equipamentos:db.equipamentos.filter(e=>e.localId===l.id).length,confianca:l.associacaoConfianca||'',detalhe:l.associacaoDetalhe||''}));
-    const equipamentosVinculados=db.equipamentos.filter(e=>e.baseMestraId||localById(e.localId)?.baseMestraId).map(e=>{const l=localById(e.localId)||{};return {luc:e.luc||l.luc||'',loja:e.nomeOficial||l.nomeOficial||l.nome||'',tipo:e.tipo,endereco:e.endereco,modelo:e.modelo,piso:e.piso||l.piso,painel:paiName(e.painelId),laco:lacName(e.lacoId)}});
-    const conflitos=db.baseMestraConflitos.map(c=>({...c,cands:(c.candidatos||[]).map(k=>`${locName(k.localId)||k.nome} (${k.confianca}%)`).join('<br>')}));
-    el.innerHTML=`<div class="card"><h3 class="sectionTitle">Base Mestra de Lojas com LUC</h3><p class="msg warn"><b>Prioridade oficial:</b> Base Mestra de Lojas &gt; Importação de equipamentos &gt; Cadastro manual. Se não houver Base Mestra, o sistema continua operando normalmente.</p><div class="toolbar"><div class="field"><label>Planilha</label><input type="file" id="fileBaseMestra" accept=".csv,.xls,.xlsx"></div><div class="field"><label>Modo</label><select id="modeBaseMestra"><option value="merge">Adicionar/atualizar sem apagar</option><option value="replace">Substituir Base Mestra</option></select></div><button class="btn secondary" onclick="previewBaseMestraFile()">Pré-visualizar</button><button class="btn" onclick="importBaseMestraFile()">Importar Base Mestra</button><button class="btn secondary" onclick="reexecutarAssociacaoBaseMestra()">Reexecutar associação automática</button><button class="btn secondary" onclick="exportBaseMestraModelo()">Baixar modelo CSV</button></div><div id="baseMestraMsg"></div><div id="baseMestraPreview"></div></div>
-    <div class="card"><h3 class="sectionTitle">Indicadores da Base Mestra</h3><div class="grid">${kpi('Lojas na Base Mestra',db.baseMestraLojas.length)}${kpi('LUCs cadastrados',lucs.length)}${kpi('Lojas vinculadas',vinculados.length)}${kpi('Conflitos pendentes',db.baseMestraConflitos.length)}</div><div class="toolbar"><div class="field"><label>Busca</label><input value="${esc(q)}" data-filter-input="1" data-filter-path="baseMestraQ" data-focus-key="baseMestraBusca" placeholder="LUC, loja, piso, painel, laço..."></div></div></div>
-    <div class="card"><h3 class="sectionTitle">Lojas oficiais importadas</h3>${table(lojas,[['LUC','luc'],['Nome oficial','nomeOficial'],['Piso','piso'],['Painel','painel'],['Laço','laco'],['End. inicial','enderecoInicial'],['End. final','enderecoFinal'],['Observações','observacoes']])}</div>
-    <div class="card"><h3 class="sectionTitle">LUCs cadastrados</h3>${table(lucs.map(luc=>({luc,qtd:db.baseMestraLojas.filter(x=>x.luc===luc).length,lojas:db.baseMestraLojas.filter(x=>x.luc===luc).map(x=>x.nomeOficial).join(' | ')})),[['LUC','luc'],['Qtd.','qtd'],['Lojas','lojas']])}</div>
-    <div class="card"><h3 class="sectionTitle">Lojas vinculadas pela Base Mestra</h3>${table(vinculados,[['LUC','luc'],['Loja / Local oficial','nome'],['Piso','piso'],['Painel','painel'],['Laço','laco'],['Qtd. equipamentos','equipamentos'],['Confiança','confianca'],['Critérios','detalhe']])}</div>
-    <div class="card"><h3 class="sectionTitle">Equipamentos vinculados</h3>${table(equipamentosVinculados,[['LUC','luc'],['Loja oficial','loja'],['Tipo','tipo'],['Endereço','endereco'],['Modelo','modelo'],['Piso','piso'],['Painel','painel'],['Laço','laco']])}</div>
-    <div class="card"><h3 class="sectionTitle">Conflitos para conferência manual</h3>${table(conflitos,[['LUC','luc'],['Nome oficial','nomeOficial'],['Piso','piso'],['Painel','painel'],['Laço','laco'],['Motivo','motivo'],['Candidatos','cands',r=>r.cands||'-']],r=>`${(r.candidatos||[]).map(c=>`<button class="btn small secondary" onclick="aplicarConflitoBaseMestra('${r.id}','${c.localId}')">Aplicar: ${esc(locName(c.localId)||c.nome)}</button>`).join(' ')} <button class="btn small danger" onclick="ignorarConflitoBaseMestra('${r.id}')">Ignorar</button>`)}</div>`;
-  }
 
-  const oldRender=render;
-  render=function(){ensureBaseMestraDom();oldRender();renderBaseMestra();attachSearchInputs();restoreSearchFocus();};
-})();
+/* ===== Correção V8.7 — Conflitos LUC com seleção manual e bloqueio de duplicidade =====
+   - 1ª coluna LUC; 2ª Loja da Base LUC.
+   - Seleção manual mostra apenas lojas/locais ainda não alocados.
+   - Não permite salvar Base LUC duplicada nem loja cadastrada vinculada a duas LUCs. */
+function lucLocalDisponivelParaBase(local,base,currentLocalId=''){
+  if(!local||!base)return false;
+  if(local.baseLojaId && local.baseLojaId!==base.id)return false;
+  const usadoPorOutraBase=(db.baseLojas||[]).some(b=>b.id!==base.id && b.localId===local.id && b.statusAssociacao==='Vinculada');
+  if(usadoPorOutraBase)return false;
+  if(base.piso && local.piso && !lucPisosCompat(local.piso,base.piso))return false;
+  return true;
+}
+function lucLocaisDisponiveisSelect(conflito){
+  ensureLucSchema();
+  const base=(db.baseLojas||[]).find(b=>b.id===conflito.baseLojaId)||{};
+  const locais=(db.locais||[])
+    .filter(l=>lucLocalDisponivelParaBase(l,base,conflito.localId))
+    .sort((a,b)=>String(a.piso||'').localeCompare(String(b.piso||''),'pt-BR') || lucOfficialName(a).localeCompare(lucOfficialName(b),'pt-BR'));
+  const selected=locais.some(l=>l.id===conflito.localId)?conflito.localId:'';
+  if(!locais.length)return '<span class="pill bad">Sem loja disponível</span>';
+  return `<select id="lucLocalSel_${conflito.id}" style="min-width:240px;border:1px solid var(--l3a-border);border-radius:8px;padding:7px;background:#fff">
+    <option value="">Selecione a loja cadastrada</option>
+    ${locais.map(l=>`<option value="${esc(l.id)}" ${l.id===selected?'selected':''}>${esc((l.nomeOriginalCadastro||l.nome||lucOfficialName(l))+' • '+(l.piso||'Sem piso'))}</option>`).join('')}
+  </select>`;
+}
+function lucValidarSemDuplicidade(base,local){
+  if(!base||!local)return 'Selecione uma Base LUC e uma loja cadastrada válida.';
+  const outraBaseMesmoLocal=(db.baseLojas||[]).find(b=>b.id!==base.id && b.localId===local.id && b.statusAssociacao==='Vinculada');
+  if(outraBaseMesmoLocal)return `Bloqueado: a loja cadastrada já está vinculada à LUC ${outraBaseMesmoLocal.luc} - ${outraBaseMesmoLocal.nome}.`;
+  if(local.baseLojaId && local.baseLojaId!==base.id){
+    const b=(db.baseLojas||[]).find(x=>x.id===local.baseLojaId);
+    return `Bloqueado: este local já está alocado para ${b?('LUC '+b.luc+' - '+b.nome):'outra Base LUC'}.`;
+  }
+  const outroLocalMesmaBase=(db.locais||[]).find(l=>l.id!==local.id && l.baseLojaId===base.id);
+  if(outroLocalMesmaBase)return `Bloqueado: a LUC ${base.luc} já está atribuída ao local ${lucOfficialName(outroLocalMesmaBase)}.`;
+  if(base.localId && base.localId!==local.id && base.statusAssociacao==='Vinculada'){
+    const l=(db.locais||[]).find(x=>x.id===base.localId);
+    return `Bloqueado: a LUC ${base.luc} já está vinculada em ${l?lucOfficialName(l):'outro local'}.`;
+  }
+  return '';
+}
+function lucConfirmarConflito(conflitoId){
+  ensureLucSchema();
+  const c=(db.conflitosAssociacao||[]).find(x=>x.id===conflitoId); if(!c)return;
+  const base=(db.baseLojas||[]).find(x=>x.id===c.baseLojaId);
+  const sel=document.getElementById('lucLocalSel_'+conflitoId);
+  const localId=(sel&&sel.value)||c.localId||'';
+  const local=(db.locais||[]).find(x=>x.id===localId);
+  const erro=lucValidarSemDuplicidade(base,local);
+  if(erro){alert(erro);return;}
+  applyLucToLocal(local,base,c.percentualSimilaridade||0);
+  db.conflitosAssociacao=(db.conflitosAssociacao||[]).filter(x=>x.id!==conflitoId && x.baseLojaId!==base.id && x.localId!==local.id);
+  markDirty('confirmação manual conflito LUC');
+  renderImportacao();
+}
+function lucAtribuirManual(baseLojaId,localId){
+  ensureLucSchema();
+  const base=(db.baseLojas||[]).find(x=>x.id===baseLojaId);
+  const local=(db.locais||[]).find(x=>x.id===localId);
+  const erro=lucValidarSemDuplicidade(base,local);
+  if(erro){alert(erro);return false;}
+  applyLucToLocal(local,base,100);
+  db.conflitosAssociacao=(db.conflitosAssociacao||[]).filter(x=>x.baseLojaId!==base.id && x.localId!==local.id);
+  markDirty('atribuição manual LUC');
+  renderImportacao();
+  return true;
+}
+function lucConflitosRows(){
+  ensureLucSchema();
+  return (db.conflitosAssociacao||[]).map(c=>{
+    const base=(db.baseLojas||[]).find(b=>b.id===c.baseLojaId)||{};
+    return {...c,luc:base.luc||c.luc||'',lojaBaseLuc:base.nome||c.lojaBaseLuc||'',selecaoLocal:lucLocaisDisponiveisSelect(c)};
+  });
+}
+function lucImportInterface(){
+  ensureLucSchema();
+  const r=lucResumo(); const tab=filters.lucTab||'resumo';
+  const tabs=['resumo','lojas','conflitos','associacao'];
+  const labels={resumo:'Resumo',lojas:'Lojas',conflitos:'Conflitos',associacao:'Associação Automática'};
+  const btns=tabs.map(t=>`<button class="btn small ${tab===t?'':'secondary'}" onclick="lucSetTab('${t}')">${labels[t]}</button>`).join(' ');
+  let body='';
+  if(tab==='resumo')body=`<div class="premiumGrid">${premiumStat('Quantidade de lojas',r.lojas)}${premiumStat('Quantidade de pisos',r.pisos)}${premiumStat('Quantidade por tipo',r.tipos)}${premiumStat('Quantidade vinculada',r.vinculadas)}${premiumStat('Quantidade pendente',r.pendentes)}${premiumStat('Conflitos',r.conflitos)}${premiumStat('Última importação',r.ultima)}</div><div class="split2" style="margin-top:14px"><div class="premiumPanel"><h3>Quantidade por tipo</h3>${table(lucTipoRows(),[['Tipo','tipo'],['Qtd.','qtd']])}</div><div class="premiumPanel"><h3>Quantidade por piso</h3>${table(lucPisoRows(),[['Piso','piso'],['Qtd.','qtd']])}</div></div>`;
+  if(tab==='lojas')body=table((db.baseLojas||[]),[['LUC','luc'],['Loja oficial','nome'],['Tipo de Loja','tipo'],['Área Contrato (m²)','areaContrato'],['Piso','piso'],['Status','statusAssociacao',x=>`<span class="pill ${x.statusAssociacao==='Vinculada'?'ok':x.statusAssociacao==='Conflito'?'bad':'warn'}">${esc(x.statusAssociacao)}</span>`],['Similaridade','percentualSimilaridade',x=>x.percentualSimilaridade?x.percentualSimilaridade+'%':'—']]);
+  if(tab==='conflitos')body=`<p class="msg warn"><b>Conferência manual:</b> selecione a loja cadastrada correta para cada LUC. A lista mostra somente locais ainda não alocados e o sistema bloqueia qualquer duplicidade.</p>`+table(lucConflitosRows(),[
+    ['LUC','luc'],['Loja da Base LUC','lojaBaseLuc'],['Loja cadastrada sugerida','lojaCadastrada'],['Selecionar loja cadastrada disponível','selecaoLocal',r=>r.selecaoLocal],['Piso cadastro','pisoCadastro'],['Piso Base LUC','pisoBaseLuc'],['Motivo','motivo'],['Similaridade','percentualSimilaridade',x=>x.percentualSimilaridade+'%'],['Data','data']
+  ],c=>`<button class="btn small" onclick="lucConfirmarConflito('${c.id}')">Salvar vínculo</button> <button class="btn small secondary" onclick="lucIgnorarConflito('${c.id}')">Ignorar</button>`);
+  if(tab==='associacao')body=`<p class="msg warn">A associação usa Nome da Loja + Piso como critério decisivo. Ex.: Oboticário, O Boticário ou O Boticário P2, estando no mesmo piso, passam a usar o nome oficial da Base LUC. Acima de 82% atualiza automaticamente Nome Oficial, LUC, Piso, Área Contrato e Origem = Base LUC. Baixa confiança vai para Conflitos de Associação.</p><div class="premiumActions"><button class="btn" onclick="executarAssociacaoLuc()">Reexecutar associação automática</button></div>${table((db.baseLojas||[]).map(b=>({...b,localVinculado:locName(b.localId)})),[['Base LUC','nome'],['LUC','luc'],['Local vinculado','localVinculado'],['Status','statusAssociacao'],['Similaridade','percentualSimilaridade',x=>x.percentualSimilaridade?x.percentualSimilaridade+'%':'—']])}`;
+  return `<div class="premiumPanel"><div class="systemHeaderSlim"><div class="titleBlock"><h3>Importação LUC/Loja</h3><p>Importa LUC, Tipo de Loja, Loja e Área Contrato (m²), preservando todo o banco técnico atual.</p></div></div><div class="toolbar"><div class="field"><label>Arquivo LUC/Loja</label><input type="file" id="fileLucImp" accept=".csv,.xls,.xlsx"></div><button class="btn secondary" onclick="previewLucImport()">Pré-visualizar / validar</button><button class="btn" onclick="importLucLojas()">Importar LUC/Loja</button></div><p class="msg warn"><b>Layout obrigatório:</b> A=LUC, B=Tipo de Loja, C=Loja oficial, D=Área Contrato (m²). Colunas adicionais são ignoradas.</p><div id="lucImportMsg"></div><div id="lucPreviewBox"></div></div><div class="premiumPanel"><div class="premiumActions" style="margin-top:0">${btns}</div><div style="margin-top:14px">${body}</div></div>`;
+}
+
+
+
+/* ===== Evolução V8.8 — LUC como chave lógica das Lojas / Áreas =====
+   - Adiciona coluna LUC logo após Nome Oficial na tabela Lojas / Áreas.
+   - Mantém compatibilidade com id interno, mas usa luc como referência lógica quando vinculado.
+   - Busca por Nome Oficial, LUC e Nome Antigo.
+   - Preserva locais sem associação com LUC em branco/—. */
+const _ensureLucSchemaV88=ensureLucSchema;
+ensureLucSchema=function(){
+  _ensureLucSchemaV88();
+  (db.locais||[]).forEach(l=>{
+    if(l.luc===undefined)l.luc='';
+    if(l.lucAssociado===undefined)l.lucAssociado=l.luc||'';
+    if(l.nomeOriginalCadastro===undefined)l.nomeOriginalCadastro='';
+    if(l.nomeOficial===undefined)l.nomeOficial=l.nome||'';
+  });
+};
+function lucValorLocal(local){return local?(local.luc||local.lucAssociado||''):''}
+function lucDisplayLocal(local){const v=lucValorLocal(local); return v?esc(v):'—'}
+function lucNomeOficialLocal(local){return lucOfficialName(local)||local?.nomeOficial||local?.nome||''}
+function lucNomeAntigoLocal(local){return local?.nomeOriginalCadastro||''}
+function lucChaveLogicaLocal(local){return lucValorLocal(local)||local?.id||''}
+function lucBuscaLocal(local,q){
+  if(!q)return true;
+  const texto=[lucNomeOficialLocal(local),lucValorLocal(local),lucNomeAntigoLocal(local),local?.nome||'',local?.tipo||'',local?.piso||'',paiName(local?.painelId),lacName(local?.lacoId),flmById(local?.flmId)?.endereco||''].join(' ');
+  return up(texto).includes(up(q));
+}
+const _applyLucToLocalV88=applyLucToLocal;
+applyLucToLocal=function(local,base,score){
+  if(!local||!base)return;
+  if(!local.nomeOriginalCadastro)local.nomeOriginalCadastro=local.nome||'';
+  _applyLucToLocalV88(local,base,score);
+  local.luc=base.luc||local.luc||'';
+  local.lucAssociado=local.luc;
+  local.nomeOficial=base.nome||local.nomeOficial||local.nome||'';
+  local.nome=local.nomeOficial;
+  local.chaveLogica=lucChaveLogicaLocal(local);
+};
+const _ensureLocalV88=ensureLocal;
+ensureLocal=function(nome,tipo,painelId,lacoId,piso,flmId,portaId){
+  const loc=_ensureLocalV88(nome,tipo,painelId,lacoId,piso,flmId,portaId);
+  if(loc.luc===undefined)loc.luc='';
+  if(loc.lucAssociado===undefined)loc.lucAssociado=loc.luc||'';
+  if(loc.nomeOficial===undefined)loc.nomeOficial=loc.nome||'';
+  if(loc.chaveLogica===undefined)loc.chaveLogica=lucChaveLogicaLocal(loc);
+  return loc;
+};
+function renderLocais(){
+  ensureLucSchema();
+  let q=filters.locaisQ||'';
+  let rows=(db.locais||[])
+    .filter(l=>lucBuscaLocal(l,q))
+    .map(l=>({
+      ...l,
+      nomeOficialDisplay:lucNomeOficialLocal(l),
+      lucDisplay:lucDisplayLocal(l),
+      nomeAntigo:lucNomeAntigoLocal(l)||'—',
+      chaveLogica:lucChaveLogicaLocal(l),
+      painel:paiName(l.painelId),
+      laco:lacName(l.lacoId),
+      flm:flmById(l.flmId)?.endereco||'',
+      porta:db.portas.find(p=>p.id===l.portaId)?.numero||'',
+      qtd:db.equipamentos.filter(e=>e.localId===l.id).length
+    }));
+  document.getElementById('locais').innerHTML=`<div class="card"><button class="btn" onclick="formLocal()">+ Criar nova loja/área</button><div class="toolbar"><div class="field"><label>Busca</label><input value="${esc(q)}" data-filter-input="1" data-filter-path="locaisQ" data-focus-key="locaisBusca" placeholder="Nome oficial, LUC, nome antigo, piso, painel, laço..."></div></div><p class="msg warn"><b>Regra LUC:</b> quando houver associação com a Base LUC, o sistema exibe o Nome Oficial e usa o LUC como referência lógica. Sem vínculo, o LUC permanece em branco.</p></div><div class="card"><h3 class="sectionTitle">Lojas / Áreas vinculadas às portas</h3>${table(rows,[['Nome Oficial','nomeOficialDisplay'],['LUC','lucDisplay',r=>r.lucDisplay],['Classificação','tipo'],['Painel','painel'],['Laço','laco'],['Piso','piso'],['FLM','flm'],['Porta','porta'],['Qtd. equip.','qtd'],['Status','status',r=>`<span class="pill ${statusClass(r.status)}">${esc(r.status)}</span>`]],r=>`<button class="btn small secondary" onclick="openLocal('${r.id}')">Histórico</button> <button class="btn small secondary" onclick="formLocal('${r.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1-4.2L15.5 5.3a1.5 1.5 0 0 1 2.1 0l1.1 1.1a1.5 1.5 0 0 1 0 2.1L8.2 19 4 20Z"/><path d="M13.8 7 17 10.2"/></svg></button> <button class="btn small danger" onclick="del('locais','${r.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2"/><path d="M6.5 7 7.3 19a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4L17.5 7"/><path d="M10 11v6M14 11v6"/></svg></button>`)}</div>`;
+}
+function formLocal(i=''){
+  if(!requireAccess('cadastro','Seu perfil não pode criar/editar lojas/áreas.'))return;
+  ensureLucSchema();
+  let o=db.locais.find(x=>x.id===i)||{};
+  const lucAtual=lucValorLocal(o);
+  const nomeAtual=lucNomeOficialLocal(o)||o.nome||'';
+  openModal(`<h2>${i?'Editar':'Nova'} Loja / Área</h2><p class="msg warn">O campo LUC é preenchido automaticamente pela associação com a Base LUC. Para loja sem vínculo, permanece em branco.</p><div class="formGrid"><div class="field"><label>Nome Oficial</label><input id="mNome" value="${esc(nomeAtual)}"></div><div class="field"><label>LUC</label><input id="mLuc" value="${esc(lucAtual)}" placeholder="—" ${lucAtual?'readonly':''}></div><div class="field"><label>Classificação</label><select id="mTipo"><option ${o.tipo==='Loja'?'selected':''}>Loja</option><option ${o.tipo==='Área Técnica'?'selected':''}>Área Técnica</option><option ${o.tipo==='Área Comum'?'selected':''}>Área Comum</option></select></div><div class="field"><label>Piso</label><input id="mPiso" value="${esc(o.piso)}"></div><div class="field"><label>Status</label><select id="mStatus">${['Em operação','Falha logista','Falha sistema','Desativada','Em teste'].map(st=>`<option ${normalizeStatus(o.status)===st?'selected':''}>${st}</option>`).join('')}</select></div><div class="field"><label>Nome antigo / cadastro original</label><input id="mNomeOriginal" value="${esc(o.nomeOriginalCadastro||'')}" placeholder="Preenchido ao vincular Base LUC"></div></div><br><button class="btn" onclick="saveLocal('${i}')">Salvar</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`);
+}
+function saveLocal(i){
+  let o=i?db.locais.find(x=>x.id===i):{id:id(),ultimaAlteracao:isoNow()};
+  const novoNome=n(mNome.value);
+  const lucManual=n(document.getElementById('mLuc')?.value||'');
+  if(i&&o.nome!==novoNome)db.falhas.push({id:id(),data:isoNow(),tipo:'Alteração cadastral',itemId:o.id,itemNome:o.nome,localId:o.id,status:'Nome alterado',motivo:`Nome anterior: ${o.nome} | Novo: ${novoNome}`,origem:'Cadastro'});
+  if(!o.nomeOriginalCadastro)o.nomeOriginalCadastro=n(document.getElementById('mNomeOriginal')?.value)||((i&&o.nome&&o.nome!==novoNome)?o.nome:'');
+  else o.nomeOriginalCadastro=n(document.getElementById('mNomeOriginal')?.value)||o.nomeOriginalCadastro;
+  o.nome=novoNome;
+  o.nomeOficial=novoNome;
+  o.luc=lucManual||o.luc||'';
+  o.lucAssociado=o.luc;
+  o.chaveLogica=lucChaveLogicaLocal(o);
+  o.tipo=mTipo.value;
+  o.piso=n(mPiso.value);
+  o.status=normalizeStatus(mStatus.value);
+  o.ultimaAlteracao=isoNow();
+  if(!i)db.locais.push(o);
+  closeModal();save();
+}
+function openLocal(i){
+  ensureLucSchema();
+  let l=db.locais.find(x=>x.id===i); if(!l)return;
+  let hist=db.falhas.filter(f=>f.localId===i||f.itemId===i).sort((a,b)=>String(b.data).localeCompare(String(a.data)));
+  openModal(`<h2>${esc(lucNomeOficialLocal(l))}</h2><p><b>LUC:</b> ${lucDisplayLocal(l)} • <b>Chave lógica:</b> ${esc(lucChaveLogicaLocal(l))} • <b>Tipo:</b> ${esc(l.tipo)} • <b>Painel:</b> ${esc(paiName(l.painelId))} • <b>Laço:</b> ${esc(lacName(l.lacoId))} • <b>Piso:</b> ${esc(l.piso)}</p>${l.nomeOriginalCadastro?`<p class="note"><b>Nome antigo:</b> ${esc(l.nomeOriginalCadastro)}</p>`:''}<h3>Histórico da loja/área</h3><div class="timeline">${hist.map(h=>`<div class="tl"><b>${esc(h.status)}</b><br><small>${esc(h.data)} • ${esc(h.itemNome||'')}</small><p>${esc(h.motivo||h.obs||'Sem observação')}</p></div>`).join('')||'<p class="msg warn">Sem histórico.</p>'}</div>`);
+}
+
+ensureLucSchema();
 
 render();
 setTimeout(verificarBaseAoAbrir,50);
