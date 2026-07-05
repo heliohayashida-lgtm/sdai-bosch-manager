@@ -658,7 +658,19 @@ function paiName(v){return painelById(v)?.nome||''}
 function lacName(v){return lacoById(v)?.nome||''}
 function ensurePanel(nome,modelo='',localizacao='',obs='Importado'){return findOrCreate(db.paineis,x=>up(x.nome)===up(nome),{nome:nome||'Painel não informado',modelo,localizacao,obs}).obj}
 function ensureLaco(painelId,nome,piso=''){return findOrCreate(db.lacos,x=>x.painelId===painelId&&up(x.nome)===up(nome),{painelId,nome:nome||'Laço não informado',piso,obs:'Importado'}).obj}
-function ensureFlm(painelId,lacoId,endereco,modelo,piso){let r=findOrCreate(db.flms,x=>x.painelId===painelId&&x.lacoId===lacoId&&up(x.endereco)===up(endereco),{painelId,lacoId,endereco:endereco||'S/E',modelo:modelo||'FLM',piso,obs:'Importado'}); if(!r.created&&piso)r.obj.piso=piso; return r.obj}
+function ensureFlm(painelId,lacoId,endereco,modelo,piso){
+  // Identidade do FLM = Painel + Endereço físico do módulo (nunca muda).
+  // O Laço é só um dado associado — atualizamos ele aqui, mas NUNCA o usamos
+  // para decidir se o FLM "já existe". Isso evita que o FLM (e tudo que
+  // depende dele: Porta → Loja → LUC) fique órfão quando o cadastro de Laço
+  // é reconstruído e ganha um ID novo.
+  let r=findOrCreate(db.flms,x=>x.painelId===painelId&&up(x.endereco)===up(endereco),{painelId,lacoId,endereco:endereco||'S/E',modelo:modelo||'FLM',piso,obs:'Importado'});
+  if(!r.created){
+    if(lacoId)r.obj.lacoId=lacoId;
+    if(piso)r.obj.piso=piso;
+  }
+  return r.obj;
+}
 function ensurePorta(flmId,numero,localId='',ligacao=''){return findOrCreate(db.portas,x=>x.flmId===flmId&&String(x.numero)===String(numero||'1'),{flmId,numero:numero||'1',localId,ligacao,obs:'Importado'}).obj}
 function ensureLocal(nome,tipo,painelId,lacoId,piso,flmId,portaId){
   // Chave de casamento: se existe um endereço físico (porta de FLM), usamos ELE como
@@ -691,8 +703,8 @@ function ensureLocal(nome,tipo,painelId,lacoId,piso,flmId,portaId){
   }
   return r.obj;
 }
-function deviceKey(d){return [d.painelId,d.lacoId,up(d.tipo),up(d.endereco),up(d.modelo),d.flmId||''].join('|')}
-function ensureEquip(obj,mode='diff'){obj.status=normalizeStatus(obj.status); let key=deviceKey(obj); let ex=db.equipamentos.find(e=>deviceKey(e)===key); if(ex){ ex.status=normalizeStatus(ex.status||obj.status); if(mode==='overwrite')Object.assign(ex,{...obj,id:ex.id,status:normalizeStatus(ex.status||obj.status),ultimaAlteracao:ex.ultimaAlteracao||obj.ultimaAlteracao}); return {obj:ex,created:false,updated:mode==='overwrite'} } obj.id=id(); db.equipamentos.push(obj); return {obj,created:true}}
+function deviceKey(d){return [d.painelId,up(d.tipo),up(d.endereco),up(d.modelo),d.flmId||''].join('|')}
+function ensureEquip(obj,mode='diff'){obj.status=normalizeStatus(obj.status); let key=deviceKey(obj); let ex=db.equipamentos.find(e=>deviceKey(e)===key); if(ex){ ex.status=normalizeStatus(ex.status||obj.status); if(obj.lacoId)ex.lacoId=obj.lacoId; if(obj.piso)ex.piso=obj.piso; if(mode==='overwrite')Object.assign(ex,{...obj,id:ex.id,status:normalizeStatus(ex.status||obj.status),ultimaAlteracao:ex.ultimaAlteracao||obj.ultimaAlteracao}); return {obj:ex,created:false,updated:mode==='overwrite'} } obj.id=id(); db.equipamentos.push(obj); return {obj,created:true}}
 function clearAll(){db=emptyDB();persistLocal();markDirty('limpeza');render()}
 function counts(){let tipos=unique(db.equipamentos.map(e=>e.tipo).concat(['Módulo'])); let c={paineis:db.paineis.length,lacos:db.lacos.length,flms:db.flms.length,portas:db.portas.length,locais:db.locais.length,equipamentos:db.equipamentos.length,totalDispositivos:db.equipamentos.length+db.flms.length,tipos:{},status:{}}; tipos.forEach(t=>c.tipos[t]=0); db.flms.forEach(()=>c.tipos['Módulo']=(c.tipos['Módulo']||0)+1); db.equipamentos.forEach(e=>{c.tipos[e.tipo]=(c.tipos[e.tipo]||0)+1;{let st=normalizeStatus(e.status); c.status[st]=(c.status[st]||0)+1}}); db.flms.forEach(f=>{{let st=normalizeStatus(f.status||'Em operação'); c.status[st]=(c.status[st]||0)+1}}); return c}
 function table(rows,cols,actions){if(!rows.length)return '<p class="msg warn">Sem registros.</p>';return `<div class="tableWrap"><table><thead><tr>${cols.map(c=>`<th>${c[0]}</th>`).join('')}${actions?'<th>Ações</th>':''}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${c[2]?c[2](r):esc(r[c[1]])}</td>`).join('')}${actions?`<td>${actions(r)}</td>`:''}</tr>`).join('')}</tbody></table></div>`}
