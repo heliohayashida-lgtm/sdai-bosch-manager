@@ -1318,9 +1318,14 @@ function renderSobre(){const el=document.getElementById('sobre'); if(!el)return;
    ========================================================================= */
 function pisoSortKey(p){const m=String(p||'').match(/\d+/);return m?parseInt(m[0],10):999}
 function dashStatusBucket(st){const s=up(normalizeStatus(st||''));if(s.includes('FALHA'))return 'falha';if(s.includes('TESTE'))return 'teste';if(s.includes('DESATIV'))return 'desativada';return 'operacao'}
+// Piso efetivo: o piso OFICIAL definido no Laço (tela Painéis → Piso por Laço) manda
+// mais que o piso gravado solto no próprio equipamento/loja/FLM — que pode estar
+// vazio ou desatualizado em registros antigos. Só cai para o piso do próprio
+// registro se o laço dele ainda não tiver piso oficial definido.
+function pisoEfetivo(obj){if(!obj)return ''; const l=obj.lacoId?(db.lacos||[]).find(x=>x.id===obj.lacoId):null; return n(l&&l.piso)||n(obj.piso)||''}
 function timeSince(isoStr){if(!isoStr)return '—';const then=new Date(isoStr).getTime();if(isNaN(then))return '—';const diffMs=Math.max(0,Date.now()-then);const h=diffMs/3600000;if(h<1)return Math.max(1,Math.round(diffMs/60000))+' min';if(h<24)return Math.round(h)+'h';return Math.round(h/24)+'d'}
-function dashPisoStats(){const map={};(db.equipamentos||[]).forEach(e=>{const p=n(e.piso)||'Sem piso';if(!map[p])map[p]={piso:p,operacao:0,teste:0,falha:0,desativada:0};map[p][dashStatusBucket(e.status)]++});return Object.values(map).sort((a,b)=>pisoSortKey(a.piso)-pisoSortKey(b.piso)||a.piso.localeCompare(b.piso,'pt-BR'))}
-function dashLojasComFalha(){return (db.locais||[]).filter(l=>dashStatusBucket(l.status)==='falha').map(l=>({nome:l.nome||'—',piso:n(l.piso)||'—',laco:lacName(l.lacoId)||'—',desde:l.ultimaAlteracao||'',status:l.status})).sort((a,b)=>(a.desde||'').localeCompare(b.desde||''))}
+function dashPisoStats(){const map={};(db.equipamentos||[]).forEach(e=>{const p=pisoEfetivo(e)||'Sem piso';if(!map[p])map[p]={piso:p,operacao:0,teste:0,falha:0,desativada:0};map[p][dashStatusBucket(e.status)]++});return Object.values(map).sort((a,b)=>pisoSortKey(a.piso)-pisoSortKey(b.piso)||a.piso.localeCompare(b.piso,'pt-BR'))}
+function dashLojasComFalha(){return (db.locais||[]).filter(l=>dashStatusBucket(l.status)==='falha').map(l=>({nome:l.nome||'—',piso:pisoEfetivo(l)||'—',laco:lacName(l.lacoId)||'—',desde:l.ultimaAlteracao||'',status:l.status})).sort((a,b)=>(a.desde||'').localeCompare(b.desde||''))}
 function dashPorLaco(){const map={};(db.locais||[]).filter(l=>dashStatusBucket(l.status)==='falha').forEach(l=>{const key=(paiName(l.painelId)||'—')+' · '+(lacName(l.lacoId)||'—');map[key]=(map[key]||0)+1});return Object.entries(map).map(([label,value])=>({label,value})).sort((a,b)=>b.value-a.value).slice(0,8)}
 
 window._dashCharts=window._dashCharts||{};
@@ -1456,8 +1461,8 @@ function drawReport(){
 
   // ===== V8.2: quebra por piso (onde estão os problemas, não só quantos) =====
   let byPiso={};
-  db.equipamentos.filter(e=>!r.painel||paiName(e.painelId)===r.painel).forEach(e=>{const p=n(e.piso)||'Sem piso';byPiso[p]=byPiso[p]||{op:0,falha:0};byPiso[p][dashStatusBucket(e.status)==='falha'?'falha':'op']++});
-  db.flms.filter(f=>!r.painel||paiName(f.painelId)===r.painel).forEach(f=>{const p=n(f.piso)||'Sem piso';byPiso[p]=byPiso[p]||{op:0,falha:0};byPiso[p][dashStatusBucket(f.status)==='falha'?'falha':'op']++});
+  db.equipamentos.filter(e=>!r.painel||paiName(e.painelId)===r.painel).forEach(e=>{const p=pisoEfetivo(e)||'Sem piso';byPiso[p]=byPiso[p]||{op:0,falha:0};byPiso[p][dashStatusBucket(e.status)==='falha'?'falha':'op']++});
+  db.flms.filter(f=>!r.painel||paiName(f.painelId)===r.painel).forEach(f=>{const p=pisoEfetivo(f)||'Sem piso';byPiso[p]=byPiso[p]||{op:0,falha:0};byPiso[p][dashStatusBucket(f.status)==='falha'?'falha':'op']++});
   let pisoEntries=Object.entries(byPiso).sort((a,b)=>pisoSortKey(a[0])-pisoSortKey(b[0]));
   let pisoRowsChart=pisoEntries.map(([p,d])=>({label:p,value:d.op+d.falha}));
   let pisoChart=chartBarRows(pisoRowsChart,Math.max(1,...pisoRowsChart.map(x=>x.value)));
