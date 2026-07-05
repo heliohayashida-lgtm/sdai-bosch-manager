@@ -1817,7 +1817,19 @@ function renderLocais(){
       porta:db.portas.find(p=>p.id===l.portaId)?.numero||'',
       qtd:db.equipamentos.filter(e=>e.localId===l.id).length
     }));
-  document.getElementById('locais').innerHTML=`<div class="card"><button class="btn" onclick="formLocal()">+ Criar nova loja/área</button><div class="toolbar"><div class="field"><label>Busca</label><input value="${esc(q)}" data-filter-input="1" data-filter-path="locaisQ" data-focus-key="locaisBusca" placeholder="Nome oficial, LUC, nome antigo, piso, painel, laço..."></div></div><p class="msg warn"><b>Regra LUC:</b> quando houver associação com a Base LUC, o sistema exibe o Nome Oficial e usa o LUC como referência lógica. Sem vínculo, o LUC permanece em branco.</p></div><div class="card"><h3 class="sectionTitle">Lojas / Áreas (Técnico) vinculadas às portas</h3>${table(rows,[['Nome Oficial','nomeOficialDisplay'],['LUC','lucDisplay',r=>r.lucDisplay],['Classificação','tipo'],['Painel','painel'],['Laço','laco'],['Piso','piso'],['FLM','flm'],['Porta','porta'],['Qtd. equip.','qtd'],['Status','status',r=>`<span class="pill ${statusClass(r.status)}">${esc(r.status)}</span>`]],r=>`<button class="btn small secondary" onclick="openLocal('${r.id}')">Histórico</button> <button class="btn small secondary" onclick="formLocal('${r.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1-4.2L15.5 5.3a1.5 1.5 0 0 1 2.1 0l1.1 1.1a1.5 1.5 0 0 1 0 2.1L8.2 19 4 20Z"/><path d="M13.8 7 17 10.2"/></svg></button> <button class="btn small danger" onclick="del('locais','${r.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2"/><path d="M6.5 7 7.3 19a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4L17.5 7"/><path d="M10 11v6M14 11v6"/></svg></button>`)}</div>`;
+  document.getElementById('locais').innerHTML=`<div class="card"><button class="btn" onclick="formLocal()">+ Criar nova loja/área</button><div class="toolbar"><div class="field"><label>Busca</label><input value="${esc(q)}" data-filter-input="1" data-filter-path="locaisQ" data-focus-key="locaisBusca" placeholder="Nome oficial, LUC, nome antigo, piso, painel, laço..."></div></div><p class="msg warn"><b>Regra LUC:</b> quando houver associação com a Base LUC, o sistema exibe o Nome Oficial e usa o LUC como referência lógica. Sem vínculo, o LUC permanece em branco.</p></div><div class="card"><h3 class="sectionTitle">Lojas / Áreas (Técnico) vinculadas às portas</h3>${table(rows,[['Nome Oficial','nomeOficialDisplay'],['LUC','lucDisplay',r=>r.lucDisplay],['Classificação','tipo'],['Painel','painel'],['Laço','laco'],['Piso','piso'],['FLM','flm'],['Porta','porta'],['Qtd. equip.','qtd'],['Status','status',r=>`<span class="pill ${statusClass(r.status)}">${esc(r.status)}</span>`]],r=>`<button class="btn small secondary" onclick="openLocal('${r.id}')">Histórico</button> <button class="btn small secondary" onclick="formLocal('${r.id}')" title="Editar Nome Oficial e LUC"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1-4.2L15.5 5.3a1.5 1.5 0 0 1 2.1 0l1.1 1.1a1.5 1.5 0 0 1 0 2.1L8.2 19 4 20Z"/><path d="M13.8 7 17 10.2"/></svg> Editar</button> <button class="btn small danger" onclick="del('locais','${r.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2"/><path d="M6.5 7 7.3 19a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4L17.5 7"/><path d="M10 11v6M14 11v6"/></svg></button>`)}</div>`;
+}
+function lucBaseLojaOptionsHtml(selectedId){
+  const list=(db.baseLojas||[]).slice().sort((a,b)=>(a.nome||'').localeCompare(b.nome||'',"pt-BR"));
+  const opts=list.map(b=>`<option value="${esc(b.id)}" data-nome="${esc(b.nome||'')}" data-luc="${esc(b.luc||'')}" ${selectedId===b.id?'selected':''}>${esc(b.nome||'(sem nome)')} — LUC ${esc(b.luc||'—')}</option>`).join('');
+  return `<option value="">— Não vincular / manter atual —</option>${opts}`;
+}
+function onSelectBaseLojaModal(sel){
+  const opt=sel.options[sel.selectedIndex];
+  if(!opt||!opt.value){document.getElementById('mBaseLojaId').value='';return}
+  document.getElementById('mNome').value=opt.getAttribute('data-nome')||'';
+  document.getElementById('mLuc').value=opt.getAttribute('data-luc')||'';
+  document.getElementById('mBaseLojaId').value=opt.value;
 }
 function formLocal(i=''){
   if(!requireAccess('cadastro','Seu perfil não pode criar/editar lojas/áreas.'))return;
@@ -1825,18 +1837,25 @@ function formLocal(i=''){
   let o=db.locais.find(x=>x.id===i)||{};
   const lucAtual=lucValorLocal(o);
   const nomeAtual=lucNomeOficialLocal(o)||o.nome||'';
-  openModal(`<h2>${i?'Editar':'Nova'} Loja / Área</h2><p class="msg warn">O campo LUC é preenchido automaticamente pela associação com a Base LUC, mas pode ser corrigido manualmente aqui caso a associação automática tenha vinculado a loja errada.</p><div class="formGrid"><div class="field"><label>Nome Oficial</label><input id="mNome" value="${esc(nomeAtual)}"></div><div class="field"><label>LUC</label><input id="mLuc" value="${esc(lucAtual)}" placeholder="—"></div><div class="field"><label>Classificação</label><select id="mTipo"><option ${o.tipo==='Loja'?'selected':''}>Loja</option><option ${o.tipo==='Área Técnica'?'selected':''}>Área Técnica</option><option ${o.tipo==='Área Comum'?'selected':''}>Área Comum</option></select></div><div class="field"><label>Piso</label><input id="mPiso" value="${esc(o.piso)}"></div><div class="field"><label>Status</label><select id="mStatus">${['Em operação','Falha logista','Falha sistema','Desativada','Em teste'].map(st=>`<option ${normalizeStatus(o.status)===st?'selected':''}>${st}</option>`).join('')}</select></div><div class="field"><label>Nome antigo / cadastro original</label><input id="mNomeOriginal" value="${esc(o.nomeOriginalCadastro||'')}" placeholder="Preenchido ao vincular Base LUC"></div></div><br><button class="btn" onclick="saveLocal('${i}')">Salvar</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`);
+  openModal(`<h2>${i?'Editar':'Nova'} Loja / Área</h2><p class="msg warn">Selecione a loja correta na lista da Base LUC — o Nome Oficial e o LUC são preenchidos automaticamente, sem risco de erro de digitação. Use isso para corrigir associações erradas feitas pela automação.</p><div class="formGrid"><div class="field" style="grid-column:1/-1"><label>Selecionar loja da Base LUC</label><select id="mBaseLojaSelect" onchange="onSelectBaseLojaModal(this)">${lucBaseLojaOptionsHtml(o.baseLojaId||'')}</select></div><div class="field"><label>Nome Oficial</label><input id="mNome" value="${esc(nomeAtual)}"></div><div class="field"><label>LUC</label><input id="mLuc" value="${esc(lucAtual)}" placeholder="—"><input type="hidden" id="mBaseLojaId" value="${esc(o.baseLojaId||'')}"></div><div class="field"><label>Classificação</label><select id="mTipo"><option ${o.tipo==='Loja'?'selected':''}>Loja</option><option ${o.tipo==='Área Técnica'?'selected':''}>Área Técnica</option><option ${o.tipo==='Área Comum'?'selected':''}>Área Comum</option></select></div><div class="field"><label>Piso</label><input id="mPiso" value="${esc(o.piso)}"></div><div class="field"><label>Status</label><select id="mStatus">${['Em operação','Falha logista','Falha sistema','Desativada','Em teste'].map(st=>`<option ${normalizeStatus(o.status)===st?'selected':''}>${st}</option>`).join('')}</select></div><div class="field"><label>Nome antigo / cadastro original</label><input id="mNomeOriginal" value="${esc(o.nomeOriginalCadastro||'')}" placeholder="Preenchido ao vincular Base LUC"></div></div><br><button class="btn" onclick="saveLocal('${i}')">Salvar</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`);
 }
 function saveLocal(i){
   let o=i?db.locais.find(x=>x.id===i):{id:id(),ultimaAlteracao:isoNow()};
   const novoNome=n(mNome.value);
   const lucManual=n(document.getElementById('mLuc')?.value||'');
+  const baseLojaIdSel=n(document.getElementById('mBaseLojaId')?.value||'');
   if(i&&o.nome!==novoNome)db.falhas.push({id:id(),data:isoNow(),tipo:'Alteração cadastral',itemId:o.id,itemNome:o.nome,localId:o.id,status:'Nome alterado',motivo:`Nome anterior: ${o.nome} | Novo: ${novoNome}`,origem:'Cadastro'});
   if(!o.nomeOriginalCadastro)o.nomeOriginalCadastro=n(document.getElementById('mNomeOriginal')?.value)||((i&&o.nome&&o.nome!==novoNome)?o.nome:'');
   else o.nomeOriginalCadastro=n(document.getElementById('mNomeOriginal')?.value)||o.nomeOriginalCadastro;
   o.nome=novoNome;
   o.nomeOficial=novoNome;
   if(lucManual&&lucManual!==(o.luc||''))o.lucEditadoManual=true;
+  if(baseLojaIdSel){
+    o.baseLojaId=baseLojaIdSel;
+    o.lucEditadoManual=false;
+    const baseSel=(db.baseLojas||[]).find(b=>b.id===baseLojaIdSel);
+    if(baseSel){baseSel.statusAssociacao='Vinculada';baseSel.localId=o.id;baseSel.ultimaAtualizacao=isoNow()}
+  }
   o.luc=lucManual||o.luc||'';
   o.lucAssociado=o.luc;
   o.chaveLogica=lucChaveLogicaLocal(o);
