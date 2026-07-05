@@ -1853,10 +1853,22 @@ function openLocal(i){
   openModal(`<h2>${esc(lucNomeOficialLocal(l))}</h2><p><b>LUC:</b> ${lucDisplayLocal(l)} • <b>Chave lógica:</b> ${esc(lucChaveLogicaLocal(l))} • <b>Tipo:</b> ${esc(l.tipo)} • <b>Painel:</b> ${esc(paiName(l.painelId))} • <b>Laço:</b> ${esc(lacName(l.lacoId))} • <b>Piso:</b> ${esc(l.piso)}</p>${l.nomeOriginalCadastro?`<p class="note"><b>Nome antigo:</b> ${esc(l.nomeOriginalCadastro)}</p>`:''}<h3>Histórico da loja/área</h3><div class="timeline">${hist.map(h=>`<div class="tl"><b>${esc(h.status)}</b><br><small>${esc(h.data)} • ${esc(h.itemNome||'')}</small><p>${esc(h.motivo||h.obs||'Sem observação')}</p></div>`).join('')||'<p class="msg warn">Sem histórico.</p>'}</div>`);
 }
 
-ensureLucSchema();
-
-render();
-setTimeout(verificarBaseAoAbrir,50);
+function bootSDAIManager(){
+  try{
+    ensureLucSchema();
+    render();
+    setTimeout(verificarBaseAoAbrir,50);
+  }catch(e){
+    console.error('Falha crítica ao iniciar SDAI Manager:', e);
+    const msg=(e&&e.message)?e.message:String(e);
+    document.body.innerHTML=`<div style="font-family:Arial,sans-serif;background:#f3f6fa;min-height:100vh;padding:32px;color:#101828"><div style="max-width:760px;margin:0 auto;background:#fff;border:1px solid #e2e8f1;border-radius:16px;padding:24px;box-shadow:0 8px 22px rgba(16,24,40,.08)"><h1 style="margin:0 0 8px;color:#b42318">Falha ao carregar o SDAI Manager</h1><p>O sistema encontrou um erro de inicialização. Isso normalmente ocorre por cache antigo do navegador, base local corrompida ou arquivo publicado parcialmente no GitHub.</p><p><b>Erro técnico:</b> ${msg}</p><button onclick="localStorage.removeItem('sdai_bosch_manager_v4_flm_portas:currentUserId'); location.reload();" style="background:#0B5FAD;color:#fff;border:0;border-radius:10px;padding:10px 14px;font-weight:700;cursor:pointer">Recarregar sessão</button><button onclick="localStorage.removeItem('sdai_bosch_manager_v4_flm_portas'); localStorage.removeItem('sdai_bosch_manager_v4_flm_portas:currentUserId'); location.reload();" style="margin-left:8px;background:#fff;color:#0B5FAD;border:1px solid #cbd6e4;border-radius:10px;padding:10px 14px;font-weight:700;cursor:pointer">Limpar base local e abrir</button></div></div>`;
+  }
+}
+if(document.readyState==='loading'){
+  document.addEventListener('DOMContentLoaded',bootSDAIManager);
+}else{
+  bootSDAIManager();
+}
 </script>
 </body>
 </html>
