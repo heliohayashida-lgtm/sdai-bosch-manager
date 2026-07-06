@@ -482,7 +482,17 @@ tbody tr:last-child td{border-bottom:0}
 .sistemaLacoRow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--l3a-border)}
 .sistemaLacoRow:last-child{border-bottom:0}
 .sistemaLacoNome{font-size:13px;font-weight:600;color:var(--l3a-text-soft)}
-.sistemaLacoNome small{color:var(--l3a-text-muted);font-weight:600}
+.drawer.wide{width:min(1040px,96%)}
+@media(max-width:1000px){.drawer.wide{width:100%}}
+
+/* ---------- 16f. LISTA DE ENDEREÇOS (modal Ver endereços) ------------------- */
+.endList{display:flex;flex-direction:column;gap:8px;max-height:60vh;overflow:auto;padding-right:4px}
+.endRow{border:1px solid var(--l3a-border);border-radius:10px;padding:10px 12px;display:grid;grid-template-columns:110px 1fr;gap:4px 14px;align-items:start}
+.endRow .endTipo{font-size:11px;font-weight:800;letter-spacing:.02em;text-transform:uppercase;color:var(--l3a-text-muted);grid-row:1/3}
+.endRow .endMain{font-size:13.5px;font-weight:700;color:var(--l3a-text)}
+.endRow .endMeta{font-size:12px;color:var(--l3a-text-soft);display:flex;flex-wrap:wrap;gap:4px 10px}
+.endRow .endMeta b{color:var(--l3a-text-soft);font-weight:700}
+@media(max-width:560px){.endRow{grid-template-columns:1fr}.endRow .endTipo{grid-row:auto}}
 .dashRow{display:grid;grid-template-columns:1.3fr 1fr;gap:16px;margin-bottom:18px}
 @media(max-width:1000px){.dashRow{grid-template-columns:1fr}}
 .chartLegendRow{display:flex;flex-wrap:wrap;gap:14px;margin:0 0 12px;font-size:11.5px;color:var(--l3a-text-soft);font-weight:700}
@@ -1148,7 +1158,7 @@ async function importFile(){try{let rows=await readRows(); let mode=document.get
         });
       }
       stats.lojasCriadas=db.locais.filter(x=>x.tipo==='Loja').length; stats.areasTecnicas=db.locais.filter(x=>x.tipo==='Área Técnica').length; stats.areasComuns=db.locais.filter(x=>x.tipo==='Área Comum').length; stats.detectores=db.equipamentos.filter(x=>x.tipo.includes('Detector')).length; stats.acionadores=db.equipamentos.filter(x=>x.tipo.includes('Acionador')).length; stats.modulos=db.flms.length; stats.flms=db.flms.length; stats.portas=db.portas.length; stats.paineis=db.paineis.length; stats.lacos=db.lacos.length; stats.ignorados=errors.length; db.inconsistencias=errors; db.imports.push({data:isoNow(),stats,errors,romannel:rom}); if(db.imports.length>10)db.imports=db.imports.slice(-10); persistLocal(); markDirty('importação'); render(); document.getElementById('impMsg').innerHTML=`<div class="msg ok">Importação concluída. DFO/FAP/ACM/DM210/SM210/FMC são importados como equipamentos vinculados a Área Comum/Técnica, sem criar loja.</div>`}catch(e){document.getElementById('impMsg').innerHTML=`<div class="msg err">${esc(e.message)}</div>`}}
-function openModal(html){document.getElementById('drawer').innerHTML=html;document.getElementById('modal').classList.add('show')} function closeModal(){document.getElementById('modal').classList.remove('show')} document.getElementById('modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal()})
+function openModal(html){document.getElementById('drawer').innerHTML=html;document.getElementById('modal').classList.add('show')} function openModalWide(html){document.getElementById('drawer').classList.add('wide');openModal(html)} function closeModal(){document.getElementById('modal').classList.remove('show');document.getElementById('drawer').classList.remove('wide')} document.getElementById('modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal()})
 function formPainel(i=''){if(!requireAccess('cadastro','Seu perfil não pode criar/editar painéis.'))return; let o=db.paineis.find(x=>x.id===i)||{};openModal(`<h2>${i?'Editar':'Novo'} Painel</h2><div class="formGrid"><div class="field"><label>Nome</label><input id="mNome" value="${esc(o.nome)}"></div><div class="field"><label>Modelo</label><input id="mModelo" value="${esc(o.modelo)}"></div><div class="field"><label>Localização</label><input id="mLoc" value="${esc(o.localizacao)}"></div><div class="field"><label>Observação</label><input id="mObs" value="${esc(o.obs)}"></div></div><br><button class="btn" onclick="savePainel('${i}')">Salvar</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`)}
 function savePainel(i){let o=i?db.paineis.find(x=>x.id===i):{id:id()}; o.nome=n(mNome.value);o.modelo=n(mModelo.value);o.localizacao=n(mLoc.value);o.obs=n(mObs.value); if(!i)db.paineis.push(o); closeModal(); save()}
 function openLacoDetalhes(lacoId){
@@ -1159,9 +1169,14 @@ function openLacoDetalhes(lacoId){
   });
   const eqs=db.equipamentos.filter(e=>e.lacoId===lacoId).map(e=>({tipo:e.tipo||'Equipamento',endereco:e.endereco?`Endereço ${e.endereco}`:'Sem endereço',modelo:e.modelo||'—',porta:'—',loja:locName(e.localId)||'Sem vínculo',status:e.status||'Em operação',ordenacao:parseFloat((e.endereco||'0').toString().replace(/[^\d.]/g,''))||0}));
   const rows=flms.concat(eqs).sort((a,b)=>a.ordenacao-b.ordenacao);
-  openModal(`<h2>${esc(paiName(laco.painelId))} — ${esc(laco.nome)} — Endereços cadastrados</h2>
+  const list=rows.length?rows.map(r=>`<div class="endRow">
+    <span class="endTipo">${esc(r.tipo)}</span>
+    <div class="endMain">${esc(r.endereco)}${r.modelo&&r.modelo!=='—'?` <span class="mutedLine">• ${esc(r.modelo)}</span>`:''}</div>
+    <div class="endMeta">${r.porta&&r.porta!=='—'?`<span><b>Porta:</b> ${esc(r.porta)}</span>`:''}<span><b>Loja/Área:</b> ${esc(r.loja)}</span><span class="pill ${statusClass(r.status)}">${esc(normalizeStatus(r.status))}</span></div>
+  </div>`).join(''):'<p class="msg warn">Sem registros neste laço.</p>';
+  openModalWide(`<h2>${esc(paiName(laco.painelId))} — Laço ${esc(laco.nome)} — Endereços cadastrados</h2>
   <p class="msg warn">Lista individual de todos os equipamentos e módulos deste laço. Detectores/Acionadores usam o endereçamento completo Laço.Grupo.Zona.Sub-endereço; Módulos (FLM) usam o Endereço lógico do barramento LSN — os dois esquemas são do próprio painel Bosch e coexistem normalmente no mesmo laço.</p>
-  ${table(rows,[['Tipo','tipo'],['Endereço','endereco'],['Modelo','modelo'],['Porta','porta'],['Loja/Área','loja'],['Status','status',r=>`<span class="pill ${statusClass(r.status)}">${esc(normalizeStatus(r.status))}</span>`]])}
+  <div class="endList">${list}</div>
   <br><button class="btn secondary" onclick="closeModal()">Fechar</button>`);
 }
 function formLaco(i=''){if(!requireAccess('cadastro','Seu perfil não pode criar/editar laços.'))return; let o=db.lacos.find(x=>x.id===i)||{};const sistemaAtual=o.sistema||sistemaAutoDetect(o.nome);openModal(`<h2>${i?'Editar':'Novo'} Laço</h2><div class="formGrid"><div class="field"><label>Painel</label><select id="mPainel">${db.paineis.map(p=>`<option value="${p.id}" ${p.id===o.painelId?'selected':''}>${esc(p.nome)}</option>`)}</select></div><div class="field"><label>Laço</label><input id="mNome" value="${esc(o.nome)}"></div><div class="field"><label>Piso</label><input id="mPiso" value="${esc(o.piso)}"></div><div class="field"><label>Sistema</label><input value="${esc(sistemaAtual)}" disabled title="Alterável somente na aba Painéis"></div><div class="field"><label>Obs</label><input id="mObs" value="${esc(o.obs)}"></div></div><p class="mutedLine">O Sistema (SDAI/CO2) só é alterado na aba Painéis.</p><br><button class="btn" onclick="saveLaco('${i}')">Salvar</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`)}
