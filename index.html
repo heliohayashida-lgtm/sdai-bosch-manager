@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- build: 2026-07-06 v6.25 - Novos status do sistema (Laço aberto, Módulo aberto, Módulo em curto, Incêndio disparado, Desativação) -->
+<!-- build: 2026-07-06 v6.26 - Bloqueio de duplicidade de falha por item, data/hora empilhada e busca por Central/Laço/Dispositivo/Porta -->
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
@@ -300,6 +300,9 @@ tbody tr{transition:background var(--l3a-dur) var(--l3a-ease)}
 tbody tr:hover td{background:var(--l3a-hover)}
 tbody tr:last-child td{border-bottom:0}
 .tableWrap td:has(.btn){text-align:right;white-space:nowrap}
+.dataHoraCell{display:flex;flex-direction:column;line-height:1.35;gap:1px;white-space:nowrap}
+.dataHoraCell b{font-weight:700;font-size:12.5px}
+.dataHoraCell span{font-size:11.5px;color:var(--l3a-text-soft)}
 
 /* ---------- 10. BADGES / STATUS --------------------------------------------- */
 .pill{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:var(--l3a-radius-pill);
@@ -666,6 +669,14 @@ function normalizeStatus(st){const raw=n(st); const x=up(raw); if(!x||x==='ATIVO
 function normalizeAllStatuses(base){['equipamentos','flms','locais','falhas'].forEach(k=>(base[k]||[]).forEach(o=>{if(o.status)o.status=normalizeStatus(o.status)}));return base}
 function now(){return new Date().toLocaleString('pt-BR')}
 function isoNow(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+'T'+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')}
+function fmtDataHora(raw){
+  if(!raw)return '<span class="mutedLine">—</span>';
+  let d=new Date(raw);
+  if(isNaN(d.getTime()))return `<span>${esc(raw)}</span>`;
+  const dd=String(d.getDate()).padStart(2,'0'),mm=String(d.getMonth()+1).padStart(2,'0'),yy=String(d.getFullYear()).slice(-2);
+  const hh=String(d.getHours()).padStart(2,'0'),mi=String(d.getMinutes()).padStart(2,'0');
+  return `<div class="dataHoraCell"><b>${dd}/${mm}/${yy}</b><span>${hh}:${mi}</span></div>`;
+}
 function esc(s){return n(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 function csvEscape(s){s=n(s);return /[;,"\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s}
 function normKey(k){return up(k).replace(/^\uFEFF/,'').replace(/[^A-Z0-9]/g,'')}
@@ -1124,6 +1135,44 @@ function falhaItems(){
   });
   return eq.concat(fl);
 }
+function falhaDispositivosForFilter(){
+  const f=getFalhaFilterValues();
+  const eq=db.equipamentos.filter(e=>(!f.painel||paiName(e.painelId)===f.painel)&&(!f.laco||lacName(e.lacoId)===f.laco)).map(e=>({value:'eq:'+e.id,label:`${e.tipo} • ${e.endereco||'sem endereço'} • ${locName(e.localId)||'Sem vínculo'}`})).sort((a,b)=>a.label.localeCompare(b.label,'pt-BR'));
+  const fl=db.flms.filter(fl=>(!f.painel||paiName(fl.painelId)===f.painel)&&(!f.laco||lacName(fl.lacoId)===f.laco)).map(fl=>({value:'flm:'+fl.id,label:`Módulo ${fl.endereco||fl.modelo||'S/E'}`})).sort((a,b)=>a.label.localeCompare(b.label,'pt-BR'));
+  return fl.concat(eq);
+}
+function falhaPortasParaModulo(flmId){return db.portas.filter(p=>p.flmId===flmId)}
+function onFalhaDispositivoChange(){
+  const sel=document.getElementById('mFiltroDispositivo'); if(!sel)return;
+  const v=sel.value; const portaWrap=document.getElementById('mFiltroPortaWrap'); const portaSel=document.getElementById('mFiltroPorta');
+  if(!v){if(portaWrap)portaWrap.style.display='none'; return}
+  if(v.startsWith('eq:')){
+    if(portaWrap)portaWrap.style.display='none';
+    selecionarItemDireto(v.slice(3));
+    return;
+  }
+  const flmId=v.slice(4);
+  const portas=falhaPortasParaModulo(flmId);
+  if(!portas.length){
+    if(portaWrap)portaWrap.style.display='none';
+    selecionarItemDireto('flm:'+flmId);
+    return;
+  }
+  if(portaWrap)portaWrap.style.display='';
+  if(portaSel)portaSel.innerHTML='<option value="">Selecione a porta...</option>'+portas.map(p=>`<option value="${p.id}">Porta ${p.numero}${locName(p.localId)?' • '+esc(locName(p.localId)):''}</option>`).join('');
+}
+function onFalhaPortaChange(){
+  const flmSel=document.getElementById('mFiltroDispositivo'); const portaSel=document.getElementById('mFiltroPorta');
+  if(!flmSel||!portaSel||!portaSel.value)return;
+  const flmId=flmSel.value.slice(4);
+  selecionarItemDireto('flm:'+flmId+':porta:'+portaSel.value);
+}
+function selecionarItemDireto(itemId){
+  const item=falhaItems().find(x=>x.id===itemId); if(!item)return;
+  const search=document.getElementById('mItemSearch'); if(search)search.value=item.n;
+  const editingId=document.getElementById('mEditingId')?.value||'';
+  falhaSelectItem(itemId,editingId);
+}
 function getFalhaFilterValues(){return {
   painel:document.getElementById('mFiltroPainel')?.value||'',
   laco:document.getElementById('mFiltroLaco')?.value||'',
@@ -1142,12 +1191,27 @@ function falhaFilteredItems(ignoreField=''){
   const f=getFalhaFilterValues(); if(ignoreField)f[ignoreField]='';
   return falhaItems().filter(it=>itemMatchesFalhaFilters(it,f));
 }
-function falhaSelectItem(itemId){
+function fmtDataHoraTexto(raw){
+  if(!raw)return '';
+  const d=new Date(raw); if(isNaN(d.getTime()))return raw;
+  const dd=String(d.getDate()).padStart(2,'0'),mm=String(d.getMonth()+1).padStart(2,'0'),yy=String(d.getFullYear()).slice(-2);
+  const hh=String(d.getHours()).padStart(2,'0'),mi=String(d.getMinutes()).padStart(2,'0');
+  return `${dd}/${mm}/${yy} ${hh}:${mi}`;
+}
+function findFalhaAbertaPorItem(itemId,ignoreId=''){return itemId?db.falhas.find(x=>x.itemId===itemId&&x.id!==ignoreId):null}
+function falhaSelectItem(itemId,editingId=''){
   const item=falhaItems().find(x=>x.id===itemId);
-  const hid=document.getElementById('mItem'); if(hid)hid.value=itemId||'';
+  const hid=document.getElementById('mItem');
   const box=document.getElementById('mItemConfirm');
   if(!box)return;
-  if(!item){box.innerHTML='<span class="mutedLine">Nenhum item selecionado ainda — digite acima para buscar.</span>';return}
+  if(!item){if(hid)hid.value='';box.innerHTML='<span class="mutedLine">Nenhum item selecionado ainda — digite acima para buscar ou use os campos Central / Laço / Dispositivo / Porta abaixo.</span>';return}
+  const dup=findFalhaAbertaPorItem(itemId,editingId);
+  if(dup){
+    if(hid)hid.value=''; // impede salvar como novo lançamento duplicado
+    box.innerHTML=`<div class="msg warn" style="margin-bottom:8px">Este item já tem um lançamento registrado — <b>${esc(normalizeStatus(dup.status))}</b> em ${fmtDataHora(dup.data)}. Não é permitido duplicar; edite o status do lançamento existente.</div><button type="button" class="btn small" onclick="formFalha('${dup.id}')">Abrir e editar este lançamento</button>`;
+    return;
+  }
+  if(hid)hid.value=itemId||'';
   box.innerHTML=`<div class="check" style="width:100%;justify-content:flex-start;gap:10px"><span class="pill ok">Selecionado</span><b>${esc(item.n)}</b></div><p class="mutedLine" style="margin-top:6px">${esc(paiName(item.painelId)||'—')} · ${esc(lacName(item.lacoId)||'—')} · Piso ${esc(item.piso||'—')}</p>`;
 }
 function falhaSearchPool(){return falhaFilteredItems()}
@@ -1160,51 +1224,59 @@ function onFalhaSearchInput(){
   if(list)list.innerHTML=matches.slice(0,40).map(it=>`<option value="${esc(it.n)}"></option>`).join('');
   const hint=document.getElementById('mFalhaHint'); if(hint)hint.textContent=`${matches.length} item(ns) encontrado(s)${q?' para "'+inputEl.value+'"':''}.`;
   const exact=pool.find(it=>it.n===inputEl.value);
-  falhaSelectItem(exact?exact.id:'');
+  const editingId=document.getElementById('mEditingId')?.value||'';
+  falhaSelectItem(exact?exact.id:'',editingId);
 }
 function refreshFalhaFilters(changed=''){
   const f=getFalhaFilterValues();
   const fill=(id,vals,sel,allLabel='Todos')=>{const el=document.getElementById(id); if(!el)return; const keep=vals.includes(sel)?sel:''; el.innerHTML=`<option value="">${allLabel}</option>`+vals.map(v=>`<option value="${esc(v)}" ${v===keep?'selected':''}>${esc(v)}</option>`).join('')};
-  fill('mFiltroPainel',unique(falhaFilteredItems('painel').map(it=>paiName(it.painelId))),f.painel,'Todos os painéis');
+  fill('mFiltroPainel',unique(falhaFilteredItems('painel').map(it=>paiName(it.painelId))),f.painel,'Todas as centrais');
   fill('mFiltroLaco',unique(falhaFilteredItems('laco').map(it=>lacName(it.lacoId))),f.laco,'Todos os laços');
   fill('mFiltroPiso',unique(falhaFilteredItems('piso').map(it=>it.piso)),f.piso,'Todos os pisos');
   const localIds=unique(falhaFilteredItems('local').map(it=>it.localId));
   const localOpts=localIds.map(id=>({id,nome:locName(id)})).filter(x=>x.id&&x.nome).sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
   const locEl=document.getElementById('mFiltroLocal'); if(locEl){const keep=localIds.includes(f.local)?f.local:''; locEl.innerHTML='<option value="">Todas as lojas/áreas</option>'+localOpts.map(x=>`<option value="${x.id}" ${x.id===keep?'selected':''}>${esc(x.nome)}</option>`).join('')}
+  if(changed==='painel'||changed==='laco'){
+    const dispSel=document.getElementById('mFiltroDispositivo');
+    if(dispSel){dispSel.innerHTML='<option value="">Selecione o dispositivo/módulo...</option>'+falhaDispositivosForFilter().map(d=>`<option value="${esc(d.value)}">${esc(d.label)}</option>`).join('')}
+    const portaWrap=document.getElementById('mFiltroPortaWrap'); if(portaWrap)portaWrap.style.display='none';
+  }
   onFalhaSearchInput();
 }
 function bindFalhaModal(){
   ['mFiltroPainel','mFiltroLaco','mFiltroPiso','mFiltroLocal'].forEach(id=>{const el=document.getElementById(id); if(el)el.addEventListener('change',()=>refreshFalhaFilters(id.replace('mFiltro','').toLowerCase()))});
   const search=document.getElementById('mItemSearch'); if(search)search.addEventListener('input',onFalhaSearchInput);
+  const disp=document.getElementById('mFiltroDispositivo'); if(disp)disp.addEventListener('change',onFalhaDispositivoChange);
+  const porta=document.getElementById('mFiltroPorta'); if(porta)porta.addEventListener('change',onFalhaPortaChange);
   document.querySelectorAll('input[name="mStatusCheck"]').forEach(ch=>ch.addEventListener('change',e=>{if(e.target.checked)document.querySelectorAll('input[name="mStatusCheck"]').forEach(o=>{if(o!==e.target)o.checked=false})}));
-  refreshFalhaFilters();
+  refreshFalhaFilters('painel');
 }
 function formFalha(i=''){
   let o=db.falhas.find(x=>x.id===i)||{};
   const item=falhaItems().find(it=>it.id===o.itemId);
   const fp=item?paiName(item.painelId):''; const fl=item?lacName(item.lacoId):''; const fpi=item?item.piso:''; const flo=o.localId||item?.localId||'';
   const statusAtual=o.status||'Em operação';
-  openModal(`<h2>Registrar Falha / Operação</h2>
-  <p class="msg warn">Digite o nome da loja, endereço do módulo/detector ou piso — a lista de sugestões atualiza na hora. Use "Refinar busca" só se precisar restringir por painel/laço específico.</p>
+  openModal(`<h2>${i?'Editar lançamento':'Registrar Falha / Operação'}</h2>
+  <input type="hidden" id="mEditingId" value="${esc(i)}">
+  <div class="msg warn" style="margin-bottom:12px">Localize o item de duas formas: <b>digite o nome/endereço/loja</b> na busca abaixo, <b>ou</b> escolha em sequência Central → Laço → Dispositivo/Módulo → Porta. Se o item já tiver um lançamento em aberto, você só poderá editar o status dele — não é permitido duplicar.</div>
   <div class="formGrid">
     <div class="field" style="grid-column:1/-1">
-      <label>Buscar item (loja, endereço, tipo...)</label>
+      <label>Buscar por nome, endereço ou loja</label>
       <input id="mItemSearch" list="mItemDatalist" value="${esc(item?.n||'')}" placeholder="Ex.: Riachuelo, 4.1.28.0, Detector de Fumaça..." autocomplete="off">
       <datalist id="mItemDatalist"></datalist>
       <small id="mFalhaHint" class="note"></small>
     </div>
     <div class="field" style="grid-column:1/-1"><div id="mItemConfirm" class="compactHelp"></div><input type="hidden" id="mItem" value="${esc(o.itemId||'')}"></div>
     <div class="field" style="grid-column:1/-1">
-      <details><summary style="cursor:pointer;font-weight:750;font-size:12.5px;color:var(--l3a-text-soft)">Refinar busca por painel / laço / piso / loja (opcional)</summary>
-        <div class="formGrid" style="margin-top:10px">
-          <div class="field"><label>Painel</label><select id="mFiltroPainel"><option value="${esc(fp)}" selected>${esc(fp||'Todos os painéis')}</option></select></div>
-          <div class="field"><label>Laço</label><select id="mFiltroLaco"><option value="${esc(fl)}" selected>${esc(fl||'Todos os laços')}</option></select></div>
-          <div class="field"><label>Piso / Pavimento</label><select id="mFiltroPiso"><option value="${esc(fpi)}" selected>${esc(fpi||'Todos os pisos')}</option></select></div>
-          <div class="field"><label>Loja / Área</label><select id="mFiltroLocal"><option value="${esc(flo)}" selected>${esc(locName(flo)||'Todas as lojas/áreas')}</option></select></div>
-        </div>
-      </details>
+      <b style="font-size:12.5px;color:var(--l3a-text-soft)">— ou localize passo a passo —</b>
     </div>
-    <div class="field"><label>Data/hora do lançamento</label><input value="${esc(i?o.data:now())}" disabled></div>
+    <div class="field"><label>1. Central / Painel</label><select id="mFiltroPainel"><option value="${esc(fp)}" selected>${esc(fp||'Todas as centrais')}</option></select></div>
+    <div class="field"><label>2. Laço</label><select id="mFiltroLaco"><option value="${esc(fl)}" selected>${esc(fl||'Todos os laços')}</option></select></div>
+    <div class="field"><label>3. Dispositivo / Módulo</label><select id="mFiltroDispositivo"><option value="">Selecione o dispositivo/módulo...</option></select></div>
+    <div class="field" id="mFiltroPortaWrap" style="display:none"><label>4. Porta</label><select id="mFiltroPorta"><option value="">Selecione a porta...</option></select></div>
+    <div class="field"><label>Piso / Pavimento (opcional)</label><select id="mFiltroPiso"><option value="${esc(fpi)}" selected>${esc(fpi||'Todos os pisos')}</option></select></div>
+    <div class="field"><label>Loja / Área (opcional)</label><select id="mFiltroLocal"><option value="${esc(flo)}" selected>${esc(locName(flo)||'Todas as lojas/áreas')}</option></select></div>
+    <div class="field"><label>Data/hora do lançamento</label><input value="${esc(i?fmtDataHoraTexto(o.data):now())}" disabled></div>
     <div class="field"><label>Responsável pelo lançamento</label><input id="mResp" value="${esc(o.responsavel)}" placeholder="Ex.: Hélio / equipe técnica"></div>
     <div class="field"><label>Origem</label><select id="mOrigem"><option ${o.origem==='Painel Bosch'?'selected':''}>Painel Bosch</option><option ${o.origem==='Teste em campo'?'selected':''}>Teste em campo</option><option ${o.origem==='Inspeção'?'selected':''}>Inspeção</option><option ${o.origem==='Importação'?'selected':''}>Importação</option></select></div>
     <div class="field"><label>Motivo</label><input id="mMotivo" value="${esc(o.motivo)}" placeholder="Ex.: curto, aberto, acionamento, normalização"></div>
@@ -1214,10 +1286,11 @@ function formFalha(i=''){
     <div class="field" style="grid-column:1/-1"><label>Observação técnica</label><textarea id="mObs" placeholder="Detalhe técnico do lançamento">${esc(o.obs)}</textarea></div>
   </div><br><button class="btn" onclick="saveFalha('${i}')">Salvar lançamento</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`);
   bindFalhaModal();
-  falhaSelectItem(o.itemId||'');
+  falhaSelectItem(o.itemId||'',i);
 }
 function saveFalha(i){
-  let sel=document.getElementById('mItem')?.value||''; if(!sel){alert('Busque e selecione um item antes de salvar.');return}
+  let sel=document.getElementById('mItem')?.value||''; if(!sel){alert('Busque e selecione um item antes de salvar. Se o item já tiver lançamento, abra o lançamento existente para editar o status.');return}
+  if(findFalhaAbertaPorItem(sel,i)){alert('Este item já tem um lançamento registrado. Não é permitido duplicar — abra o lançamento existente para editar o status.');return}
   let checked=document.querySelector('input[name="mStatusCheck"]:checked'); if(!checked){alert('Marque um status do sistema.');return}
   let isFlm=sel.startsWith('flm:');
   let flmId=isFlm?sel.split(':')[1]:''; let portaId=isFlm&&sel.includes(':porta:')?sel.split(':porta:')[1]:'';
@@ -1717,7 +1790,7 @@ function renderFalhas(){
   const maxPiso=Math.max(1,...pisoRows.map(r=>r.value));
   const pisoChartHtml=pisoRows.length?`<div class="chartBars">${pisoRows.map(r=>`<div class="chartLine clickable ${f.piso===r.label?'selected':''}" onclick="toggleFalhaPiso('${esc(r.label)}')"><b>${esc(r.label)}</b><div class="chartTrack"><i style="width:${Math.max(2,pct(r.value,maxPiso))}%"></i></div><strong>${r.value}</strong></div>`).join('')}</div>`:'<div class="emptyState">Sem lançamentos para os filtros atuais.</div>';
   const rows=f.piso?allRows.filter(x=>(n(x.piso)||'Sem piso')===f.piso):allRows;
-  document.getElementById('falhas').innerHTML=`<div class="card"><button class="btn" onclick="formFalha()">+ Registrar falha / operação</button><div class="toolbar"><div class="field"><label>Tipo</label><select onchange="filters.falhas={...filters.falhas,tipo:this.value};render()">${selectOpts(unique(db.falhas.map(x=>x.tipo)),f.tipo)}</select></div><div class="field"><label>Status</label><select onchange="filters.falhas={...filters.falhas,status:this.value};render()">${selectOpts(unique(db.falhas.map(x=>normalizeStatus(x.status))),f.status)}</select></div><div class="field"><label>Piso</label><select onchange="filters.falhas={...filters.falhas,piso:this.value};render()">${selectOpts(pisoRows.map(r=>r.label),f.piso)}</select></div><div class="field"><label>Busca</label><input value="${esc(f.q)}" data-filter-input="1" data-filter-group="falhas" data-filter-key="q" data-focus-key="falhasBusca"></div></div></div><div class="chartPanel"><h4>Lançamentos por piso</h4><p class="mutedLine" style="margin-bottom:10px">Clique em um piso para filtrar a tabela abaixo</p>${pisoChartHtml}</div><div class="card"><h3 class="sectionTitle">Histórico e falhas${f.piso?` — Piso: ${esc(f.piso)}`:''}</h3>${table(rows,[['Data','data'],['Painel','painel'],['Laço','laco'],['Piso','piso'],['Tipo','tipo'],['Item','itemNome'],['Loja','loja'],['Status','status',r=>`<span class="pill ${statusClass(r.status)}">${esc(r.status)}</span>`],['Origem','origem'],['Motivo','motivo'],['Resolvida em','resolvidaEm']],r=>`<button class="btn small secondary" onclick="formFalha('${r.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1-4.2L15.5 5.3a1.5 1.5 0 0 1 2.1 0l1.1 1.1a1.5 1.5 0 0 1 0 2.1L8.2 19 4 20Z"/><path d="M13.8 7 17 10.2"/></svg></button> <button class="btn small danger" onclick="del('falhas','${r.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2"/><path d="M6.5 7 7.3 19a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4L17.5 7"/><path d="M10 11v6M14 11v6"/></svg></button>`)}</div>`;
+  document.getElementById('falhas').innerHTML=`<div class="card"><button class="btn" onclick="formFalha()">+ Registrar falha / operação</button><div class="toolbar"><div class="field"><label>Tipo</label><select onchange="filters.falhas={...filters.falhas,tipo:this.value};render()">${selectOpts(unique(db.falhas.map(x=>x.tipo)),f.tipo)}</select></div><div class="field"><label>Status</label><select onchange="filters.falhas={...filters.falhas,status:this.value};render()">${selectOpts(unique(db.falhas.map(x=>normalizeStatus(x.status))),f.status)}</select></div><div class="field"><label>Piso</label><select onchange="filters.falhas={...filters.falhas,piso:this.value};render()">${selectOpts(pisoRows.map(r=>r.label),f.piso)}</select></div><div class="field"><label>Busca</label><input value="${esc(f.q)}" data-filter-input="1" data-filter-group="falhas" data-filter-key="q" data-focus-key="falhasBusca"></div></div></div><div class="chartPanel"><h4>Lançamentos por piso</h4><p class="mutedLine" style="margin-bottom:10px">Clique em um piso para filtrar a tabela abaixo</p>${pisoChartHtml}</div><div class="card"><h3 class="sectionTitle">Histórico e falhas${f.piso?` — Piso: ${esc(f.piso)}`:''}</h3>${table(rows,[['Data','data',r=>fmtDataHora(r.data)],['Painel','painel'],['Laço','laco'],['Piso','piso'],['Tipo','tipo'],['Item','itemNome'],['Loja','loja'],['Status','status',r=>`<span class="pill ${statusClass(r.status)}">${esc(r.status)}</span>`],['Resolvida em','resolvidaEm',r=>fmtDataHora(r.resolvidaEm)]],r=>`<button class="btn small secondary" onclick="formFalha('${r.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1-4.2L15.5 5.3a1.5 1.5 0 0 1 2.1 0l1.1 1.1a1.5 1.5 0 0 1 0 2.1L8.2 19 4 20Z"/><path d="M13.8 7 17 10.2"/></svg></button> <button class="btn small danger" onclick="del('falhas','${r.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2"/><path d="M6.5 7 7.3 19a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4L17.5 7"/><path d="M10 11v6M14 11v6"/></svg></button>`)}</div>`;
 }
 
 function setPlanoCategoriaFiltro(cat){const el=document.getElementById('plCat');if(el)el.value=(el.value===cat?'':cat);renderPlano()}
