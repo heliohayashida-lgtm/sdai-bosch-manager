@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- build: 2026-07-06 v6.28 - Botão "Ver endereços" no Laço com lista individual de todos os equipamentos/módulos cadastrados -->
+<!-- build: 2026-07-06 v6.29 - Endereços completos e rotulados em "Ver endereços" (Endereço lógico p/ módulos, Endereço completo p/ detectores/acionadores) -->
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
@@ -1113,12 +1113,12 @@ function openLacoDetalhes(lacoId){
   const laco=db.lacos.find(x=>x.id===lacoId); if(!laco)return;
   const flms=db.flms.filter(f=>f.lacoId===lacoId).map(f=>{
     const portas=db.portas.filter(p=>p.flmId===f.id);
-    return {tipo:'Módulo',endereco:f.endereco||'—',modelo:f.modelo||'FLM',porta:portas.length?portas.map(p=>`${p.numero}${locName(p.localId)?' ('+locName(p.localId)+')':''}`).join(' / '):'—',loja:portas.map(p=>locName(p.localId)).filter(Boolean).join(' / ')||'—',status:f.status||'Em operação'};
+    return {tipo:'Módulo',endereco:f.endereco?`Endereço lógico ${f.endereco}`:'Sem endereço lógico',modelo:f.modelo||'FLM',porta:portas.length?portas.map(p=>`${p.numero}${locName(p.localId)?' ('+locName(p.localId)+')':''}`).join(' / '):'—',loja:portas.map(p=>locName(p.localId)).filter(Boolean).join(' / ')||'—',status:f.status||'Em operação',ordenacao:Number(f.endereco)||0};
   });
-  const eqs=db.equipamentos.filter(e=>e.lacoId===lacoId).map(e=>({tipo:e.tipo||'Equipamento',endereco:e.endereco||'—',modelo:e.modelo||'—',porta:'—',loja:locName(e.localId)||'Sem vínculo',status:e.status||'Em operação'}));
-  const rows=flms.concat(eqs).sort((a,b)=>(a.endereco+'').localeCompare(b.endereco+'',undefined,{numeric:true}));
+  const eqs=db.equipamentos.filter(e=>e.lacoId===lacoId).map(e=>({tipo:e.tipo||'Equipamento',endereco:e.endereco?`Endereço ${e.endereco}`:'Sem endereço',modelo:e.modelo||'—',porta:'—',loja:locName(e.localId)||'Sem vínculo',status:e.status||'Em operação',ordenacao:parseFloat((e.endereco||'0').toString().replace(/[^\d.]/g,''))||0}));
+  const rows=flms.concat(eqs).sort((a,b)=>a.ordenacao-b.ordenacao);
   openModal(`<h2>${esc(paiName(laco.painelId))} — ${esc(laco.nome)} — Endereços cadastrados</h2>
-  <p class="msg warn">Lista individual de todos os equipamentos e módulos deste laço, com endereço, modelo, porta e loja/área vinculada.</p>
+  <p class="msg warn">Lista individual de todos os equipamentos e módulos deste laço. Detectores/Acionadores usam o endereçamento completo Laço.Grupo.Zona.Sub-endereço; Módulos (FLM) usam o Endereço lógico do barramento LSN — os dois esquemas são do próprio painel Bosch e coexistem normalmente no mesmo laço.</p>
   ${table(rows,[['Tipo','tipo'],['Endereço','endereco'],['Modelo','modelo'],['Porta','porta'],['Loja/Área','loja'],['Status','status',r=>`<span class="pill ${statusClass(r.status)}">${esc(normalizeStatus(r.status))}</span>`]])}
   <br><button class="btn secondary" onclick="closeModal()">Fechar</button>`);
 }
