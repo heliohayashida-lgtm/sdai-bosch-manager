@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- build: 2026-07-05 v6.18 - Piso do Plano de Ação corrigido (usa piso oficial do Laço) -->
+<!-- build: 2026-07-05 v6.20 - Filtro por Pavimento no Plano de Ação + salvamento reforçado -->
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
@@ -1273,8 +1273,11 @@ function formPlano(i='',falhaId=''){
   </div><br><button class="btn" onclick="savePlano('${i}','${falhaId||o.falhaId||''}')">Salvar plano</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`)
 }
 function savePlano(i,falhaId=''){
+  const val=id=>document.getElementById(id)?.value ?? '';
   let f=db.falhas.find(x=>x.id===falhaId)||{}; let inf=f.id?itemInfoFromFalha(f):{}; let o=i?db.planos.find(x=>x.id===i):{id:id(),criadoEm:isoNow(),falhaId};
-  let old=o.situacao||'Aberto'; Object.assign(o,{falhaId:falhaId||o.falhaId,categoria:mCategoria.value,prioridade:mPrioridade.value,responsavel:mRespPlano.value,situacao:mSituacao.value,prazo:mPrazo.value,necessitaCompra:mCompra.value==='Sim',material:n(mMaterial.value),justificativa:n(mJust.value),providencia:n(mProv.value),painel:inf.painel||o.painel,laco:inf.laco||o.laco,piso:inf.piso||o.piso,local:inf.local||o.local,item:inf.itemNome||o.item,statusFalha:f.status||o.statusFalha,atualizadoEm:isoNow()});
+  if(!o){alert('Plano não encontrado — feche e tente editar novamente.');return}
+  const prioridadeNova=val('mPrioridade')||o.prioridade||'Média';
+  Object.assign(o,{falhaId:falhaId||o.falhaId,categoria:val('mCategoria')||o.categoria,prioridade:prioridadeNova,responsavel:val('mRespPlano')||o.responsavel,situacao:val('mSituacao')||o.situacao,prazo:val('mPrazo'),necessitaCompra:val('mCompra')==='Sim',material:n(val('mMaterial')),justificativa:n(val('mJust')),providencia:n(val('mProv')),painel:inf.painel||o.painel,laco:inf.laco||o.laco,piso:inf.piso||o.piso,local:inf.local||o.local,item:inf.itemNome||o.item,statusFalha:f.status||o.statusFalha,atualizadoEm:isoNow()});
   if(o.situacao==='Concluído'&&!o.concluidoEm)o.concluidoEm=isoNow(); if(!i)db.planos.push(o); closeModal(); save()
 }
 function concluirPlano(i){let o=db.planos.find(x=>x.id===i); if(!o)return; o.situacao='Concluído'; o.concluidoEm=isoNow(); let f=db.falhas.find(x=>x.id===o.falhaId); if(f){let itemId=f.itemId||'';let isFlm=String(itemId).startsWith('flm:');let item=isFlm?flmById(String(itemId).slice(4)):db.equipamentos.find(e=>e.id===itemId);let loc=localById(f.localId||'');let statusAnterior=(item&&item.status)||f.status||'Falha'; if(item){item.status='Em operação';item.ultimaAlteracao=isoNow()} if(loc){loc.status='Em operação';loc.ultimaAlteracao=isoNow()} if(item||loc){db.falhas.push({id:id(),data:isoNow(),painelId:(item&&item.painelId)||f.painelId,lacoId:(item&&item.lacoId)||f.lacoId,piso:(item&&item.piso)||f.piso,tipo:isFlm?'Módulo':((item&&item.tipo)||f.tipo),itemId:f.itemId,itemNome:f.itemNome,localId:f.localId,status:'Em operação',statusAnterior,responsavel:o.responsavel,origem:'Plano de Ação',motivo:'Plano de ação concluído',obs:o.providencia,resolvidaEm:isoNow()});alert('Plano concluído. Status do equipamento e da loja atualizado para Em operação.')}else{alert('Plano concluído.')}} save()}
@@ -1469,7 +1472,7 @@ function renderConfiguracoes(){
 }
 function renderBackup(){const el=document.getElementById('backup'); if(!el)return; el.innerHTML=`<div class="premiumPanel"><div class="systemHeaderSlim"><div class="titleBlock"><h3>Backup local</h3><p>Exportação e restauração de segurança.</p></div></div><div class="premiumGrid">${premiumStat('Painéis',db.paineis.length)}${premiumStat('Equipamentos',db.equipamentos.length)}${premiumStat('Falhas',db.falhas.length)}${premiumStat('Planos',db.planos.length)}</div><div class="premiumActions"><button class="btn" onclick="exportJson()">Exportar JSON</button><button class="btn secondary" onclick="exportAllCsv()">Exportar CSV</button><button class="btn secondary" onclick="document.getElementById('restoreJsonInput').click()">Restaurar JSON</button><input type="file" id="restoreJsonInput" accept="application/json,.json" style="display:none" onchange="restoreBackupFile(this.files[0])"></div></div>`}
 function renderLogs(){const el=document.getElementById('logs'); if(!el)return; const rows=(db.historico||[]).slice(-200).reverse(); el.innerHTML=`<div class="premiumPanel"><h3>Logs e auditoria</h3><p>Registro das ações operacionais e administrativas.</p>${rows.length?`<div class="softTable" style="margin-top:14px">${table(rows,[['Data','data'],['Usuário','usuario'],['Entidade','entidade'],['Ação','acao'],['Descrição','descricao']])}</div>`:'<div class="emptyState" style="margin-top:14px">Nenhum log registrado ainda.</div>'}</div>`}
-function renderSobre(){const el=document.getElementById('sobre'); if(!el)return; const u=currentUserSafe(); const cfg=db.config||{}; el.innerHTML=`<div class="premiumPanel"><h3>${esc(cfg.appName||'Contratos L3A')}</h3><p>Módulo SDAI para cadastro técnico, histórico de falhas, plano de ação, relatórios e sincronização Google Sheets.</p><div class="premiumGrid" style="margin-top:14px">${premiumStat('Versão','6.18 SDAI • 05/07')}${premiumStat('Usuário',u.nome||'Usuário')}${premiumStat('Perfil',u.perfil||'Administrador')}${premiumStat('Banco',syncCfg().configured?'Google Sheets':'Local')}</div></div><div class="premiumPanel"><h3>Arquitetura</h3><p>GitHub Pages + Google Apps Script + Google Sheets. Projeto focado exclusivamente em SDAI.</p></div>`}
+function renderSobre(){const el=document.getElementById('sobre'); if(!el)return; const u=currentUserSafe(); const cfg=db.config||{}; el.innerHTML=`<div class="premiumPanel"><h3>${esc(cfg.appName||'Contratos L3A')}</h3><p>Módulo SDAI para cadastro técnico, histórico de falhas, plano de ação, relatórios e sincronização Google Sheets.</p><div class="premiumGrid" style="margin-top:14px">${premiumStat('Versão','6.20 SDAI • 05/07')}${premiumStat('Usuário',u.nome||'Usuário')}${premiumStat('Perfil',u.perfil||'Administrador')}${premiumStat('Banco',syncCfg().configured?'Google Sheets':'Local')}</div></div><div class="premiumPanel"><h3>Arquitetura</h3><p>GitHub Pages + Google Apps Script + Google Sheets. Projeto focado exclusivamente em SDAI.</p></div>`}
 
 
 /* =========================================================================
@@ -1484,7 +1487,23 @@ function dashStatusBucket(st){const s=up(normalizeStatus(st||''));if(s.includes(
 // mais que o piso gravado solto no próprio equipamento/loja/FLM — que pode estar
 // vazio ou desatualizado em registros antigos. Só cai para o piso do próprio
 // registro se o laço dele ainda não tiver piso oficial definido.
-function pisoEfetivo(obj){if(!obj)return ''; const l=obj.lacoId?(db.lacos||[]).find(x=>x.id===obj.lacoId):null; return n(l&&l.piso)||n(obj.piso)||''}
+function pisoEfetivo(obj){
+  if(!obj)return '';
+  const lacoId=obj.lacoId;
+  const l=lacoId?(db.lacos||[]).find(x=>x.id===lacoId):null;
+  let piso=n(l&&l.piso);
+  if(!piso&&lacoId){
+    // Cobre o caso de Laços duplicados/órfãos (mesmo nome, ID diferente) deixados
+    // por uma reconstrução antiga da base — procura outro registro de Laço com o
+    // MESMO NOME que já tenha o piso oficial definido, em vez de mostrar "Sem piso".
+    const nomeAtual=l?l.nome:lacName(lacoId);
+    if(nomeAtual){
+      const irmao=(db.lacos||[]).find(x=>up(x.nome)===up(nomeAtual)&&x.piso);
+      if(irmao)piso=n(irmao.piso);
+    }
+  }
+  return piso||n(obj.piso)||'';
+}
 function timeSince(isoStr){if(!isoStr)return '—';const then=new Date(isoStr).getTime();if(isNaN(then))return '—';const diffMs=Math.max(0,Date.now()-then);const h=diffMs/3600000;if(h<1)return Math.max(1,Math.round(diffMs/60000))+' min';if(h<24)return Math.round(h)+'h';return Math.round(h/24)+'d'}
 function dashPisoStats(){const map={};const bump=(obj)=>{const p=pisoEfetivo(obj)||'Sem piso';if(!map[p])map[p]={piso:p,operacao:0,teste:0,falha:0,desativada:0};map[p][dashStatusBucket(obj.status)]++};(db.equipamentos||[]).forEach(bump);(db.flms||[]).forEach(bump);return Object.values(map).sort((a,b)=>pisoSortKey(a.piso)-pisoSortKey(b.piso)||a.piso.localeCompare(b.piso,'pt-BR'))}
 function dashLojasComFalha(){return (db.locais||[]).filter(l=>dashStatusBucket(l.status)==='falha').map(l=>({nome:l.nome||'—',piso:pisoEfetivo(l)||'—',laco:lacName(l.lacoId)||'—',desde:l.ultimaAlteracao||'',status:l.status})).sort((a,b)=>(a.desde||'').localeCompare(b.desde||''))}
@@ -1624,7 +1643,7 @@ function setPlanoCategoriaFiltro(cat){const el=document.getElementById('plCat');
 function renderPlano(){
   let planos=db.planos||[];
   let q=(document.getElementById('plBuscaPlano')?.value||'').toUpperCase();
-  let fcat=document.getElementById('plCat')?.value||'', fprio=document.getElementById('plPrio')?.value||'', fsit=document.getElementById('plSit')?.value||'', fresp=document.getElementById('plResp')?.value||'', ini=document.getElementById('plIni')?.value||'', fim=document.getElementById('plFim')?.value||'';
+  let fcat=document.getElementById('plCat')?.value||'', fprio=document.getElementById('plPrio')?.value||'', fsit=document.getElementById('plSit')?.value||'', fresp=document.getElementById('plResp')?.value||'', fpiso=document.getElementById('plPiso')?.value||'', ini=document.getElementById('plIni')?.value||'', fim=document.getElementById('plFim')?.value||'';
   let falhas=falhasAtivasParaPlano();
   let rows=[];
   planos.forEach(p=>{
@@ -1641,7 +1660,7 @@ function renderPlano(){
   function situacaoPeso(s){return {'Sem plano':0,'Aberto':1,'Em andamento':2,'Concluído':3}[s]??9}
 
   // gráfico por categoria calculado ANTES do filtro de categoria, pra sempre mostrar todas as barras
-  let rowsPreCat=rows.filter(x=>(!q||JSON.stringify(x).toUpperCase().includes(q))&&(!fprio||x.prioridade===fprio)&&(!fsit||x.situacao===fsit)&&(!fresp||x.responsavel===fresp)&&inPeriodo(x));
+  let rowsPreCat=rows.filter(x=>(!q||JSON.stringify(x).toUpperCase().includes(q))&&(!fprio||x.prioridade===fprio)&&(!fsit||x.situacao===fsit)&&(!fresp||x.responsavel===fresp)&&(!fpiso||x.piso===fpiso)&&inPeriodo(x));
   let catMap={};rowsPreCat.forEach(x=>{const c=x.categoria||'Sem categoria';catMap[c]=(catMap[c]||0)+1});
   let catRows=Object.entries(catMap).map(([label,value])=>({label,value})).sort((a,b)=>b.value-a.value);
   let maxCat=Math.max(1,...catRows.map(r=>r.value));
@@ -1651,10 +1670,10 @@ function renderPlano(){
     .sort((a,b)=>situacaoPeso(a.situacao)-situacaoPeso(b.situacao)||prioridadePeso(a.prioridade)-prioridadePeso(b.prioridade)||String(a.desde||a.criadoEm).localeCompare(String(b.desde||b.criadoEm)));
 
   document.getElementById('plano').innerHTML=`
-    <div class="card"><h3 class="sectionTitle">Filtros do Plano de Ação</h3><div class="toolbar"><div class="field"><label>Busca</label><input id="plBuscaPlano" placeholder="Loja, laço, item, motivo..." value="${esc(document.getElementById('plBuscaPlano')?.value||'')}"></div><div class="field"><label>Categoria</label><select id="plCat">${selectOpts(planoCategorias(),fcat)}</select></div><div class="field"><label>Prioridade</label><select id="plPrio">${selectOpts(planoPrioridades(),fprio)}</select></div><div class="field"><label>Situação</label><select id="plSit">${selectOpts(['Sem plano','Aberto','Em andamento','Concluído'],fsit)}</select></div><div class="field"><label>Responsável</label><select id="plResp">${selectOpts(planoResponsaveis(),fresp)}</select></div><div class="field"><label>Inicial</label><input id="plIni" type="date" value="${esc(ini)}"></div><div class="field"><label>Final</label><input id="plFim" type="date" value="${esc(fim)}"></div><button class="btn" onclick="renderPlano()">Filtrar</button> <button class="btn secondary" onclick="gerarPdfPlanoAcao()">Gerar PDF (por Piso/Laço/Endereço)</button></div><p class="msg warn">Planos concluídos permanecem registrados para relatório e rastreabilidade. O PDF organiza os itens em aberto por Piso → Laço → Endereço crescente, pra facilitar o roteiro da equipe em campo.</p></div>
+    <div class="card"><h3 class="sectionTitle">Filtros do Plano de Ação</h3><div class="toolbar"><div class="field"><label>Busca</label><input id="plBuscaPlano" placeholder="Loja, laço, item, motivo..." value="${esc(document.getElementById('plBuscaPlano')?.value||'')}"></div><div class="field"><label>Categoria</label><select id="plCat">${selectOpts(planoCategorias(),fcat)}</select></div><div class="field"><label>Prioridade</label><select id="plPrio">${selectOpts(planoPrioridades(),fprio)}</select></div><div class="field"><label>Situação</label><select id="plSit">${selectOpts(['Sem plano','Aberto','Em andamento','Concluído'],fsit)}</select></div><div class="field"><label>Responsável</label><select id="plResp">${selectOpts(planoResponsaveis(),fresp)}</select></div><div class="field"><label>Pavimento</label><select id="plPiso">${selectOpts(unique(rows.map(x=>x.piso)),fpiso)}</select></div><div class="field"><label>Inicial</label><input id="plIni" type="date" value="${esc(ini)}"></div><div class="field"><label>Final</label><input id="plFim" type="date" value="${esc(fim)}"></div><button class="btn" onclick="renderPlano()">Filtrar</button> <button class="btn secondary" onclick="gerarPdfPlanoAcao()">Gerar PDF (por Piso/Laço/Endereço)</button></div><p class="msg warn">Planos concluídos permanecem registrados para relatório e rastreabilidade. O PDF organiza os itens em aberto por Piso → Laço → Endereço crescente, pra facilitar o roteiro da equipe em campo.</p></div>
     <div class="chartPanel"><h4>Itens por categoria</h4><p class="mutedLine" style="margin-bottom:10px">Clique em uma categoria para filtrar a lista abaixo</p>${catChartHtml}</div>
     <div class="card"><h3 class="sectionTitle">Lançamentos e acompanhamento${fcat?` — Categoria: ${esc(fcat)}`:''}</h3>${table(filtrados,[['Prioridade','prioridade'],['Painel','painel'],['Laço','laco'],['Piso','piso'],['Loja / Área','local'],['Item','itemNome'],['Falha','statusFalha',r=>`<span class="pill ${statusClass(r.statusFalha)}">${esc(r.statusFalha)}</span>`],['Categoria','categoria'],['Responsável','responsavel'],['Desde','desde'],['Situação','situacao',r=>`<span class="pill ${r.situacao==='Concluído'?'ok':r.situacao==='Sem plano'?'warn':''}">${esc(r.situacao)}</span>`],['Concluído em','concluidoEm'],['Fotos','fotos',r=>fotosThumbsHtml(r.fotos)]],r=>`${r.planoId?`<button class="btn small secondary" onclick="formPlano('${r.planoId}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1-4.2L15.5 5.3a1.5 1.5 0 0 1 2.1 0l1.1 1.1a1.5 1.5 0 0 1 0 2.1L8.2 19 4 20Z"/><path d="M13.8 7 17 10.2"/></svg> Editar</button>`:`<button class="btn small" onclick="formPlano('', '${r.falhaId}')">+ Criar</button>`} ${r.planoId&&r.situacao!=='Concluído'?`<button class="btn small" onclick="concluirPlano('${r.planoId}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5 9 17l10.5-10.5"/></svg> Concluir</button>`:''}`)}</div>`;
-  ['plBuscaPlano','plCat','plPrio','plSit','plResp','plIni','plFim'].forEach(id=>{let el=document.getElementById(id); if(el)el.onchange=renderPlano});
+  ['plBuscaPlano','plCat','plPrio','plSit','plResp','plPiso','plIni','plFim'].forEach(id=>{let el=document.getElementById(id); if(el)el.onchange=renderPlano});
 }
 
 function itemEnderecoOrdenavel(itemId){
