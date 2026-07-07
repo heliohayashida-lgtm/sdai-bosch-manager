@@ -2098,39 +2098,101 @@ function renderFalhas(){
 }
 
 function setPlanoCategoriaFiltro(cat){const el=document.getElementById('plCat');if(el)el.value=(el.value===cat?'':cat);renderPlano()}
+function fmtDataBR(raw){if(!raw)return '—';const d=new Date(raw);if(isNaN(d))return '—';const dd=String(d.getDate()).padStart(2,'0'),mm=String(d.getMonth()+1).padStart(2,'0'),yy=d.getFullYear(),hh=String(d.getHours()).padStart(2,'0'),mi=String(d.getMinutes()).padStart(2,'0');return `${dd}/${mm}/${yy}<br><small>${hh}:${mi}</small>`;}
 function renderPlano(){
   let planos=db.planos||[];
   let q=(document.getElementById('plBuscaPlano')?.value||'').toUpperCase();
-  let fcat=document.getElementById('plCat')?.value||'', fprio=document.getElementById('plPrio')?.value||'', fsit=document.getElementById('plSit')?.value||'', fresp=document.getElementById('plResp')?.value||'', fpiso=document.getElementById('plPiso')?.value||'', ini=document.getElementById('plIni')?.value||'', fim=document.getElementById('plFim')?.value||'';
+  let fcat=document.getElementById('plCat')?.value||'',fprio=document.getElementById('plPrio')?.value||'',fsit=document.getElementById('plSit')?.value||'',fresp=document.getElementById('plResp')?.value||'',fpiso=document.getElementById('plPiso')?.value||'',ini=document.getElementById('plIni')?.value||'',fim=document.getElementById('plFim')?.value||'';
   let falhas=falhasAtivasParaPlano();
   let rows=[];
   planos.forEach(p=>{
     let f=db.falhas.find(x=>x.id===p.falhaId)||{};
     let inf=f.id?itemInfoFromFalha(f):{};
-    rows.push({origemLinha:'Plano',falhaId:p.falhaId||'',planoId:p.id,prioridade:p.prioridade||'Média',painel:inf.painel||p.painel||'',laco:inf.laco||p.laco||'',piso:inf.piso||p.piso||'',local:inf.local||p.local||'',itemNome:inf.itemNome||p.item||'',statusFalha:f.status||p.statusFalha||'',categoria:p.categoria||'',responsavel:p.responsavel||'',desde:f.data||p.criadoEm||'',criadoEm:p.criadoEm||'',concluidoEm:p.concluidoEm||'',situacao:p.situacao||'Aberto',justificativa:p.justificativa||'',providencia:p.providencia||'',necessitaCompra:p.necessitaCompra?'Sim':'Não',fotos:p.fotos||[]});
+    let fotos=normalizeFotos(p.fotos||[]);
+    rows.push({origemLinha:'Plano',falhaId:p.falhaId||'',planoId:p.id,prioridade:p.prioridade||'Média',painel:inf.painel||p.painel||'',laco:inf.laco||p.laco||'',piso:inf.piso||p.piso||'',local:inf.local||p.local||'',itemNome:inf.itemNome||p.item||'',statusFalha:f.status||p.statusFalha||'',categoria:p.categoria||'',responsavel:p.responsavel||'',desde:f.data||p.criadoEm||'',criadoEm:p.criadoEm||'',concluidoEm:p.concluidoEm||'',situacao:p.situacao||'Aberto',direcionamento:p.direcionamento||getDirecionamento(f.status||p.statusFalha),fotos,fotoCount:fotos.length});
   });
   falhas.forEach(f=>{
     if(planoForFalha(f.id))return;
     let inf=itemInfoFromFalha(f);
-    rows.push({origemLinha:'Falha sem plano',falhaId:f.id,planoId:'',prioridade:'Média',painel:inf.painel||'',laco:inf.laco||'',piso:inf.piso||'',local:inf.local||'',itemNome:inf.itemNome||'',statusFalha:f.status||'',categoria:'',responsavel:'',desde:f.data||'',criadoEm:'',concluidoEm:'',situacao:'Sem plano',justificativa:f.motivo||f.obs||'',providencia:'',necessitaCompra:'Não'});
+    rows.push({origemLinha:'Falha sem plano',falhaId:f.id,planoId:'',prioridade:'Média',painel:inf.painel||'',laco:inf.laco||'',piso:inf.piso||'',local:inf.local||'',itemNome:inf.itemNome||'',statusFalha:f.status||'',categoria:'',responsavel:'',desde:f.data||'',criadoEm:'',concluidoEm:'',situacao:'Sem plano',direcionamento:getDirecionamento(f.status),fotos:[],fotoCount:0});
   });
   function inPeriodo(x){if(!ini&&!fim)return true;let datas=[x.desde,x.criadoEm,x.concluidoEm].filter(Boolean).map(String);return datas.some(d=>(!ini||d>=ini)&&(!fim||d<=fim+'T23:59'))}
   function situacaoPeso(s){return {'Sem plano':0,'Aberto':1,'Em andamento':2,'Concluído':3}[s]??9}
-
-  // gráfico por categoria calculado ANTES do filtro de categoria, pra sempre mostrar todas as barras
   let rowsPreCat=rows.filter(x=>(!q||JSON.stringify(x).toUpperCase().includes(q))&&(!fprio||x.prioridade===fprio)&&(!fsit||x.situacao===fsit)&&(!fresp||x.responsavel===fresp)&&(!fpiso||x.piso===fpiso)&&inPeriodo(x));
   let catMap={};rowsPreCat.forEach(x=>{const c=x.categoria||'Sem categoria';catMap[c]=(catMap[c]||0)+1});
   let catRows=Object.entries(catMap).map(([label,value])=>({label,value})).sort((a,b)=>b.value-a.value);
   let maxCat=Math.max(1,...catRows.map(r=>r.value));
-  let catChartHtml=catRows.length?`<div class="chartBars">${catRows.map(r=>`<div class="chartLine clickable ${fcat===r.label?'selected':''}" onclick="setPlanoCategoriaFiltro('${esc(r.label)}')"><b>${esc(r.label)}</b><div class="chartTrack"><i style="width:${Math.max(2,pct(r.value,maxCat))}%"></i></div><strong>${r.value}</strong></div>`).join('')}</div>`:'<div class="emptyState">Sem itens para os filtros atuais.</div>';
-
+  let catChartHtml=catRows.length?`<div class="chartBars">${catRows.map(r=>`<div class="chartLine clickable ${fcat===r.label?'selected':''}" onclick="setPlanoCategoriaFiltro('${esc(r.label)}')"><b>${esc(r.label)}</b><div class="chartTrack"><i style="width:${Math.max(2,pct(r.value,maxCat))}%"></i></div><strong>${r.value}</strong></div>`).join('')}</div>`:'<div class="emptyState">Sem itens.</div>';
   let filtrados=rowsPreCat.filter(x=>!fcat||(x.categoria||'Sem categoria')===fcat)
     .sort((a,b)=>situacaoPeso(a.situacao)-situacaoPeso(b.situacao)||prioridadePeso(a.prioridade)-prioridadePeso(b.prioridade)||String(a.desde||a.criadoEm).localeCompare(String(b.desde||b.criadoEm)));
 
+  // Build compact table rows
+  const situBadge=s=>{const cls=s==='Concluído'?'ok':s==='Em andamento'?'info':s==='Sem plano'||s==='Cancelado'?'warn':'';return `<span class="pill ${cls}" style="font-size:11px">${esc(s)}</span>`};
+  const prioBadge=p=>{const cls=p==='Alta'||p==='Urgente'?'bad':p==='Média'?'warn':'';return `<span class="pill ${cls}" style="font-size:10px;padding:2px 7px">${esc(p)}</span>`};
+  const trs=filtrados.map(r=>{
+    const locHtml=`<div style="line-height:1.3"><span style="font-size:11px;font-weight:700;color:var(--l3a-text-muted)">P${esc(r.piso?.replace(/\D/g,''))??''} • ${esc(r.laco||'—')}</span><br><span style="font-size:12px;font-weight:600">${esc(r.itemNome||'—')}</span></div>`;
+    const dirPreview=r.direcionamento?`<span title="${esc(r.direcionamento)}" style="font-size:12px;color:var(--l3a-text-soft);cursor:help">${esc(r.direcionamento.slice(0,48))}${r.direcionamento.length>48?'…':''}</span>`:'<span class="mutedLine">—</span>';
+    const evid=r.fotoCount?`<span title="${r.fotoCount} foto(s)" style="font-size:12.5px">📷 ${r.fotoCount}</span>`:`<span class="mutedLine" style="font-size:11px">—</span>`;
+    const acoes=`<div style="display:flex;gap:4px;align-items:center">${r.planoId?`<button class="btn small secondary" title="Editar" onclick="formPlano('${r.planoId}')" style="padding:4px 7px;font-size:13px">✏️</button>`:`<button class="btn small" title="Criar plano" onclick="formPlano('','${r.falhaId}')" style="padding:3px 8px;font-size:11px">+ Plano</button>`}${r.planoId&&r.situacao!=='Concluído'?`<button class="btn small" title="Concluir" onclick="concluirPlano('${r.planoId}')" style="padding:4px 7px;font-size:13px">✔</button>`:''}${r.planoId?`<button class="btn small danger" title="Excluir" onclick="del('planos','${r.planoId}')" style="padding:4px 7px;font-size:13px">🗑</button>`:''}</div>`;
+    return `<tr style="font-size:12.5px">
+      <td style="padding:5px 8px;white-space:nowrap">${prioBadge(r.prioridade)}</td>
+      <td style="padding:5px 8px;max-width:130px"><div style="font-weight:700;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.local)}">${esc(r.local||'—')}</div></td>
+      <td style="padding:5px 8px">${locHtml}</td>
+      <td style="padding:5px 8px;white-space:nowrap"><span class="pill ${statusClass(r.statusFalha)}" style="font-size:11px">${esc(normalizeStatus(r.statusFalha)||'—')}</span></td>
+      <td style="padding:5px 8px;max-width:180px">${dirPreview}</td>
+      <td style="padding:5px 8px;white-space:nowrap;font-size:12px">${esc(r.responsavel||'—')}</td>
+      <td style="padding:5px 8px">${situBadge(r.situacao)}</td>
+      <td style="padding:5px 8px;white-space:nowrap;font-size:12px;text-align:center">${fmtDataBR(r.desde)}</td>
+      <td style="padding:5px 8px;white-space:nowrap;font-size:12px;text-align:center">${r.concluidoEm?fmtDataBR(r.concluidoEm):'—'}</td>
+      <td style="padding:5px 8px;text-align:center">${evid}</td>
+      <td style="padding:5px 8px">${acoes}</td>
+    </tr>`;
+  }).join('');
+
+  const thead=`<tr style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--l3a-text-muted)">
+    <th style="padding:6px 8px;white-space:nowrap">Prioridade</th>
+    <th style="padding:6px 8px">Loja / Área</th>
+    <th style="padding:6px 8px">Localização</th>
+    <th style="padding:6px 8px;white-space:nowrap">Status da Falha</th>
+    <th style="padding:6px 8px">Direcionamento Técnico</th>
+    <th style="padding:6px 8px">Responsável</th>
+    <th style="padding:6px 8px">Situação</th>
+    <th style="padding:6px 8px;text-align:center">Abertura</th>
+    <th style="padding:6px 8px;text-align:center">Conclusão</th>
+    <th style="padding:6px 8px;text-align:center">Evidências</th>
+    <th style="padding:6px 8px">Ações</th>
+  </tr>`;
+
+  const tableHtml=filtrados.length
+    ?`<div class="tableWrap" style="max-height:calc(100vh - 340px);overflow:auto"><table style="min-width:900px;border-collapse:collapse;width:100%"><thead style="position:sticky;top:0;background:var(--l3a-surface,#fff);z-index:1;border-bottom:2px solid var(--l3a-border)">${thead}</thead><tbody>${trs}</tbody></table></div>`
+    :'<div class="emptyState">Nenhum lançamento encontrado para os filtros selecionados.</div>';
+
   document.getElementById('plano').innerHTML=`
-    <div class="card"><h3 class="sectionTitle">Filtros do Plano de Ação</h3><div class="toolbar"><div class="field"><label>Busca</label><input id="plBuscaPlano" placeholder="Loja, laço, item, motivo..." value="${esc(document.getElementById('plBuscaPlano')?.value||'')}"></div><div class="field"><label>Categoria</label><select id="plCat">${selectOpts(planoCategorias(),fcat)}</select></div><div class="field"><label>Prioridade</label><select id="plPrio">${selectOpts(planoPrioridades(),fprio)}</select></div><div class="field"><label>Situação</label><select id="plSit">${selectOpts(['Sem plano','Aberto','Em andamento','Concluído','Cancelado'],fsit)}</select></div><div class="field"><label>Responsável</label><select id="plResp">${selectOpts(planoResponsaveis(),fresp)}</select></div><div class="field"><label>Pavimento</label><select id="plPiso">${selectOpts(unique(rows.map(x=>x.piso)),fpiso)}</select></div><div class="field"><label>Inicial</label><input id="plIni" type="date" value="${esc(ini)}"></div><div class="field"><label>Final</label><input id="plFim" type="date" value="${esc(fim)}"></div><div class="field"><label>PDF: incluir</label><select id="pdfSituacao"><option value="Aberto">Só Abertos</option><option value="Concluído">Só Concluídos</option><option value="Ambos">Abertos + Concluídos</option></select></div><button class="btn" onclick="renderPlano()">Filtrar</button> <button class="btn secondary" onclick="gerarPdfPlanoAcao()">Gerar PDF (por Piso/Laço/Endereço)</button> <button class="btn secondary" onclick="gerarPdfPlanoDetalhado()">Gerar PDF detalhado (com fotos)</button></div><p class="msg warn">Planos concluídos permanecem registrados para relatório e rastreabilidade. Use "Inicial"/"Final" acima pra limitar o período do PDF (Abertos usam a data de abertura; Concluídos usam a data de conclusão). O primeiro PDF organiza os itens por Piso → Laço → Endereço crescente pro roteiro de campo; o segundo traz todos os detalhes de cada chamado (justificativa, providência, datas, responsável) e as fotos anexadas.</p></div>
-    <div class="chartPanel"><h4>Itens por categoria</h4><p class="mutedLine" style="margin-bottom:10px">Clique em uma categoria para filtrar a lista abaixo</p>${catChartHtml}</div>
-    <div class="card"><h3 class="sectionTitle">Lançamentos e acompanhamento${fcat?` — Categoria: ${esc(fcat)}`:''}</h3>${table(filtrados,[['Prioridade','prioridade'],['Painel','painel'],['Laço','laco'],['Piso','piso'],['Loja / Área','local'],['Item','itemNome'],['Falha','statusFalha',r=>`<span class="pill ${statusClass(r.statusFalha)}">${esc(r.statusFalha)}</span>`],['Categoria','categoria'],['Responsável','responsavel'],['Desde','desde'],['Situação','situacao',r=>`<span class="pill ${r.situacao==='Concluído'?'ok':r.situacao==='Cancelado'?'off':r.situacao==='Sem plano'?'warn':''}">${esc(r.situacao)}</span>`],['Concluído em','concluidoEm'],['Fotos','fotos',r=>fotosThumbsHtml(r.fotos)]],r=>`${r.planoId?`<button class="btn small secondary" onclick="formPlano('${r.planoId}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1-4.2L15.5 5.3a1.5 1.5 0 0 1 2.1 0l1.1 1.1a1.5 1.5 0 0 1 0 2.1L8.2 19 4 20Z"/><path d="M13.8 7 17 10.2"/></svg> Editar</button>`:`<button class="btn small" onclick="formPlano('', '${r.falhaId}')">+ Criar</button>`} ${r.planoId&&r.situacao!=='Concluído'?`<button class="btn small" onclick="concluirPlano('${r.planoId}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5 9 17l10.5-10.5"/></svg> Concluir</button>`:''} ${r.planoId?`<button class="btn small danger" onclick="del('planos','${r.planoId}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2"/><path d="M6.5 7 7.3 19a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4L17.5 7"/><path d="M10 11v6M14 11v6"/></svg></button>`:''}`)}</div>`;
+    <div class="card" style="padding:12px 16px">
+      <div class="toolbar" style="gap:8px;flex-wrap:wrap">
+        <div class="field"><label>Busca</label><input id="plBuscaPlano" placeholder="Loja, laço, item..." value="${esc(document.getElementById('plBuscaPlano')?.value||'')}"></div>
+        <div class="field"><label>Categoria</label><select id="plCat">${selectOpts(planoCategorias(),fcat)}</select></div>
+        <div class="field"><label>Prioridade</label><select id="plPrio">${selectOpts(planoPrioridades(),fprio)}</select></div>
+        <div class="field"><label>Situação</label><select id="plSit">${selectOpts(['Sem plano','Aberto','Em andamento','Concluído','Cancelado'],fsit)}</select></div>
+        <div class="field"><label>Responsável</label><select id="plResp">${selectOpts(planoResponsaveis(),fresp)}</select></div>
+        <div class="field"><label>Piso</label><select id="plPiso">${selectOpts(unique(rows.map(x=>x.piso)),fpiso)}</select></div>
+        <div class="field"><label>Inicial</label><input id="plIni" type="date" value="${esc(ini)}"></div>
+        <div class="field"><label>Final</label><input id="plFim" type="date" value="${esc(fim)}"></div>
+        <div class="field"><label>PDF</label><select id="pdfSituacao"><option value="Aberto">Só Abertos</option><option value="Concluído">Só Concluídos</option><option value="Ambos">Ambos</option></select></div>
+        <div style="display:flex;gap:6px;align-items:flex-end">
+          <button class="btn" onclick="renderPlano()">Filtrar</button>
+          <button class="btn secondary" onclick="gerarPdfPlanoAcao()" title="PDF roteiro de campo">PDF Roteiro</button>
+          <button class="btn secondary" onclick="gerarPdfPlanoDetalhado()" title="PDF detalhado com fotos">PDF Detalhado</button>
+        </div>
+      </div>
+    </div>
+    <div class="chartPanel" style="padding:10px 16px"><h4 style="margin:0 0 6px">Itens por categoria</h4><p class="mutedLine" style="margin:0 0 8px;font-size:12px">Clique para filtrar</p>${catChartHtml}</div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <div style="padding:10px 16px 6px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--l3a-border)">
+        <h3 class="sectionTitle" style="margin:0">Lançamentos${fcat?` — ${esc(fcat)}`:''} <span style="font-weight:400;font-size:13px;color:var(--l3a-text-muted)">${filtrados.length} registro(s)</span></h3>
+      </div>
+      ${tableHtml}
+    </div>`;
   ['plBuscaPlano','plCat','plPrio','plSit','plResp','plPiso','plIni','plFim'].forEach(id=>{let el=document.getElementById(id); if(el)el.onchange=renderPlano});
 }
 
