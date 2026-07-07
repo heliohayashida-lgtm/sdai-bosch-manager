@@ -1503,8 +1503,16 @@ function queueFotoUploads(planoId,files){
 }
 function updateFotoUploadStatus(){
   const el=document.getElementById('mFotoStatus'); if(!el)return;
-  const pend=_fotoUploadQueue.length+Object.keys(_fotoUploadPending).length;
-  el.textContent=pend?`Enviando ${pend} foto(s)... pode levar até 30s. Se der erro, você será avisado — não precisa ficar esperando calado.`:'';
+  const pend=Object.values(_fotoUploadPending);
+  const total=_fotoUploadQueue.length+pend.length;
+  if(!total){el.textContent='';return;}
+  const aguardando=pend.filter(p=>!p.timedOut).length;
+  const recuperando=pend.filter(p=>p.timedOut).length;
+  let msg='';
+  if(_fotoUploadQueue.length)msg+=`${_fotoUploadQueue.length} foto(s) na fila. `;
+  if(aguardando)msg+=`Enviando ${aguardando} foto(s)... `;
+  if(recuperando)msg+=`Aguardando confirmação do servidor (pode levar até 4 min)... `;
+  el.textContent=msg.trim();
 }
 async function processFotoQueue(){
   if(_fotoUploadBusy||!_fotoUploadQueue.length)return;
@@ -1513,22 +1521,54 @@ async function processFotoQueue(){
   try{
     const dataUrl=await compressImageFile(job.file);
     const reqId=id();
-    _fotoUploadPending[reqId]={planoId:job.planoId,filename:job.file.name||'foto'};
+    const nomeFoto=job.file.name||'foto';
+    _fotoUploadPending[reqId]={planoId:job.planoId,filename:nomeFoto,timedOut:false};
     updateFotoUploadStatus();
     const form=document.createElement('form');
     form.method='POST'; form.action=API_URL; form.target='photoUploadFrame'; form.style.display='none';
-    const fields={action:'uploadFoto',token:getApiToken(),reqId,planoId:job.planoId,filename:job.file.name||'foto.jpg',imageData:dataUrl};
+    const fields={action:'uploadFoto',token:getApiToken(),reqId,planoId:job.planoId,filename:nomeFoto+'.jpg',imageData:dataUrl};
     Object.entries(fields).forEach(([k,v])=>{const inp=document.createElement('input');inp.type='hidden';inp.name=k;inp.value=v;form.appendChild(inp)});
-    document.body.appendChild(form); form.submit(); setTimeout(()=>form.remove(),1500);
-    setTimeout(()=>{
-      if(_fotoUploadPending[reqId]){
-        const nome=_fotoUploadPending[reqId].filename;
-        _fotoUploadPending[reqId].timedOut=true;
-        alert(`A foto "${nome}" está demorando mais que 90 segundos — pode ter falhado por conexão ou pelo Apps Script. Se ela aparecer no Drive depois, tente anexar de novo. Verificando diagnóstico...`);
-        updateFotoUploadStatus();
-        _fotoUploadBusy=false; processFotoQueue();
+    document.body.appendChild(form); form.submit(); setTimeout(()=>form.remove(),2000);
+    // Polling independente: consulta o diagnóstico a cada 10s por até 4 minutos
+    let tentativas=0; let resolvido=false;
+    const pollTimer=setInterval(async()=>{
+      if(resolvido||!_fotoUploadPending[reqId]){clearInterval(pollTimer);return;}
+      tentativas++;
+      try{
+        const r=await jsonp('debugFoto');
+        if(!r||!r.ok)return;
+        const linhas=r.log.split('\n');
+        // Procura linha de SUCESSO para este planoId
+        const sucessoLinha=linhas.find(l=>l.includes('SUCESSO')&&l.includes(job.planoId));
+        if(sucessoLinha){
+          const mId=sucessoLinha.match(/id=([a-zA-Z0-9_-]{25,})/);
+          if(mId){
+            resolvido=true; clearInterval(pollTimer);
+            const fileId=mId[1];
+            const url='https://drive.google.com/thumbnail?id='+fileId+'&sz=w800';
+            handleFotoUploadResult({reqId,ok:true,url,planoId:job.planoId,conta:'(recuperado via polling)'});
+            return;
+          }
+        }
+        // Procura linha de ERRO para este planoId
+        const erroLinha=linhas.find(l=>l.includes('ERRO')&&l.includes(job.planoId));
+        if(erroLinha&&tentativas>2){
+          resolvido=true; clearInterval(pollTimer);
+          handleFotoUploadResult({reqId,ok:false,error:erroLinha,planoId:job.planoId});
+          return;
+        }
+      }catch(_e){}
+      if(tentativas>=24){
+        resolvido=true; clearInterval(pollTimer);
+        if(_fotoUploadPending[reqId]){
+          delete _fotoUploadPending[reqId];
+          const el=document.getElementById('mFotoStatus');
+          if(el)el.textContent=`Foto "${nomeFoto}" não confirmada em 4 minutos. Verifique a pasta no Drive.`;
+          updateFotoUploadStatus();
+          _fotoUploadBusy=false; processFotoQueue();
+        }
       }
-    },90000);
+    },10000);
   }catch(e){
     alert('Não foi possível preparar a foto: '+e.message);
     _fotoUploadBusy=false; processFotoQueue();
