@@ -1430,9 +1430,15 @@ function saveFalha(i){
 function normalizeFotoUrl(u){
   if(!u)return '';
   const s=String(u);
-  // Converte URL antiga thumbnail para lh3 (funciona sem login para arquivos públicos)
-  const m=s.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-  if(m)return 'https://lh3.googleusercontent.com/d/'+m[1];
+  const m=s.match(/[?&]id=([a-zA-Z0-9_-]+)/)||s.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if(m)return 'https://drive.google.com/thumbnail?id='+m[1]+'&sz=w800';
+  return s;
+}
+function fotoHref(u){
+  if(!u)return '#';
+  const s=String(u);
+  const m=s.match(/[?&]id=([a-zA-Z0-9_-]+)/)||s.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if(m)return 'https://drive.google.com/file/d/'+m[1]+'/view';
   return s;
 }
 function fotoHref(u){
