@@ -1,6 +1,5 @@
-<!-- Build ID: 20260707-1 -->
 <!doctype html>
-<!-- build: 2026-07-06 v6.29 - Endereços completos e rotulados em "Ver endereços" (Endereço lógico p/ módulos, Endereço completo p/ detectores/acionadores) -->
+<!-- build: 2026-07-07 v8.9 UX Global - Design System corporativo, tabelas compactas, localização agrupada e dashboards operacionais -->
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
@@ -548,6 +547,30 @@ tbody tr:last-child td{border-bottom:0}
   th,td{font-size:9px;padding:5px}
   .reportFooter{font-size:10px}
 }
+
+
+/* =========================================================================
+   V8.9 UX GLOBAL — Design System corporativo e telas operacionais compactas
+   Aplicação visual aditiva: não altera banco, regras de negócio, importação,
+   exportação, login, permissões ou Google Apps Script.
+   ========================================================================= */
+:root{
+  --ux-row-h:42px;
+  --ux-table-max:calc(100vh - 315px);
+  --ux-action:34px;
+}
+.content{max-width:1680px;padding:20px 24px 48px}
+.card,.premiumPanel,.chartPanel{border-radius:16px;box-shadow:0 8px 22px rgba(16,24,40,.07)}
+.card{padding:16px;margin-bottom:14px}.premiumPanel{padding:16px;margin-bottom:14px}.chartPanel{padding:14px;margin-bottom:14px}
+.sectionTitle{margin-bottom:10px}.toolbar{gap:8px;margin:8px 0}.field{min-width:145px;gap:4px}.field label{font-size:10.5px}.field input,.field select,.field textarea{padding:8px 10px;font-size:12.5px;border-radius:9px}.btn{padding:9px 13px}.btn.small{padding:5px 8px}
+.grid,.premiumGrid{gap:10px}.metric{padding:12px 14px;min-height:76px}.metric small{font-size:9.5px}.metric strong{font-size:22px}.premiumStat{padding:12px;min-height:72px}.premiumStat b{font-size:20px}
+.tableWrap{border-radius:12px;max-height:var(--ux-table-max);overflow:auto;background:#fff}.tableTopScroll{height:12px;overflow-x:auto;overflow-y:hidden;border:1px solid var(--l3a-border);border-bottom:0;border-radius:12px 12px 0 0;background:#fff}.tableTopScroll>div{height:1px}.tableTopScroll+.tableWrap{border-top-left-radius:0;border-top-right-radius:0}table{font-size:12px}th{top:0;z-index:2;font-size:9.5px;padding:7px 9px;white-space:nowrap}td{padding:7px 9px;font-size:12px;line-height:1.32}tbody tr{min-height:var(--ux-row-h)}tbody tr:hover td{background:#f8fbff}.softTable table,.premiumTable table{min-width:0}
+.uxTable{min-width:880px}.uxTable td,.uxTable th{vertical-align:middle}.uxActions{display:flex;gap:5px;align-items:center;justify-content:flex-end;white-space:nowrap}.uxIconBtn{width:var(--ux-action);height:var(--ux-action);border-radius:9px;border:1px solid var(--l3a-border);background:#fff;color:var(--l3a-primary-700);display:inline-flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;box-shadow:none}.uxIconBtn:hover{background:var(--l3a-hover);border-color:var(--l3a-border-strong)}.uxIconBtn.danger{color:var(--l3a-danger)}
+.uxLocation{display:grid;gap:2px;line-height:1.22;min-width:120px}.uxLocation .uxLocTop{font-size:10.5px;font-weight:800;color:var(--l3a-text-muted);letter-spacing:.02em;text-transform:uppercase}.uxLocation .uxLocMid{font-size:12.5px;font-weight:800;color:var(--l3a-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:190px}.uxLocation .uxLocBot{font-size:11px;color:var(--l3a-text-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:190px}.uxPrimary{font-weight:800;font-size:13px;color:var(--l3a-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}.uxSub{font-size:11px;color:var(--l3a-text-muted);margin-top:1px}.uxBadgeLine{display:flex;gap:5px;flex-wrap:wrap;align-items:center}.uxPreview{font-size:11.5px;color:var(--l3a-text-soft);max-width:240px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:help}.uxDate{line-height:1.15;text-align:center;white-space:nowrap}.uxDate b{font-size:12px}.uxDate small{font-size:10.5px;color:var(--l3a-text-muted)}.uxEvidence{text-align:center;white-space:nowrap;font-size:12px}.pill{white-space:nowrap}.pill.info{background:var(--l3a-info-bg);color:var(--l3a-info)}.pill.alert{background:#fff3e8;color:#c2410c}.pill.priority-critica,.pill.priority-alta{background:var(--l3a-danger-bg);color:var(--l3a-danger)}.pill.priority-media{background:var(--l3a-warning-bg);color:var(--l3a-warning)}.pill.priority-baixa{background:var(--l3a-neutral-bg);color:var(--l3a-neutral)}
+.uxKpiGrid{display:grid;grid-template-columns:repeat(8,minmax(120px,1fr));gap:10px}.uxKpi{border:1px solid var(--l3a-border);background:linear-gradient(180deg,#fff,#f8fbff);border-radius:14px;padding:12px;box-shadow:var(--l3a-shadow-sm);cursor:pointer}.uxKpi:hover{box-shadow:var(--l3a-shadow-md);transform:translateY(-1px)}.uxKpi small{display:block;font-size:9.5px;font-weight:800;color:var(--l3a-text-muted);text-transform:uppercase;letter-spacing:.05em}.uxKpi b{display:block;margin-top:5px;font-size:22px;color:var(--l3a-text)}.uxKpi.good{border-left:4px solid var(--l3a-success)}.uxKpi.bad{border-left:4px solid var(--l3a-danger)}.uxKpi.warn{border-left:4px solid var(--l3a-warning)}.uxKpi.info{border-left:4px solid var(--l3a-info)}
+@media(max-width:1300px){.uxKpiGrid{grid-template-columns:repeat(4,1fr)}.content{padding:18px 16px 48px}}
+@media(max-width:760px){.uxKpiGrid{grid-template-columns:repeat(2,1fr)}.uxTable{min-width:760px}}
+
 </style>
 </head>
 <body>
@@ -2788,6 +2811,111 @@ function openLocal(i){
   let l=db.locais.find(x=>x.id===i); if(!l)return;
   let hist=db.falhas.filter(f=>f.localId===i||f.itemId===i).sort((a,b)=>String(b.data).localeCompare(String(a.data)));
   openModal(`<h2>${esc(lucNomeOficialLocal(l))}</h2><p><b>LUC:</b> ${lucDisplayLocal(l)} • <b>Chave lógica:</b> ${esc(lucChaveLogicaLocal(l))} • <b>Tipo:</b> ${esc(l.tipo)} • <b>Painel:</b> ${esc(paiName(l.painelId))} • <b>Laço:</b> ${esc(lacName(l.lacoId))} • <b>Piso:</b> ${esc(l.piso)}</p>${l.nomeOriginalCadastro?`<p class="note"><b>Nome antigo:</b> ${esc(l.nomeOriginalCadastro)}</p>`:''}<h3>Histórico da loja/área</h3><div class="timeline">${hist.map(h=>`<div class="tl"><b>${esc(h.status)}</b><br><small>${esc(h.data)} • ${esc(h.itemNome||'')}</small><p>${esc(h.motivo||h.obs||'Sem observação')}</p></div>`).join('')||'<p class="msg warn">Sem histórico.</p>'}</div>`);
+}
+
+
+
+/* =========================================================================
+   V8.9 UX GLOBAL — overrides finais de interface.
+   Bloco 100% aditivo: reusa dados e funções existentes, sem alterar schema.
+   ========================================================================= */
+let _uxTableSeq=0;
+function uxAttr(s){return esc(String(s||'')).replace(/'/g,'&#39;')}
+function uxFormatDate(raw){
+  if(!raw)return '<span class="mutedLine">—</span>';
+  const d=new Date(raw); if(isNaN(d.getTime()))return `<span>${esc(raw)}</span>`;
+  const dd=String(d.getDate()).padStart(2,'0'),mm=String(d.getMonth()+1).padStart(2,'0'),yy=String(d.getFullYear()).slice(-2);
+  const hh=String(d.getHours()).padStart(2,'0'),mi=String(d.getMinutes()).padStart(2,'0');
+  return `<div class="uxDate"><b>${dd}/${mm}/${yy}</b><small>${hh}:${mi}</small></div>`;
+}
+function uxLocationBlock(o={}){
+  const painel=o.painel||paiName(o.painelId)||'';
+  const laco=o.laco||lacName(o.lacoId)||'';
+  const piso=o.piso||'';
+  const tipo=o.tipo||'';
+  const endereco=o.endereco||o.itemNome||o.item||'';
+  const porta=o.porta||o.portaNumero||'';
+  const top=[painel, [piso,laco].filter(Boolean).join(' • ')].filter(Boolean).join(' | ');
+  const mid=[tipo,endereco].filter(Boolean).join(' • ')||'—';
+  const bot=porta?`Porta ${porta}`:(o.extra||'');
+  return `<div class="uxLocation"><span class="uxLocTop">${esc(top||'Localização')}</span><span class="uxLocMid" title="${uxAttr(mid)}">${esc(mid)}</span>${bot?`<span class="uxLocBot">${esc(bot)}</span>`:''}</div>`;
+}
+function uxAction(label,icon,onclick,cls=''){
+  return `<button class="uxIconBtn ${cls}" title="${esc(label)}" aria-label="${esc(label)}" onclick="${onclick}">${icon}</button>`;
+}
+function uxSituacaoFalha(r){return r.resolvidaEm?'Resolvida':(isFalhaStatus(r.status)?'Aberta':'Em operação')}
+function uxSituacaoBadge(s){let cls=s==='Concluído'||s==='Resolvida'||s==='Em operação'?'ok':s==='Em andamento'?'info':s==='Sem plano'||s==='Aguardando Loja'||s==='Aguardando Material'?'warn':s==='Aberta'||s==='Aberto'?'bad':'off';return `<span class="pill ${cls}">${esc(s||'—')}</span>`}
+function uxPriorityBadge(p){const key=up(p).includes('CRIT')?'critica':up(p).includes('ALTA')?'alta':up(p).includes('MEDIA')||up(p).includes('MÉDIA')?'media':'baixa';return `<span class="pill priority-${key}">${esc(p||'Média')}</span>`}
+function uxScrollTable(head,body,minWidth='900px'){
+  const id='uxTbl'+(++_uxTableSeq);
+  return `<div class="tableTopScroll" onscroll="const w=document.getElementById('${id}'); if(w) w.scrollLeft=this.scrollLeft"><div style="width:${minWidth}"></div></div><div class="tableWrap" id="${id}" onscroll="const p=this.previousElementSibling; if(p) p.scrollLeft=this.scrollLeft"><table class="uxTable" style="min-width:${minWidth}"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+}
+function uxKpi(label,val,kind='',onclick=''){
+  return `<div class="uxKpi ${kind}" ${onclick?`onclick="${onclick}"`:''}><small>${esc(label)}</small><b>${esc(val)}</b></div>`;
+}
+
+// Substitui a tabela global por versão corporativa com barra horizontal superior.
+table=function(rows,cols,actions){
+  if(!rows.length)return '<p class="msg warn">Sem registros.</p>';
+  const min=Math.max(760,(cols.length+(actions?1:0))*130)+'px';
+  const head='<tr>'+cols.map(c=>`<th>${c[0]}</th>`).join('')+(actions?'<th style="text-align:right">Ações</th>':'')+'</tr>';
+  const body=rows.map(r=>`<tr>${cols.map(c=>`<td>${c[2]?c[2](r):esc(r[c[1]])}</td>`).join('')}${actions?`<td><div class="uxActions">${actions(r)}</div></td>`:''}</tr>`).join('');
+  return uxScrollTable(head,body,min);
+};
+
+function renderDashboard(){
+  const el=document.getElementById('dashboard'); if(!el)return;
+  const all=[...db.flms.map(f=>({...f,tipo:'Módulo'})),...db.equipamentos];
+  const total=all.length, ativos=all.filter(x=>isOperacaoStatus(x.status)).length, falha=all.filter(x=>isFalhaStatus(x.status)).length, teste=all.filter(x=>isTesteStatus(x.status)).length, desat=all.filter(x=>isDesativadoStatus(x.status)).length;
+  const mod=db.flms.length, det=db.equipamentos.filter(e=>up(e.tipo).includes('DETECTOR')).length, acm=db.equipamentos.filter(e=>up(e.tipo).includes('ACIONADOR')).length;
+  const planosAbertos=(db.planos||[]).filter(p=>p.situacao!=='Concluído'&&p.situacao!=='Cancelado').length;
+  const disp=total?Math.round((ativos/total)*100):0;
+  const hoje=new Date().toISOString().slice(0,10); const ocorrHoje=(db.falhas||[]).filter(f=>String(f.data||'').slice(0,10)===hoje).length;
+  const lojasFalha=new Set((db.falhas||[]).filter(f=>isFalhaStatus(f.status)&&!f.resolvidaEm).map(f=>f.localId).filter(Boolean)).size;
+  const porPiso={}; all.forEach(x=>{const p=x.piso||'Sem piso';porPiso[p]=porPiso[p]||{ativo:0,falha:0,teste:0,total:0};porPiso[p].total++; if(isFalhaStatus(x.status))porPiso[p].falha++; else if(isTesteStatus(x.status))porPiso[p].teste++; else if(isOperacaoStatus(x.status))porPiso[p].ativo++;});
+  const pisoRows=Object.entries(porPiso).sort((a,b)=>pisoSortKey(a[0])-pisoSortKey(b[0])).map(([p,v])=>{const d=v.total?Math.round(v.ativo/v.total*100):0;return `<tr><td><b>${esc(p)}</b></td><td>${v.ativo}</td><td>${v.falha}</td><td>${v.teste}</td><td><div class="bar"><i class="ok" style="width:${d}%"></i></div><small>${d}%</small></td></tr>`}).join('')||'<tr><td colspan="5">Sem dados</td></tr>';
+  const falhasAtivas=(db.falhas||[]).filter(f=>isFalhaStatus(f.status)&&!f.resolvidaEm).slice().sort((a,b)=>String(b.data).localeCompare(String(a.data))).slice(0,12);
+  const falhaRows=falhasAtivas.map(f=>`<tr><td><div class="uxPrimary">${esc(locName(f.localId)||'Sem loja')}</div><div class="uxSub">${esc(f.piso||'—')} • ${esc(lacName(f.lacoId)||'—')}</div></td><td>${uxLocationBlock({painel:paiName(f.painelId),piso:f.piso,laco:lacName(f.lacoId),tipo:f.tipo,endereco:f.itemNome})}</td><td><span class="pill ${statusClass(f.status)}">${esc(normalizeStatus(f.status))}</span></td><td>${uxFormatDate(f.data)}</td></tr>`).join('')||'<tr><td colspan="4">Sem falhas abertas</td></tr>';
+  el.innerHTML=`
+  <div class="card"><div class="uxKpiGrid">
+    ${uxKpi('Disponibilidade Geral',disp+'%','good')}${uxKpi('Equipamentos Ativos',ativos,'good')}${uxKpi('Equipamentos em Falha',falha,'bad')}${uxKpi('Equipamentos em Teste',teste,'warn')}${uxKpi('Equipamentos Desativados',desat,'')}${uxKpi('Módulos Instalados',mod,'info')}${uxKpi('Detectores Instalados',det,'info')}${uxKpi('Acionadores Instalados',acm,'info')}${uxKpi('Lojas Vinculadas',db.locais.length,'info')}${uxKpi('Planos em Aberto',planosAbertos,'warn',"currentView='plano';render()")}${uxKpi('Lojas em Falha',lojasFalha,'bad',"currentView='falhas';render()")}${uxKpi('Ocorrências Hoje',ocorrHoje,'warn')}
+  </div></div>
+  <div class="split2">
+    <div class="card"><h3 class="sectionTitle">Status por piso</h3><div class="tableWrap" style="max-height:360px"><table class="uxTable" style="min-width:0"><thead><tr><th>Piso</th><th>Ativos</th><th>Falhas</th><th>Teste</th><th>Disponibilidade</th></tr></thead><tbody>${pisoRows}</tbody></table></div></div>
+    <div class="card"><h3 class="sectionTitle">Lojas com falha</h3><div class="tableWrap" style="max-height:360px"><table class="uxTable" style="min-width:0"><thead><tr><th>Loja</th><th>Localização</th><th>Status</th><th>Abertura</th></tr></thead><tbody>${falhaRows}</tbody></table></div></div>
+  </div>`;
+}
+
+function renderFlms(){
+  let f=filters.flm||{};let paineis=unique(db.paineis.map(p=>p.nome));let lacos=unique(db.lacos.map(l=>l.nome));let pisos=unique(db.flms.map(x=>x.piso).concat(db.lacos.map(x=>x.piso),db.locais.map(x=>x.piso),db.equipamentos.map(x=>x.piso)));let lojas=unique(db.locais.map(x=>x.nome));
+  let rows=db.flms.map(flm=>{let ps=db.portas.filter(p=>p.flmId===flm.id);let portas=ps.map(p=>`${isFalhaStatus(p.status)?'❌':'✅'} P${p.numero}: ${locName(p.localId)||'Sem vínculo'}`).join('<br>');let nomesPortas=ps.map(p=>locName(p.localId)).filter(Boolean).join(' | ');return {...flm,painel:paiName(flm.painelId),laco:lacName(flm.lacoId),portas,lojas:nomesPortas}}).filter(r=>(!f.painel||r.painel===f.painel)&&(!f.laco||r.laco===f.laco)&&(!f.piso||r.piso===f.piso)&&(!f.loja||up(r.lojas).includes(up(f.loja))));
+  document.getElementById('flms').innerHTML=`<div class="card"><button class="btn" onclick="formFlm()">+ Criar novo módulo</button><div class="toolbar"><div class="field"><label>Painel</label><select onchange="filters.flm={...filters.flm,painel:this.value};render()">${selectOpts(paineis,f.painel)}</select></div><div class="field"><label>Laço</label><select onchange="filters.flm={...filters.flm,laco:this.value};render()">${selectOpts(lacos,f.laco)}</select></div><div class="field"><label>Piso</label><select onchange="filters.flm={...filters.flm,piso:this.value};render()">${selectOpts(pisos,f.piso)}</select></div><div class="field"><label>Loja / Área</label><select onchange="filters.flm={...filters.flm,loja:this.value};render()">${selectOpts(lojas,f.loja)}</select></div><button class="btn secondary" onclick="filters.flm={};render()">Limpar</button></div></div><div class="card"><h3 class="sectionTitle">Módulos físicos e portas</h3>${table(rows,[['Localização','loc',r=>uxLocationBlock({painel:r.painel,piso:r.piso,laco:r.laco,tipo:'Módulo',endereco:r.endereco})],['Modelo','modelo'],['Portas','portas',r=>r.portas||'—'],['Status','status',r=>`<span class="pill ${statusClass(flmStatusAgregado(r.id))}">${esc(flmStatusAgregado(r.id))}</span>`]],r=>`${uxAction('Editar','✏️',`formFlm('${r.id}')`)}${uxAction('Portas','🔌',`managePortas('${r.id}')`)}${uxAction('Excluir','🗑',`del('flms','${r.id}')`,'danger')}`)}</div>`;
+}
+
+function renderEquipamentos(){
+  let f=filters.eq||{};let tipos=unique(db.equipamentos.map(e=>e.tipo));let modelos=unique(db.equipamentos.map(e=>e.modelo));let status=unique(db.equipamentos.map(e=>normalizeStatus(e.status)));
+  let rows=db.equipamentos.filter(e=>(!f.painel||paiName(e.painelId)===f.painel)&&(!f.laco||lacName(e.lacoId)===f.laco)&&(!f.tipo||e.tipo===f.tipo)&&(!f.modelo||e.modelo===f.modelo)&&(!f.status||normalizeStatus(e.status)===f.status)&&(!f.q||JSON.stringify(e).toUpperCase().includes(up(f.q)))).map(e=>{const porta=e.portaId?db.portas.find(p=>p.id===e.portaId):null;return {...e,painel:paiName(e.painelId),laco:lacName(e.lacoId),portaNumero:porta?.numero||'',status:normalizeStatus(e.status)}});
+  document.getElementById('equipamentos').innerHTML=`<div class="card"><button class="btn" onclick="formEquip()">+ Criar detector/acionador</button><div class="toolbar"><div class="field"><label>Painel</label><select onchange="filters.eq={...filters.eq,painel:this.value};render()">${selectOpts(unique(db.paineis.map(p=>p.nome)),f.painel)}</select></div><div class="field"><label>Laço</label><select onchange="filters.eq={...filters.eq,laco:this.value};render()">${selectOpts(unique(db.lacos.map(l=>l.nome)),f.laco)}</select></div><div class="field"><label>Tipo</label><select onchange="filters.eq={...filters.eq,tipo:this.value};render()">${selectOpts(tipos,f.tipo)}</select></div><div class="field"><label>Modelo</label><select onchange="filters.eq={...filters.eq,modelo:this.value};render()">${selectOpts(modelos,f.modelo)}</select></div><div class="field"><label>Status</label><select onchange="filters.eq={...filters.eq,status:this.value};render()">${selectOpts(status,f.status)}</select></div><div class="field"><label>Busca</label><input value="${esc(f.q)}" data-filter-input="1" data-filter-group="eq" data-filter-key="q" data-focus-key="equipBusca"></div></div></div><div class="card"><h3 class="sectionTitle">Detectores / Acionadores</h3>${table(rows,[['Localização','loc',r=>uxLocationBlock({painel:r.painel,piso:r.piso,laco:r.laco,tipo:r.tipo,endereco:r.endereco,porta:r.portaNumero})],['Modelo','modelo'],['Loja / Área','localId',r=>`<div class="uxPrimary">${esc(locName(r.localId)||'—')}</div>`],['Status','status',r=>`<span class="pill ${statusClass(r.status)}">${esc(r.status)}</span>`]],r=>`${uxAction('Histórico','🕒',`openEquip('${r.id}')`)}${uxAction('Editar','✏️',`formEquip('${r.id}')`)}${uxAction('Excluir','🗑',`del('equipamentos','${r.id}')`,'danger')}`)}</div>`;
+}
+
+function renderLocais(){
+  let q=filters.locaisQ||'';let rows=db.locais.filter(l=>!q||JSON.stringify(l).toUpperCase().includes(up(q))).map(l=>{const porta=db.portas.find(p=>p.id===l.portaId);const flm=flmById(l.flmId);return {...l,painel:paiName(l.painelId),laco:lacName(l.lacoId),flm:flm?.endereco||'',porta:porta?.numero||'',qtd:db.equipamentos.filter(e=>e.localId===l.id).length,lucVal:lucValorLocal(l)}});
+  document.getElementById('locais').innerHTML=`<div class="card"><button class="btn" onclick="formLocal()">+ Criar loja/área</button><div class="toolbar"><div class="field"><label>Pesquisar</label><input value="${esc(q)}" data-filter-input="1" data-filter-path="locaisQ" data-focus-key="locaisBusca" placeholder="Loja, LUC, piso, painel..."></div></div></div><div class="card"><h3 class="sectionTitle">Lojas / Áreas</h3>${table(rows,[['Loja / Área','nome',r=>`<div class="uxPrimary" title="${uxAttr(lucNomeOficialLocal(r)||r.nome)}">${esc(lucNomeOficialLocal(r)||r.nome)}</div><div class="uxSub">LUC ${esc(r.lucVal||'—')} • ${esc(r.tipo||'—')}</div>`],['Localização','loc',r=>uxLocationBlock({painel:r.painel,piso:r.piso,laco:r.laco,tipo:'FLM',endereco:r.flm,porta:r.porta})],['Equip.','qtd'],['Status','status',r=>`<span class="pill ${statusClass(r.status)}">${esc(normalizeStatus(r.status))}</span>`]],r=>`${uxAction('Histórico','🕒',`openLocal('${r.id}')`)}${uxAction('Editar','✏️',`formLocal('${r.id}')`)}${uxAction('Excluir','🗑',`del('locais','${r.id}')`,'danger')}`)}</div>`;
+}
+
+function renderFalhas(){
+  let f=filters.falhas||{};let rows=db.falhas.filter(x=>(!f.status||normalizeStatus(x.status)===f.status)&&(!f.tipo||x.tipo===f.tipo)&&(!f.q||JSON.stringify(x).toUpperCase().includes(up(f.q)))).map(x=>({...x,painel:paiName(x.painelId),laco:lacName(x.lacoId),loja:locName(x.localId),sistema:sistemaDaFalha(x),situacao:uxSituacaoFalha(x)}));
+  document.getElementById('falhas').innerHTML=`<div class="card"><button class="btn" onclick="formFalha()">+ Registrar falha / operação</button><div class="toolbar"><div class="field"><label>Status</label><select onchange="filters.falhas={...filters.falhas,status:this.value};render()">${selectOpts(unique(db.falhas.map(x=>normalizeStatus(x.status))),f.status)}</select></div><div class="field"><label>Situação</label><select onchange="filters.falhas={...filters.falhas,q:this.value};render()"><option value="">Todas</option><option value="Aberta" ${f.q==='Aberta'?'selected':''}>Aberta</option><option value="Resolvida" ${f.q==='Resolvida'?'selected':''}>Resolvida</option></select></div><div class="field"><label>Pesquisar</label><input value="${esc(f.q&&!['Aberta','Resolvida'].includes(f.q)?f.q:'')}" data-filter-input="1" data-filter-group="falhas" data-filter-key="q" data-focus-key="falhasBusca" placeholder="Loja, item, laço..."></div></div></div><div class="card"><h3 class="sectionTitle">Histórico e falhas</h3>${table(rows,[['Data','data',r=>uxFormatDate(r.data)],['Loja / Área','loja',r=>`<div class="uxPrimary">${esc(r.loja||'—')}</div><div class="uxSub">${esc(r.sistema||'SDAI')}</div>`],['Localização','loc',r=>uxLocationBlock({painel:r.painel,piso:r.piso,laco:r.laco,tipo:r.tipo,endereco:r.itemNome})],['Status','status',r=>`<span class="pill ${statusClass(r.status)}">${esc(normalizeStatus(r.status))}</span>`],['Situação','situacao',r=>uxSituacaoBadge(r.situacao)],['Responsável','responsavel',r=>esc(r.responsavel||'—')]],r=>`${uxAction('Editar','✏️',`formFalha('${r.id}')`)}${uxAction('Excluir','🗑',`del('falhas','${r.id}')`,'danger')}`)}</div>`;
+}
+
+function renderPlano(){
+  let planos=db.planos||[];let q=(document.getElementById('plBuscaPlano')?.value||'').toUpperCase();let fprio=document.getElementById('plPrio')?.value||'',fsit=document.getElementById('plSit')?.value||'',fresp=document.getElementById('plResp')?.value||'',ini=document.getElementById('plIni')?.value||'',fim=document.getElementById('plFim')?.value||'';let rows=[];
+  planos.forEach(p=>{let f=db.falhas.find(x=>x.id===p.falhaId)||{};let inf=f.id?itemInfoFromFalha(f):{};let fotos=normalizeFotos(p.fotos||[]);rows.push({planoId:p.id,falhaId:p.falhaId||'',prioridade:p.prioridade||'Média',laco:inf.laco||p.laco||'',piso:inf.piso||p.piso||'',local:inf.local||p.local||'',itemNome:inf.itemNome||p.item||'',statusFalha:f.status||p.statusFalha||'',responsavel:p.responsavel||'',desde:f.data||p.criadoEm||'',criadoEm:p.criadoEm||'',concluidoEm:p.concluidoEm||'',situacao:p.situacao||'Aberto',direcionamento:p.direcionamento||getDirecionamento(f.status||p.statusFalha),fotoCount:fotos.length});});
+  falhasAtivasParaPlano().forEach(f=>{if(planoForFalha(f.id))return;let inf=itemInfoFromFalha(f);rows.push({planoId:'',falhaId:f.id,prioridade:'Média',laco:inf.laco||'',piso:inf.piso||'',local:inf.local||'',itemNome:inf.itemNome||'',statusFalha:f.status||'',responsavel:'',desde:f.data||'',criadoEm:'',concluidoEm:'',situacao:'Sem plano',direcionamento:getDirecionamento(f.status),fotoCount:0});});
+  function inPeriodo(x){if(!ini&&!fim)return true;let datas=[x.desde,x.criadoEm,x.concluidoEm].filter(Boolean).map(String);return datas.some(d=>(!ini||d>=ini)&&(!fim||d<=fim+'T23:59'))}
+  let filtrados=rows.filter(x=>(!q||JSON.stringify(x).toUpperCase().includes(q))&&(!fprio||x.prioridade===fprio)&&(!fsit||x.situacao===fsit)&&(!fresp||x.responsavel===fresp)&&inPeriodo(x)).sort((a,b)=>prioridadePeso(a.prioridade)-prioridadePeso(b.prioridade)||String(a.desde).localeCompare(String(b.desde)));
+  document.getElementById('plano').innerHTML=`<div class="card"><div class="toolbar"><div class="field"><label>Pesquisar</label><input id="plBuscaPlano" placeholder="Loja, laço, item..." value="${esc(document.getElementById('plBuscaPlano')?.value||'')}"></div><div class="field"><label>Prioridade</label><select id="plPrio">${selectOpts(planoPrioridades(),fprio)}</select></div><div class="field"><label>Situação</label><select id="plSit">${selectOpts(['Sem plano','Aberto','Em andamento','Concluído','Cancelado'],fsit)}</select></div><div class="field"><label>Responsável</label><select id="plResp">${selectOpts(planoResponsaveis(),fresp)}</select></div><div class="field"><label>Inicial</label><input id="plIni" type="date" value="${esc(ini)}"></div><div class="field"><label>Final</label><input id="plFim" type="date" value="${esc(fim)}"></div><button class="btn" onclick="renderPlano()">Filtrar</button><button class="btn secondary" onclick="gerarPdfPlanoAcao()">PDF Roteiro</button></div></div><div class="card"><h3 class="sectionTitle">Plano de Ação <span class="uxSub">${filtrados.length} registro(s)</span></h3>${table(filtrados,[['Prioridade','prioridade',r=>uxPriorityBadge(r.prioridade)],['Loja / Área','local',r=>`<div class="uxPrimary">${esc(r.local||'—')}</div>`],['Localização','loc',r=>uxLocationBlock({piso:r.piso,laco:r.laco,tipo:'Item',endereco:r.itemNome})],['Status','statusFalha',r=>`<span class="pill ${statusClass(r.statusFalha)}">${esc(normalizeStatus(r.statusFalha)||'—')}</span>`],['Direcionamento Técnico','direcionamento',r=>`<div class="uxPreview" title="${uxAttr(r.direcionamento)}">${esc(r.direcionamento||'—')}</div>`],['Responsável','responsavel'],['Situação','situacao',r=>uxSituacaoBadge(r.situacao)],['Abertura','desde',r=>uxFormatDate(r.desde)],['Conclusão','concluidoEm',r=>uxFormatDate(r.concluidoEm)],['Evidências','fotoCount',r=>`<div class="uxEvidence">${r.fotoCount?`📷 ${r.fotoCount}`:'—'}</div>`]],r=>`${r.planoId?uxAction('Editar','✏️',`formPlano('${r.planoId}')`):`<button class="btn small" onclick="formPlano('','${r.falhaId}')">+ Plano</button>`}${r.planoId&&r.situacao!=='Concluído'?uxAction('Concluir','✔',`concluirPlano('${r.planoId}')`):''}${r.planoId?uxAction('Excluir','🗑',`del('planos','${r.planoId}')`,'danger'):''}`)}</div>`;
+  ['plBuscaPlano','plPrio','plSit','plResp','plIni','plFim'].forEach(id=>{let el=document.getElementById(id);if(el)el.onchange=renderPlano});
 }
 
 function bootSDAIManager(){
