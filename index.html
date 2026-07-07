@@ -2491,8 +2491,8 @@ function renderPlano(){
       <td style="padding:5px 8px;max-width:180px">${dirPreview}</td>
       <td style="padding:5px 8px;white-space:nowrap;font-size:12px">${esc(r.responsavel||'—')}</td>
       <td style="padding:5px 8px">${situBadge(r.situacao)}</td>
-      <td style="padding:5px 8px;white-space:nowrap;font-size:12px;text-align:center">${fmtDataBR(r.desde)}</td>
-      <td style="padding:5px 8px;white-space:nowrap;font-size:12px;text-align:center">${r.concluidoEm?fmtDataBR(r.concluidoEm):'—'}</td>
+      <td style="padding:5px 8px;white-space:nowrap;font-size:12px;text-align:center">${dsDateHtml(r.desde)}</td>
+      <td style="padding:5px 8px;white-space:nowrap;font-size:12px;text-align:center">${r.concluidoEm?dsDateHtml(r.concluidoEm):'—'}</td>
       <td style="padding:5px 8px;text-align:center">${evid}</td>
       <td style="padding:5px 8px">${acoes}</td>
     </tr>`;
