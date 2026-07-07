@@ -1459,7 +1459,11 @@ function formFalha(i=''){
     <div class="field"><label>Origem</label><select id="mOrigem"><option ${o.origem==='Painel Bosch'?'selected':''}>Painel Bosch</option><option ${o.origem==='Teste em campo'?'selected':''}>Teste em campo</option><option ${o.origem==='Inspeção'?'selected':''}>Inspeção</option><option ${o.origem==='Importação'?'selected':''}>Importação</option></select></div>
     <div class="field"><label>Motivo</label><input id="mMotivo" value="${esc(o.motivo)}" placeholder="Ex.: curto, aberto, acionamento, normalização"></div>
     <div class="field" style="grid-column:1/-1"><label>Status do sistema</label><div class="toolbar statusChecks">
-      ${STATUS_SISTEMA_OPTIONS.map((st,idx)=>`<label class="check"><input type="checkbox" name="mStatusCheck" value="${st}" ${st===statusAtual?'checked':''}> ${st}</label>`).join('')}
+      ${STATUS_SISTEMA_OPTIONS.map((st,idx)=>{
+        const label=STATUS_SISTEMA_LABELS[st]||st;
+        if(st==='__renomear__')return `<label class="check" style="font-style:italic;color:var(--l3a-text-muted)"><input type="checkbox" name="mStatusCheck" value="__renomear__"> ${label}</label>`;
+        return `<label class="check"><input type="checkbox" name="mStatusCheck" value="${st}" ${st===statusAtual?'checked':''}> ${st}</label>`;
+      }).join('')}
     </div></div>
     <div class="field" style="grid-column:1/-1"><label>Observação técnica</label><textarea id="mObs" placeholder="Detalhe técnico do lançamento">${esc(o.obs)}</textarea></div>
   </div><br><button class="btn" onclick="saveFalha('${i}')">Salvar lançamento</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`);
@@ -1470,6 +1474,12 @@ function saveFalha(i){
   let sel=document.getElementById('mItem')?.value||''; if(!sel){alert('Busque e selecione um item antes de salvar. Se o item já tiver lançamento, abra o lançamento existente para editar o status.');return}
   if(findFalhaAbertaPorItem(sel,i)){alert('Este item já tem um lançamento registrado. Não é permitido duplicar — abra o lançamento existente para editar o status.');return}
   let checked=document.querySelector('input[name="mStatusCheck"]:checked'); if(!checked){alert('Marque um status do sistema.');return}
+  // Trata opção "Renomear (personalizado)..."
+  if(checked.value==='__renomear__'){
+    const custom=prompt('Digite o nome do status personalizado para este registro:','');
+    if(!custom||!custom.trim()){alert('Nome não informado. Selecione um status antes de salvar.');return}
+    checked={value:custom.trim()};
+  }
   let isFlm=sel.startsWith('flm:');
   let flmId=isFlm?sel.split(':')[1]:''; let portaId=isFlm&&sel.includes(':porta:')?sel.split(':porta:')[1]:'';
   let item=isFlm?flmById(flmId):db.equipamentos.find(x=>x.id===sel); if(!item)return;
