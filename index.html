@@ -709,7 +709,7 @@ async function senhaConfere(senhaDigitada,senhaArmazenada){
 const id=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
 const n=s=>String(s??'').trim(); const up=s=>n(s).toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
 const STATUS_SISTEMA_OPTIONS=['Em operação','Laço aberto','Módulo aberto','Módulo em curto','Incêndio disparado','Desativação','Em teste','__renomear__'];
-const STATUS_SISTEMA_LABELS={__renomear__:'Renomear (personalizado)...'};
+const STATUS_SISTEMA_LABELS={__renomear__:'Renomear'};
 function statusSistemaOption(val,selected){
   const label=STATUS_SISTEMA_LABELS[val]||val;
   const isSep=val==='__renomear__';
@@ -1461,7 +1461,7 @@ function formFalha(i=''){
     <div class="field" style="grid-column:1/-1"><label>Status do sistema</label><div class="toolbar statusChecks">
       ${STATUS_SISTEMA_OPTIONS.map((st,idx)=>{
         const label=STATUS_SISTEMA_LABELS[st]||st;
-        if(st==='__renomear__')return `<label class="check" style="font-style:italic;color:var(--l3a-text-muted)"><input type="checkbox" name="mStatusCheck" value="__renomear__"> ${label}</label>`;
+        if(st==='__renomear__')return `<label class="check"><input type="checkbox" name="mStatusCheck" value="__renomear__"> ${label}</label>`;
         return `<label class="check"><input type="checkbox" name="mStatusCheck" value="${st}" ${st===statusAtual?'checked':''}> ${st}</label>`;
       }).join('')}
     </div></div>
