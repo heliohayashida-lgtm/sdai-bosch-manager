@@ -1461,7 +1461,7 @@ function queueFotoUploads(planoId,files){
 function updateFotoUploadStatus(){
   const el=document.getElementById('mFotoStatus'); if(!el)return;
   const pend=_fotoUploadQueue.length+Object.keys(_fotoUploadPending).length;
-  el.textContent=pend?`Enviando ${pend} foto(s)... não feche esta janela.`:'';
+  el.textContent=pend?`Enviando ${pend} foto(s)... pode levar até 30s. Se der erro, você será avisado — não precisa ficar esperando calado.`:'';
 }
 async function processFotoQueue(){
   if(_fotoUploadBusy||!_fotoUploadQueue.length)return;
@@ -1470,13 +1470,22 @@ async function processFotoQueue(){
   try{
     const dataUrl=await compressImageFile(job.file);
     const reqId=id();
-    _fotoUploadPending[reqId]={planoId:job.planoId};
+    _fotoUploadPending[reqId]={planoId:job.planoId,filename:job.file.name||'foto'};
     updateFotoUploadStatus();
     const form=document.createElement('form');
     form.method='POST'; form.action=API_URL; form.target='photoUploadFrame'; form.style.display='none';
     const fields={action:'uploadFoto',token:getApiToken(),reqId,planoId:job.planoId,filename:job.file.name||'foto.jpg',imageData:dataUrl};
     Object.entries(fields).forEach(([k,v])=>{const inp=document.createElement('input');inp.type='hidden';inp.name=k;inp.value=v;form.appendChild(inp)});
     document.body.appendChild(form); form.submit(); setTimeout(()=>form.remove(),1500);
+    setTimeout(()=>{
+      if(_fotoUploadPending[reqId]){
+        const nome=_fotoUploadPending[reqId].filename;
+        delete _fotoUploadPending[reqId];
+        alert(`A foto "${nome}" não confirmou o envio em 30 segundos e foi cancelada — provavelmente falhou por conexão ou por um problema no Apps Script (Code.gs). Tente anexar de novo; se continuar travando, verifique a implantação do Apps Script.`);
+        updateFotoUploadStatus();
+        _fotoUploadBusy=false; processFotoQueue();
+      }
+    },30000);
   }catch(e){
     alert('Não foi possível preparar a foto: '+e.message);
     _fotoUploadBusy=false; processFotoQueue();
@@ -1489,8 +1498,9 @@ function handleFotoUploadResult(data){
     if(data.ok&&data.url){
       const plano=(db.planos||[]).find(p=>p.id===pend.planoId);
       if(plano){plano.fotos=plano.fotos||[];plano.fotos.push(data.url);markDirty('foto anexada ao plano');renderPlano();const grid=document.getElementById('mFotoGrid');if(grid)grid.innerHTML=fotosThumbsHtml(plano.fotos)}
+      if(data.conta&&!window._contaFotoAvisada){window._contaFotoAvisada=true;const elc=document.getElementById('mFotoConta');if(elc)elc.innerHTML=`Foto salva na conta <b>${esc(data.conta)}</b>${data.pastaUrl?` — <a href="${esc(data.pastaUrl)}" target="_blank" rel="noopener">abrir pasta no Drive</a>`:''}.`}
     } else {
-      alert('Falha ao enviar uma foto: '+(data.error||'erro desconhecido no Apps Script'));
+      alert('Falha ao enviar uma foto: '+(data.error||'erro desconhecido no Apps Script')+(data.conta?`\n\nConta em que o Apps Script está rodando: ${data.conta}`:''));
     }
     delete _fotoUploadPending[data.reqId];
   }
@@ -1509,7 +1519,7 @@ function formPlano(i='',falhaId=''){
     <div class="field" style="grid-column:1/-1"><label>Material necessário / quantidade</label><input id="mMaterial" value="${esc(o.material)}" placeholder="Ex.: FLM-420/4-CON-S/D - 01 unidade"></div>
     <div class="field" style="grid-column:1/-1"><label>Justificativa técnica</label><textarea id="mJust">${esc(o.justificativa||f.motivo||f.obs||'')}</textarea></div>
     <div class="field" style="grid-column:1/-1"><label>Providência executada / próxima ação</label><textarea id="mProv">${esc(o.providencia)}</textarea></div>
-    ${i?`<div class="field" style="grid-column:1/-1"><label>Fotos do serviço (galeria do dispositivo, sem limite de quantidade)</label><input type="file" id="mFotoInput" accept="image/*" multiple onchange="queueFotoUploads('${i}',this.files);this.value=''"><small id="mFotoStatus" class="note"></small><div id="mFotoGrid" style="margin-top:8px">${fotosThumbsHtml(o.fotos)}</div></div>`:`<div class="field" style="grid-column:1/-1"><p class="mutedLine">Salve o plano primeiro para poder anexar fotos.</p></div>`}
+    ${i?`<div class="field" style="grid-column:1/-1"><label>Fotos do serviço (galeria do dispositivo, sem limite de quantidade)</label><input type="file" id="mFotoInput" accept="image/*" multiple onchange="queueFotoUploads('${i}',this.files);this.value=''"><small id="mFotoStatus" class="note"></small><small id="mFotoConta" class="note"></small><div id="mFotoGrid" style="margin-top:8px">${fotosThumbsHtml(o.fotos)}</div></div>`:`<div class="field" style="grid-column:1/-1"><p class="mutedLine">Salve o plano primeiro para poder anexar fotos.</p></div>`}
   </div><br><button class="btn" onclick="savePlano('${i}','${falhaId||o.falhaId||''}')">Salvar plano</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`)
 }
 function savePlano(i,falhaId=''){
