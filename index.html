@@ -1234,7 +1234,6 @@ function renderEquipamentos(){
     return `<tr>
       <td>${loc}</td>
       <td style="font-size:12px;font-weight:600">${esc(r.modelo||'—')}</td>
-      <td style="font-size:12px">${r.ligacao}</td>
       <td><select class="dsStatusSel" data-prev-status="${esc(r.status)}" onchange="handleStatusSelectChange(this,v=>quickStatusChange('${r.id}',v))" style="font-size:12px;padding:4px 7px;border-radius:8px;border:1px solid var(--l3a-border)">${STATUS_SISTEMA_OPTIONS.map(st=>statusSistemaOption(st,r.status)).join('')}</select></td>
       <td><div class="dsIcoGroup">
         <button class="dsIco" onclick="openEquip('${r.id}')" title="Histórico">🕒</button>
@@ -1262,7 +1261,7 @@ function renderEquipamentos(){
     <p class="mutedLine" style="margin-bottom:8px">Ao mudar o Status pra uma condição de falha, o sistema registra a Falha e abre o formulário de conclusão automaticamente.</p>
     <div class="dsTableWrap">
       <table class="dsTable">
-        <thead><tr><th>Localização</th><th>Modelo</th><th>Portas / Ligações</th><th>Status</th><th>Ações</th></tr></thead>
+        <thead><tr><th>Localização</th><th>Modelo</th><th>Status</th><th>Ações</th></tr></thead>
         <tbody>${trs||`<tr><td colspan="5"><div class="emptyState">Nenhum detector/acionador cadastrado.</div></td></tr>`}</tbody>
       </table>
     </div>`;
@@ -2405,16 +2404,6 @@ function renderDashboard(){
    aplicado ao Dashboard. Bloco 100% ADITIVO — nenhuma função removida.
    ========================================================================= */
 function toggleFalhaPiso(label){filters.falhas=filters.falhas||{};filters.falhas.piso=(filters.falhas.piso===label?'':label);render()}
-function renderFalhas(){
-  let f=filters.falhas||{};
-  let allRows=db.falhas.filter(x=>(!f.status||normalizeStatus(x.status)===f.status)&&(!f.tipo||x.tipo===f.tipo)&&(!f.q||JSON.stringify(x).toUpperCase().includes(up(f.q)))).map(x=>({...x,painel:paiName(x.painelId),laco:lacName(x.lacoId),loja:locName(x.localId),sistema:sistemaDaFalha(x)}));
-  const pisoMap={};allRows.forEach(x=>{const p=n(x.piso)||'Sem piso';pisoMap[p]=(pisoMap[p]||0)+1});
-  const pisoRows=Object.entries(pisoMap).map(([label,value])=>({label,value})).sort((a,b)=>pisoSortKey(a.label)-pisoSortKey(b.label));
-  const maxPiso=Math.max(1,...pisoRows.map(r=>r.value));
-  const pisoChartHtml=pisoRows.length?`<div class="chartBars">${pisoRows.map(r=>`<div class="chartLine clickable ${f.piso===r.label?'selected':''}" onclick="toggleFalhaPiso('${esc(r.label)}')"><b>${esc(r.label)}</b><div class="chartTrack"><i style="width:${Math.max(2,pct(r.value,maxPiso))}%"></i></div><strong>${r.value}</strong></div>`).join('')}</div>`:'<div class="emptyState">Sem lançamentos para os filtros atuais.</div>';
-  const rows=f.piso?allRows.filter(x=>(n(x.piso)||'Sem piso')===f.piso):allRows;
-  document.getElementById('falhas').innerHTML=`<div class="card"><button class="btn" onclick="formFalha()">+ Registrar falha / operação</button><div class="toolbar"><div class="field"><label>Tipo</label><select onchange="filters.falhas={...filters.falhas,tipo:this.value};render()">${selectOpts(unique(db.falhas.map(x=>x.tipo)),f.tipo)}</select></div><div class="field"><label>Status</label><select onchange="filters.falhas={...filters.falhas,status:this.value};render()">${selectOpts(unique(db.falhas.map(x=>normalizeStatus(x.status))),f.status)}</select></div><div class="field"><label>Piso</label><select onchange="filters.falhas={...filters.falhas,piso:this.value};render()">${selectOpts(pisoRows.map(r=>r.label),f.piso)}</select></div><div class="field"><label>Busca</label><input value="${esc(f.q)}" data-filter-input="1" data-filter-group="falhas" data-filter-key="q" data-focus-key="falhasBusca"></div></div></div><div class="chartPanel"><h4>Lançamentos por piso</h4><p class="mutedLine" style="margin-bottom:10px">Clique em um piso para filtrar a tabela abaixo</p>${pisoChartHtml}</div><div class="card"><h3 class="sectionTitle">Histórico e falhas${f.piso?` — Piso: ${esc(f.piso)}`:''}</h3>${table(rows,[['Data','data',r=>fmtDataHora(r.data)],['Sistema','sistema',r=>`<span class="pill ${r.sistema==='CO2'?'warn':'ok'}">${esc(r.sistema)}</span>`],['Laço','laco'],['Piso','piso'],['Tipo','tipo'],['Item','itemNome'],['Loja','loja'],['Status','status',r=>`<span class="pill ${statusClass(r.status)}">${esc(r.status)}</span>`],['Resolvida em','resolvidaEm',r=>fmtDataHora(r.resolvidaEm)]],r=>`<button class="btn small secondary" onclick="formFalha('${r.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1-4.2L15.5 5.3a1.5 1.5 0 0 1 2.1 0l1.1 1.1a1.5 1.5 0 0 1 0 2.1L8.2 19 4 20Z"/><path d="M13.8 7 17 10.2"/></svg></button> <button class="btn small danger" onclick="del('falhas','${r.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2"/><path d="M6.5 7 7.3 19a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4L17.5 7"/><path d="M10 11v6M14 11v6"/></svg></button>`)}</div>`;
-}
 
 function setPlanoCategoriaFiltro(cat){const el=document.getElementById('plCat');if(el)el.value=(el.value===cat?'':cat);renderPlano()}
 function dsBadgeClass(status){
@@ -3062,26 +3051,6 @@ ensureLocal=function(nome,tipo,painelId,lacoId,piso,flmId,portaId){
   if(loc.chaveLogica===undefined)loc.chaveLogica=lucChaveLogicaLocal(loc);
   return loc;
 };
-function renderLocais(){
-  ensureLucSchema();
-  let q=filters.locaisQ||'';
-  let rows=(db.locais||[])
-    .filter(l=>lucBuscaLocal(l,q))
-    .map(l=>({
-      ...l,
-      nomeOficialDisplay:lucNomeOficialLocal(l),
-      lucDisplay:lucDisplayLocal(l),
-      nomeAntigo:lucNomeAntigoLocal(l)||'—',
-      chaveLogica:lucChaveLogicaLocal(l),
-      painel:paiName(l.painelId),
-      laco:lacName(l.lacoId),
-      flm:flmById(l.flmId)?.endereco||'',
-      porta:db.portas.find(p=>p.id===l.portaId)?.numero||'',
-      qtd:db.equipamentos.filter(e=>e.localId===l.id).length,
-      sistemaDisplay:l.sistema||'SDAI'
-    }));
-  document.getElementById('locais').innerHTML=`<div class="card"><button class="btn" onclick="formLocal()">+ Criar nova loja/área</button><div class="toolbar"><div class="field"><label>Busca</label><input value="${esc(q)}" data-filter-input="1" data-filter-path="locaisQ" data-focus-key="locaisBusca" placeholder="Nome oficial, LUC, nome antigo, piso, painel, laço..."></div></div><p class="msg warn"><b>Regra LUC:</b> quando houver associação com a Base LUC, o sistema exibe o Nome Oficial e usa o LUC como referência lógica. Sem vínculo, o LUC permanece em branco. <b>Sistema CO2/SDAI:</b> quando a mesma loja tem um ponto de detecção (SDAI) e um ponto de descarga (CO2) em laços diferentes, isso é normal — os dois aparecem na lista, cada um com sua etiqueta de Sistema, e compartilham o mesmo Nome Oficial/LUC.</p></div><div class="card"><h3 class="sectionTitle">Lojas / Áreas vinculadas às portas</h3>${table(rows,[['Nome Oficial','nomeOficialDisplay'],['LUC','lucDisplay',r=>r.lucDisplay],['Sistema','sistemaDisplay',r=>`<span class="pill ${r.sistemaDisplay==='CO2'?'warn':'ok'}">${esc(r.sistemaDisplay)}</span>`],['Classificação','tipo'],['Painel','painel'],['Laço','laco'],['Piso','piso'],['FLM','flm'],['Porta','porta'],['Qtd. equip.','qtd'],['Status','status',r=>`<span class="pill ${statusClass(r.status)}">${esc(r.status)}</span>`]],r=>`<button class="btn small secondary" onclick="openLocal('${r.id}')">Histórico</button> <button class="btn small secondary" onclick="formLocal('${r.id}')" title="Editar Nome Oficial e LUC"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1-4.2L15.5 5.3a1.5 1.5 0 0 1 2.1 0l1.1 1.1a1.5 1.5 0 0 1 0 2.1L8.2 19 4 20Z"/><path d="M13.8 7 17 10.2"/></svg> Editar</button> <button class="btn small danger" onclick="del('locais','${r.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2"/><path d="M6.5 7 7.3 19a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4L17.5 7"/><path d="M10 11v6M14 11v6"/></svg></button>`)}</div>`;
-}
 function lucBaseLojaOptionsHtml(selectedId){
   const list=(db.baseLojas||[]).slice().sort((a,b)=>(a.nome||'').localeCompare(b.nome||'',"pt-BR"));
   const opts=list.map(b=>`<option value="${esc(b.id)}" data-nome="${esc(b.nome||'')}" data-luc="${esc(b.luc||'')}" ${selectedId===b.id?'selected':''}>${esc(b.nome||'(sem nome)')} — LUC ${esc(b.luc||'—')}</option>`).join('');
