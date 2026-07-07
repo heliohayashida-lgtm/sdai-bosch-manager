@@ -1704,6 +1704,19 @@ function falhaSelectItem(itemId,editingId=''){
   }
   if(hid)hid.value=itemId||'';
   box.innerHTML=`<div class="check" style="width:100%;justify-content:flex-start;gap:10px"><span class="pill ok">Selecionado</span><b>${esc(item.n)}</b></div><p class="mutedLine" style="margin-top:6px">${esc(paiName(item.painelId)||'—')} · ${esc(lacName(item.lacoId)||'—')} · Piso ${esc(item.piso||'—')}</p>`;
+  // Auto-preenche Central, Laço, Piso e Loja com base no item selecionado
+  const painelNome=paiName(item.painelId)||'';
+  const lacoNome=lacName(item.lacoId)||'';
+  const pisoVal=item.piso||'';
+  const localVal=item.localId||'';
+  // Atualiza os filtros do modal sem disparar refresh (para não perder a seleção)
+  const setSelect=(id,val)=>{const el=document.getElementById(id);if(!el)return;const opt=[...el.options].find(o=>o.value===val);if(opt)el.value=val;};
+  setSelect('mFiltroPainel',painelNome);
+  setSelect('mFiltroLaco',lacoNome);
+  setSelect('mFiltroPiso',pisoVal);
+  setSelect('mFiltroLocal',localVal);
+  // Dispara refresh pra popular dispositivo/porta com os valores do item
+  setTimeout(()=>refreshFalhaFilters('laco'),0);
 }
 function falhaSearchPool(){return falhaFilteredItems()}
 function onFalhaSearchInput(){
