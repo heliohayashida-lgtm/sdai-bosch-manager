@@ -1427,9 +1427,21 @@ function saveFalha(i){
   if(!i){db.falhas.push(rec); if(isFalhaStatus(rec.status)&&!db.planos.find(p=>p.falhaId===rec.id)){db.planos.push({id:id(),falhaId:rec.id,criadoEm:isoNow(),categoria:'Manutenção corretiva',prioridade:'Média',responsavel:'L3A Engenharia',situacao:'Aberto',painel:paiName(rec.painelId),laco:lacName(rec.lacoId),piso:rec.piso,local:locName(rec.localId),item:rec.itemNome,statusFalha:rec.status,justificativa:rec.motivo||rec.obs||'',providencia:'',necessitaCompra:false});}} closeModal(); save()
 }
 
-function fotosThumbsHtml(fotos){
-  if(!fotos||!fotos.length)return '<span class="mutedLine">—</span>';
-  return `<div style="display:flex;gap:5px;flex-wrap:wrap;max-width:180px">${fotos.map(u=>`<a href="${esc(u.replace('&sz=w1000','&sz=w2000'))}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="Foto do serviço" style="width:38px;height:38px;object-fit:cover;border-radius:6px;border:1px solid var(--l3a-border)"></a>`).join('')}</div>`;
+function normalizeFotos(f){
+  if(!f)return [];
+  if(Array.isArray(f))return f.filter(Boolean);
+  if(typeof f==='string'){
+    const s=f.trim(); if(!s)return [];
+    if(s.startsWith('[')){try{const a=JSON.parse(s);return Array.isArray(a)?a.filter(Boolean):[]}catch(e){return []}}
+    if(s.startsWith('http'))return [s];
+  }
+  return [];
+}
+function fotosThumbsHtml(fotos,tamanho=38){
+  const lista=normalizeFotos(fotos);
+  if(!lista.length)return '<span class="mutedLine">—</span>';
+  const thumbs=lista.map(u=>`<a href="${esc(String(u).replace('&sz=w1000','&sz=w2000'))}" target="_blank" rel="noopener" title="Abrir foto em tamanho maior"><img src="${esc(u)}" alt="Foto do serviço" loading="lazy" style="width:${tamanho}px;height:${tamanho}px;object-fit:cover;border-radius:6px;border:1px solid var(--l3a-border)" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'🔗 foto',style:'font-size:11px'}))"></a>`).join('');
+  return `<div style="display:flex;flex-direction:column;gap:4px"><small class="note"><b>${lista.length}</b> foto${lista.length===1?'':'s'}</small><div style="display:flex;gap:5px;flex-wrap:wrap;max-width:200px">${thumbs}</div></div>`;
 }
 function ensurePhotoUploadFrame(){
   if(document.getElementById('photoUploadFrame'))return;
@@ -1507,7 +1519,7 @@ function handleFotoUploadResult(data){
   if(pend){
     if(data.ok&&data.url){
       const plano=(db.planos||[]).find(p=>p.id===pend.planoId);
-      if(plano){plano.fotos=plano.fotos||[];plano.fotos.push(data.url);markDirty('foto anexada ao plano');renderPlano();const grid=document.getElementById('mFotoGrid');if(grid)grid.innerHTML=fotosThumbsHtml(plano.fotos)}
+      if(plano){plano.fotos=normalizeFotos(plano.fotos);plano.fotos.push(data.url);markDirty('foto anexada ao plano');renderPlano();const grid=document.getElementById('mFotoGrid');if(grid)grid.innerHTML=fotosThumbsHtml(plano.fotos,72)}
       if(data.conta&&!window._contaFotoAvisada){window._contaFotoAvisada=true;const elc=document.getElementById('mFotoConta');if(elc)elc.innerHTML=`Foto salva na conta <b>${esc(data.conta)}</b>${data.pastaUrl?` — <a href="${esc(data.pastaUrl)}" target="_blank" rel="noopener">abrir pasta no Drive</a>`:''}.`}
     } else {
       alert('Falha ao enviar uma foto: '+(data.error||'erro desconhecido no Apps Script')+(data.conta?`\n\nConta em que o Apps Script está rodando: ${data.conta}`:''));
@@ -1529,7 +1541,7 @@ function formPlano(i='',falhaId=''){
     <div class="field" style="grid-column:1/-1"><label>Material necessário / quantidade</label><input id="mMaterial" value="${esc(o.material)}" placeholder="Ex.: FLM-420/4-CON-S/D - 01 unidade"></div>
     <div class="field" style="grid-column:1/-1"><label>Justificativa técnica</label><textarea id="mJust">${esc(o.justificativa||f.motivo||f.obs||'')}</textarea></div>
     <div class="field" style="grid-column:1/-1"><label>Providência executada / próxima ação</label><textarea id="mProv">${esc(o.providencia)}</textarea></div>
-    ${i?`<div class="field" style="grid-column:1/-1"><label>Fotos do serviço (galeria do dispositivo, sem limite de quantidade)</label><input type="file" id="mFotoInput" accept="image/*" multiple onchange="queueFotoUploads('${i}',this.files);this.value=''"><small id="mFotoStatus" class="note"></small><small id="mFotoConta" class="note"></small><div id="mFotoGrid" style="margin-top:8px">${fotosThumbsHtml(o.fotos)}</div><br><button type="button" class="btn small secondary" onclick="verDiagnosticoUpload()">Ver diagnóstico do último upload</button><pre id="mFotoDiag" style="white-space:pre-wrap;font-size:11px;margin-top:8px;display:none;background:var(--l3a-neutral-bg,#f4f5f7);padding:10px;border-radius:8px;max-height:200px;overflow:auto"></pre></div>`:`<div class="field" style="grid-column:1/-1"><p class="mutedLine">Salve o plano primeiro para poder anexar fotos.</p></div>`}
+    ${i?`<div class="field" style="grid-column:1/-1"><label>Fotos do serviço (galeria do dispositivo, sem limite de quantidade)</label><input type="file" id="mFotoInput" accept="image/*" multiple onchange="queueFotoUploads('${i}',this.files);this.value=''"><small id="mFotoStatus" class="note"></small><small id="mFotoConta" class="note"></small><div id="mFotoGrid" style="margin-top:8px">${fotosThumbsHtml(o.fotos,72)}</div><br><button type="button" class="btn small secondary" onclick="verDiagnosticoUpload()">Ver diagnóstico do último upload</button><pre id="mFotoDiag" style="white-space:pre-wrap;font-size:11px;margin-top:8px;display:none;background:var(--l3a-neutral-bg,#f4f5f7);padding:10px;border-radius:8px;max-height:200px;overflow:auto"></pre></div>`:`<div class="field" style="grid-column:1/-1"><p class="mutedLine">Salve o plano primeiro para poder anexar fotos.</p></div>`}
   </div><br><button class="btn" onclick="savePlano('${i}','${falhaId||o.falhaId||''}')">Salvar plano</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`)
 }
 function savePlano(i,falhaId=''){
