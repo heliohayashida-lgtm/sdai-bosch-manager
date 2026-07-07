@@ -482,6 +482,17 @@ tbody tr:last-child td{border-bottom:0}
 .sistemaLacoRow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--l3a-border)}
 .sistemaLacoRow:last-child{border-bottom:0}
 .sistemaLacoNome{font-size:13px;font-weight:600;color:var(--l3a-text-soft)}
+
+/* ---------- 16g. RELATÓRIO DETALHADO DO PLANO DE AÇÃO (com fotos) ---------- */
+.detCard{border:1px solid var(--l3a-border);border-radius:12px;padding:16px 18px;margin-bottom:14px;break-inside:avoid}
+.detHead{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:8px}
+.detHead h4{margin:0;font-size:15px;font-weight:800;color:var(--l3a-text)}
+.detMeta{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:4px 14px;font-size:12.5px;color:var(--l3a-text-soft);margin-bottom:8px}
+.detMeta b{color:var(--l3a-text)}
+.detTexto{font-size:12.5px;color:var(--l3a-text-soft);margin-bottom:6px}
+.detTexto b{color:var(--l3a-text)}
+.detFotos{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.detFotos img{width:120px;height:120px;object-fit:cover;border-radius:8px;border:1px solid var(--l3a-border)}
 .drawer.wide{width:min(1040px,96%)}
 @media(max-width:1000px){.drawer.wide{width:100%}}
 
@@ -1926,7 +1937,7 @@ function renderPlano(){
     .sort((a,b)=>situacaoPeso(a.situacao)-situacaoPeso(b.situacao)||prioridadePeso(a.prioridade)-prioridadePeso(b.prioridade)||String(a.desde||a.criadoEm).localeCompare(String(b.desde||b.criadoEm)));
 
   document.getElementById('plano').innerHTML=`
-    <div class="card"><h3 class="sectionTitle">Filtros do Plano de Ação</h3><div class="toolbar"><div class="field"><label>Busca</label><input id="plBuscaPlano" placeholder="Loja, laço, item, motivo..." value="${esc(document.getElementById('plBuscaPlano')?.value||'')}"></div><div class="field"><label>Categoria</label><select id="plCat">${selectOpts(planoCategorias(),fcat)}</select></div><div class="field"><label>Prioridade</label><select id="plPrio">${selectOpts(planoPrioridades(),fprio)}</select></div><div class="field"><label>Situação</label><select id="plSit">${selectOpts(['Sem plano','Aberto','Em andamento','Concluído','Cancelado'],fsit)}</select></div><div class="field"><label>Responsável</label><select id="plResp">${selectOpts(planoResponsaveis(),fresp)}</select></div><div class="field"><label>Pavimento</label><select id="plPiso">${selectOpts(unique(rows.map(x=>x.piso)),fpiso)}</select></div><div class="field"><label>Inicial</label><input id="plIni" type="date" value="${esc(ini)}"></div><div class="field"><label>Final</label><input id="plFim" type="date" value="${esc(fim)}"></div><div class="field"><label>PDF: incluir</label><select id="pdfSituacao"><option value="Aberto">Só Abertos</option><option value="Concluído">Só Concluídos</option><option value="Ambos">Abertos + Concluídos</option></select></div><button class="btn" onclick="renderPlano()">Filtrar</button> <button class="btn secondary" onclick="gerarPdfPlanoAcao()">Gerar PDF (por Piso/Laço/Endereço)</button></div><p class="msg warn">Planos concluídos permanecem registrados para relatório e rastreabilidade. Use "Inicial"/"Final" acima pra limitar o período do PDF (Abertos usam a data de abertura; Concluídos usam a data de conclusão). O PDF organiza os itens por Piso → Laço → Endereço crescente, pra facilitar o roteiro da equipe em campo.</p></div>
+    <div class="card"><h3 class="sectionTitle">Filtros do Plano de Ação</h3><div class="toolbar"><div class="field"><label>Busca</label><input id="plBuscaPlano" placeholder="Loja, laço, item, motivo..." value="${esc(document.getElementById('plBuscaPlano')?.value||'')}"></div><div class="field"><label>Categoria</label><select id="plCat">${selectOpts(planoCategorias(),fcat)}</select></div><div class="field"><label>Prioridade</label><select id="plPrio">${selectOpts(planoPrioridades(),fprio)}</select></div><div class="field"><label>Situação</label><select id="plSit">${selectOpts(['Sem plano','Aberto','Em andamento','Concluído','Cancelado'],fsit)}</select></div><div class="field"><label>Responsável</label><select id="plResp">${selectOpts(planoResponsaveis(),fresp)}</select></div><div class="field"><label>Pavimento</label><select id="plPiso">${selectOpts(unique(rows.map(x=>x.piso)),fpiso)}</select></div><div class="field"><label>Inicial</label><input id="plIni" type="date" value="${esc(ini)}"></div><div class="field"><label>Final</label><input id="plFim" type="date" value="${esc(fim)}"></div><div class="field"><label>PDF: incluir</label><select id="pdfSituacao"><option value="Aberto">Só Abertos</option><option value="Concluído">Só Concluídos</option><option value="Ambos">Abertos + Concluídos</option></select></div><button class="btn" onclick="renderPlano()">Filtrar</button> <button class="btn secondary" onclick="gerarPdfPlanoAcao()">Gerar PDF (por Piso/Laço/Endereço)</button> <button class="btn secondary" onclick="gerarPdfPlanoDetalhado()">Gerar PDF detalhado (com fotos)</button></div><p class="msg warn">Planos concluídos permanecem registrados para relatório e rastreabilidade. Use "Inicial"/"Final" acima pra limitar o período do PDF (Abertos usam a data de abertura; Concluídos usam a data de conclusão). O primeiro PDF organiza os itens por Piso → Laço → Endereço crescente pro roteiro de campo; o segundo traz todos os detalhes de cada chamado (justificativa, providência, datas, responsável) e as fotos anexadas.</p></div>
     <div class="chartPanel"><h4>Itens por categoria</h4><p class="mutedLine" style="margin-bottom:10px">Clique em uma categoria para filtrar a lista abaixo</p>${catChartHtml}</div>
     <div class="card"><h3 class="sectionTitle">Lançamentos e acompanhamento${fcat?` — Categoria: ${esc(fcat)}`:''}</h3>${table(filtrados,[['Prioridade','prioridade'],['Painel','painel'],['Laço','laco'],['Piso','piso'],['Loja / Área','local'],['Item','itemNome'],['Falha','statusFalha',r=>`<span class="pill ${statusClass(r.statusFalha)}">${esc(r.statusFalha)}</span>`],['Categoria','categoria'],['Responsável','responsavel'],['Desde','desde'],['Situação','situacao',r=>`<span class="pill ${r.situacao==='Concluído'?'ok':r.situacao==='Cancelado'?'off':r.situacao==='Sem plano'?'warn':''}">${esc(r.situacao)}</span>`],['Concluído em','concluidoEm'],['Fotos','fotos',r=>fotosThumbsHtml(r.fotos)]],r=>`${r.planoId?`<button class="btn small secondary" onclick="formPlano('${r.planoId}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1-4.2L15.5 5.3a1.5 1.5 0 0 1 2.1 0l1.1 1.1a1.5 1.5 0 0 1 0 2.1L8.2 19 4 20Z"/><path d="M13.8 7 17 10.2"/></svg> Editar</button>`:`<button class="btn small" onclick="formPlano('', '${r.falhaId}')">+ Criar</button>`} ${r.planoId&&r.situacao!=='Concluído'?`<button class="btn small" onclick="concluirPlano('${r.planoId}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5 9 17l10.5-10.5"/></svg> Concluir</button>`:''} ${r.planoId?`<button class="btn small danger" onclick="del('planos','${r.planoId}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2"/><path d="M6.5 7 7.3 19a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4L17.5 7"/><path d="M10 11v6M14 11v6"/></svg></button>`:''}`)}</div>`;
   ['plBuscaPlano','plCat','plPrio','plSit','plResp','plPiso','plIni','plFim'].forEach(id=>{let el=document.getElementById(id); if(el)el.onchange=renderPlano});
@@ -1987,6 +1998,55 @@ function gerarPdfPlanoAcao(){
   const periodoTxt=(ini||fim)?` • Período: ${ini?fmtDateSimple(ini):'início'} a ${fim?fmtDateSimple(fim):'hoje'}`:'';
   document.getElementById('reportOut').innerHTML=`<div class="card"><div class="reportCover"><h2>Plano de Ação — Roteiro de Campo</h2><p>L3A Engenharia • ${esc(rotulo)} organizados por Piso, Laço e Endereço crescente${periodoTxt}</p><div class="reportMeta"><span>Total de itens: ${rows.length}</span><span>Gerado em: ${now()}</span></div></div>${blocos||'<div class="emptyState">Nenhum item encontrado para os filtros escolhidos.</div>'}<div class="reportFooter"><span>L3A Engenharia</span><span>Documento técnico gerado pelo SDAI Bosch Manager</span></div></div>`;
   setTimeout(()=>window.print(),250);
+}
+function gerarPdfPlanoDetalhado(){
+  const situacaoPdf=document.getElementById('pdfSituacao')?.value||'Aberto';
+  const ini=document.getElementById('plIni')?.value||'';
+  const fim=document.getElementById('plFim')?.value||'';
+  const iniT=ini?new Date(ini+'T00:00:00').getTime():null;
+  const fimT=fim?new Date(fim+'T23:59:59').getTime():null;
+  const dentroPeriodo=(dataStr)=>{ if(!iniT&&!fimT)return true; if(!dataStr)return false; const t=new Date(dataStr).getTime(); if(isNaN(t))return true; if(iniT&&t<iniT)return false; if(fimT&&t>fimT)return false; return true; };
+  let planos=db.planos||[];
+  let itens=[];
+  planos.forEach(p=>{
+    const concluido=p.situacao==='Concluído';
+    if(situacaoPdf==='Aberto'&&concluido)return;
+    if(situacaoPdf==='Concluído'&&!concluido)return;
+    const dataRef=concluido?(p.concluidoEm||p.atualizadoEm||p.criadoEm):p.criadoEm;
+    if(!dentroPeriodo(dataRef))return;
+    let f=db.falhas.find(x=>x.id===p.falhaId)||{};
+    let inf=f.id?itemInfoFromFalha(f):{};
+    itens.push({p,f,inf,endereco:itemEnderecoOrdenavel(f.itemId||'')});
+  });
+  itens.sort((a,b)=>pisoSortKey(a.inf.piso||a.p.piso)-pisoSortKey(b.inf.piso||b.p.piso)||String(a.inf.laco||a.p.laco).localeCompare(String(b.inf.laco||b.p.laco),'pt-BR',{numeric:true})||a.endereco-b.endereco);
+
+  const blocos=itens.map(({p,f,inf})=>{
+    const fotos=(p.fotos&&p.fotos.length)?`<div class="detFotos">${p.fotos.map(u=>`<img src="${esc(u)}" alt="Foto do serviço">`).join('')}</div>`:'<p class="mutedLine">Sem fotos anexadas.</p>';
+    return `<div class="detCard">
+      <div class="detHead"><h4>${esc(inf.itemNome||p.item||'Item')}</h4><span class="pill ${p.situacao==='Concluído'?'ok':''}">${esc(p.situacao||'Aberto')}</span></div>
+      <div class="detMeta">
+        <span><b>Painel:</b> ${esc(inf.painel||p.painel||'—')}</span>
+        <span><b>Laço:</b> ${esc(inf.laco||p.laco||'—')}</span>
+        <span><b>Piso:</b> ${esc(inf.piso||p.piso||'—')}</span>
+        <span><b>Loja/Área:</b> ${esc(inf.local||p.local||'—')}</span>
+        <span><b>Categoria:</b> ${esc(p.categoria||'—')}</span>
+        <span><b>Prioridade:</b> ${esc(p.prioridade||'—')}</span>
+        <span><b>Responsável:</b> ${esc(p.responsavel||'—')}</span>
+        <span><b>Status da falha:</b> ${esc(p.statusFalha||f.status||'—')}</span>
+        <span><b>Aberto em:</b> ${esc(fmtDateSimple(p.criadoEm)||'—')}</span>
+        <span><b>Concluído em:</b> ${esc(fmtDateSimple(p.concluidoEm)||'—')}</span>
+        <span><b>Necessita compra:</b> ${p.necessitaCompra?'Sim':'Não'}</span>
+      </div>
+      <div class="detTexto"><b>Justificativa:</b> ${esc(p.justificativa||'—')}</div>
+      <div class="detTexto"><b>Providência tomada:</b> ${esc(p.providencia||'—')}</div>
+      ${fotos}
+    </div>`;
+  }).join('');
+
+  const rotulo=situacaoPdf==='Aberto'?'Itens em aberto':situacaoPdf==='Concluído'?'Itens concluídos':'Itens abertos e concluídos';
+  const periodoTxt=(ini||fim)?` • Período: ${ini?fmtDateSimple(ini):'início'} a ${fim?fmtDateSimple(fim):'hoje'}`:'';
+  document.getElementById('reportOut').innerHTML=`<div class="card"><div class="reportCover"><h2>Plano de Ação — Relatório Detalhado</h2><p>L3A Engenharia • ${esc(rotulo)}, com detalhes completos do atendimento${periodoTxt}</p><div class="reportMeta"><span>Total de itens: ${itens.length}</span><span>Gerado em: ${now()}</span></div></div>${blocos||'<div class="emptyState">Nenhum item encontrado para os filtros escolhidos.</div>'}<div class="reportFooter"><span>L3A Engenharia</span><span>Documento técnico gerado pelo SDAI Bosch Manager</span></div></div>`;
+  setTimeout(()=>window.print(),400);
 }
 function drawReport(){
   let r=reportData();
