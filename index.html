@@ -1283,6 +1283,16 @@ function fmtDataHoraTexto(raw){
   return `${dd}/${mm}/${yy} ${hh}:${mi}`;
 }
 function findFalhaAbertaPorItem(itemId,ignoreId=''){return itemId?db.falhas.find(x=>x.itemId===itemId&&x.id!==ignoreId):null}
+async function verDiagnosticoUpload(){
+  const el=document.getElementById('mFotoDiag'); if(!el)return;
+  el.style.display='block'; el.textContent='Buscando diagnóstico no Google...';
+  try{
+    const r=await jsonp('debugFoto');
+    el.textContent=r.ok?r.log:('Erro ao buscar diagnóstico: '+(r.error||'desconhecido'));
+  }catch(e){
+    el.textContent='Não foi possível buscar o diagnóstico: '+e.message;
+  }
+}
 function quickStatusChange(itemSel,newStatus){
   const isFlm=itemSel.startsWith('flm:');
   const flmId=isFlm?itemSel.split(':')[1]:'';
@@ -1519,7 +1529,7 @@ function formPlano(i='',falhaId=''){
     <div class="field" style="grid-column:1/-1"><label>Material necessário / quantidade</label><input id="mMaterial" value="${esc(o.material)}" placeholder="Ex.: FLM-420/4-CON-S/D - 01 unidade"></div>
     <div class="field" style="grid-column:1/-1"><label>Justificativa técnica</label><textarea id="mJust">${esc(o.justificativa||f.motivo||f.obs||'')}</textarea></div>
     <div class="field" style="grid-column:1/-1"><label>Providência executada / próxima ação</label><textarea id="mProv">${esc(o.providencia)}</textarea></div>
-    ${i?`<div class="field" style="grid-column:1/-1"><label>Fotos do serviço (galeria do dispositivo, sem limite de quantidade)</label><input type="file" id="mFotoInput" accept="image/*" multiple onchange="queueFotoUploads('${i}',this.files);this.value=''"><small id="mFotoStatus" class="note"></small><small id="mFotoConta" class="note"></small><div id="mFotoGrid" style="margin-top:8px">${fotosThumbsHtml(o.fotos)}</div></div>`:`<div class="field" style="grid-column:1/-1"><p class="mutedLine">Salve o plano primeiro para poder anexar fotos.</p></div>`}
+    ${i?`<div class="field" style="grid-column:1/-1"><label>Fotos do serviço (galeria do dispositivo, sem limite de quantidade)</label><input type="file" id="mFotoInput" accept="image/*" multiple onchange="queueFotoUploads('${i}',this.files);this.value=''"><small id="mFotoStatus" class="note"></small><small id="mFotoConta" class="note"></small><div id="mFotoGrid" style="margin-top:8px">${fotosThumbsHtml(o.fotos)}</div><br><button type="button" class="btn small secondary" onclick="verDiagnosticoUpload()">Ver diagnóstico do último upload</button><pre id="mFotoDiag" style="white-space:pre-wrap;font-size:11px;margin-top:8px;display:none;background:var(--l3a-neutral-bg,#f4f5f7);padding:10px;border-radius:8px;max-height:200px;overflow:auto"></pre></div>`:`<div class="field" style="grid-column:1/-1"><p class="mutedLine">Salve o plano primeiro para poder anexar fotos.</p></div>`}
   </div><br><button class="btn" onclick="savePlano('${i}','${falhaId||o.falhaId||''}')">Salvar plano</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`)
 }
 function savePlano(i,falhaId=''){
