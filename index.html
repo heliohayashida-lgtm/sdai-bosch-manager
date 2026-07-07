@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- build: 2026-07-07 v8.10 UX Plano de Ação compacto - colunas ajustáveis sem rolagem lateral -->
+<!-- build: 2026-07-06 v6.29 - Endereços completos e rotulados em "Ver endereços" (Endereço lógico p/ módulos, Endereço completo p/ detectores/acionadores) -->
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
@@ -548,53 +548,111 @@ tbody tr:last-child td{border-bottom:0}
   .reportFooter{font-size:10px}
 }
 
+/* ======================================================================
+   DESIGN SYSTEM — SDAI MANAGER (Corporate Premium v2)
+   Todas as telas usam esses componentes — não duplicar.
+   ====================================================================== */
 
-/* =========================================================================
-   V8.9 UX GLOBAL — Design System corporativo e telas operacionais compactas
-   Aplicação visual aditiva: não altera banco, regras de negócio, importação,
-   exportação, login, permissões ou Google Apps Script.
-   ========================================================================= */
-:root{
-  --ux-row-h:42px;
-  --ux-table-max:calc(100vh - 315px);
-  --ux-action:34px;
-}
-.content{max-width:1680px;padding:20px 24px 48px}
-.card,.premiumPanel,.chartPanel{border-radius:16px;box-shadow:0 8px 22px rgba(16,24,40,.07)}
-.card{padding:16px;margin-bottom:14px}.premiumPanel{padding:16px;margin-bottom:14px}.chartPanel{padding:14px;margin-bottom:14px}
-.sectionTitle{margin-bottom:10px}.toolbar{gap:8px;margin:8px 0}.field{min-width:145px;gap:4px}.field label{font-size:10.5px}.field input,.field select,.field textarea{padding:8px 10px;font-size:12.5px;border-radius:9px}.btn{padding:9px 13px}.btn.small{padding:5px 8px}
-.grid,.premiumGrid{gap:10px}.metric{padding:12px 14px;min-height:76px}.metric small{font-size:9.5px}.metric strong{font-size:22px}.premiumStat{padding:12px;min-height:72px}.premiumStat b{font-size:20px}
-.tableWrap{border-radius:12px;max-height:var(--ux-table-max);overflow:auto;background:#fff}.tableTopScroll{height:12px;overflow-x:auto;overflow-y:hidden;border:1px solid var(--l3a-border);border-bottom:0;border-radius:12px 12px 0 0;background:#fff}.tableTopScroll>div{height:1px}.tableTopScroll+.tableWrap{border-top-left-radius:0;border-top-right-radius:0}table{font-size:12px}th{top:0;z-index:2;font-size:9.5px;padding:7px 9px;white-space:nowrap}td{padding:7px 9px;font-size:12px;line-height:1.32}tbody tr{min-height:var(--ux-row-h)}tbody tr:hover td{background:#f8fbff}.softTable table,.premiumTable table{min-width:0}
-.uxTable{min-width:880px}.uxTable td,.uxTable th{vertical-align:middle}.uxActions{display:flex;gap:5px;align-items:center;justify-content:flex-end;white-space:nowrap}.uxIconBtn{width:var(--ux-action);height:var(--ux-action);border-radius:9px;border:1px solid var(--l3a-border);background:#fff;color:var(--l3a-primary-700);display:inline-flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;box-shadow:none}.uxIconBtn:hover{background:var(--l3a-hover);border-color:var(--l3a-border-strong)}.uxIconBtn.danger{color:var(--l3a-danger)}
-.uxLocation{display:grid;gap:2px;line-height:1.22;min-width:120px}.uxLocation .uxLocTop{font-size:10.5px;font-weight:800;color:var(--l3a-text-muted);letter-spacing:.02em;text-transform:uppercase}.uxLocation .uxLocMid{font-size:12.5px;font-weight:800;color:var(--l3a-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:190px}.uxLocation .uxLocBot{font-size:11px;color:var(--l3a-text-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:190px}.uxPrimary{font-weight:800;font-size:13px;color:var(--l3a-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}.uxSub{font-size:11px;color:var(--l3a-text-muted);margin-top:1px}.uxBadgeLine{display:flex;gap:5px;flex-wrap:wrap;align-items:center}.uxPreview{font-size:11.5px;color:var(--l3a-text-soft);max-width:240px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:help}.uxDate{line-height:1.15;text-align:center;white-space:nowrap}.uxDate b{font-size:12px}.uxDate small{font-size:10.5px;color:var(--l3a-text-muted)}.uxEvidence{text-align:center;white-space:nowrap;font-size:12px}.pill{white-space:nowrap}.pill.info{background:var(--l3a-info-bg);color:var(--l3a-info)}.pill.alert{background:#fff3e8;color:#c2410c}.pill.priority-critica,.pill.priority-alta{background:var(--l3a-danger-bg);color:var(--l3a-danger)}.pill.priority-media{background:var(--l3a-warning-bg);color:var(--l3a-warning)}.pill.priority-baixa{background:var(--l3a-neutral-bg);color:var(--l3a-neutral)}
-.uxKpiGrid{display:grid;grid-template-columns:repeat(8,minmax(120px,1fr));gap:10px}.uxKpi{border:1px solid var(--l3a-border);background:linear-gradient(180deg,#fff,#f8fbff);border-radius:14px;padding:12px;box-shadow:var(--l3a-shadow-sm);cursor:pointer}.uxKpi:hover{box-shadow:var(--l3a-shadow-md);transform:translateY(-1px)}.uxKpi small{display:block;font-size:9.5px;font-weight:800;color:var(--l3a-text-muted);text-transform:uppercase;letter-spacing:.05em}.uxKpi b{display:block;margin-top:5px;font-size:22px;color:var(--l3a-text)}.uxKpi.good{border-left:4px solid var(--l3a-success)}.uxKpi.bad{border-left:4px solid var(--l3a-danger)}.uxKpi.warn{border-left:4px solid var(--l3a-warning)}.uxKpi.info{border-left:4px solid var(--l3a-info)}
-@media(max-width:1300px){.uxKpiGrid{grid-template-columns:repeat(4,1fr)}.content{padding:18px 16px 48px}}
-@media(max-width:760px){.uxKpiGrid{grid-template-columns:repeat(2,1fr)}.uxTable{min-width:760px}}
+/* --- DS-1. Cabeçalho de tela unificado -------------------------------- */
+.dsPageHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:16px;flex-wrap:wrap}
+.dsPageTitle{font-size:18px;font-weight:800;letter-spacing:-.025em;color:var(--l3a-text);margin:0 0 2px}
+.dsPageSub{font-size:12px;color:var(--l3a-text-muted);margin:0}
+.dsPageActions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 
+/* --- DS-2. Faixa de KPIs padronizada ---------------------------------- */
+.dsKpiStrip{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:16px}
+.dsKpiCard{background:var(--l3a-surface);border:1px solid var(--l3a-border);border-radius:12px;padding:12px 14px;
+  cursor:pointer;transition:box-shadow var(--l3a-dur) var(--l3a-ease),transform var(--l3a-dur) var(--l3a-ease);
+  position:relative;overflow:hidden}
+.dsKpiCard:hover{box-shadow:var(--l3a-shadow-md);transform:translateY(-1px)}
+.dsKpiCard::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--l3a-primary);border-radius:0}
+.dsKpiCard.ok::before{background:var(--l3a-success)}
+.dsKpiCard.bad::before{background:var(--l3a-danger)}
+.dsKpiCard.warn::before{background:var(--l3a-warning)}
+.dsKpiCard.info::before{background:var(--l3a-info,#1D4ED8)}
+.dsKpiCard.off::before{background:var(--l3a-neutral)}
+.dsKpiLabel{font-size:10px;text-transform:uppercase;letter-spacing:.06em;font-weight:800;color:var(--l3a-text-muted);margin-bottom:5px}
+.dsKpiValue{font-size:24px;font-weight:800;letter-spacing:-.03em;color:var(--l3a-text);line-height:1}
+.dsKpiSub{font-size:10.5px;color:var(--l3a-text-muted);margin-top:3px}
 
-/* ---------- 18. AJUSTE PLANO DE AÇÃO — fila operacional sem rolagem lateral --- */
-.uxPlanoWrap{overflow:auto;border:1px solid var(--l3a-border);border-radius:12px;background:#fff;max-height:calc(100vh - 270px)}
-.uxPlanoTable{width:100%;min-width:0!important;table-layout:fixed;border-collapse:collapse}
-.uxPlanoTable th,.uxPlanoTable td{padding:7px 8px;font-size:12px;line-height:1.25;vertical-align:middle}
-.uxPlanoTable th{position:sticky;top:0;z-index:3;background:var(--l3a-bg-soft);user-select:none}
-.uxPlanoTable th.resizable{position:sticky}
-.uxPlanoTable .colResize{position:absolute;right:-3px;top:0;width:7px;height:100%;cursor:col-resize;z-index:5}
-.uxPlanoTable .colResize:hover{background:rgba(11,95,173,.20)}
-.uxPlanoLocal{font-weight:850;color:var(--l3a-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.uxPlanoLoc{display:flex;flex-direction:column;gap:1px;min-width:0}
-.uxPlanoLocTop{font-size:10.5px;color:var(--l3a-text-muted);font-weight:800;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.uxPlanoLocItem{font-size:12px;color:var(--l3a-text);font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.uxPlanoDate{white-space:nowrap;font-weight:750;color:var(--l3a-text)}
-.uxPlanoDate small{display:block;color:var(--l3a-text-muted);font-weight:650;font-size:10.5px}
-.uxPlanoActions{display:flex;gap:5px;justify-content:flex-end;align-items:center;white-space:nowrap}
-.uxPlanoActions .btn.small{padding:6px 8px;font-size:0}
-.uxPlanoActions .btn.small svg{width:15px;height:15px}
-.uxPlanoTable td:nth-child(4) .pill,.uxPlanoTable td:nth-child(5) .pill{max-width:100%;overflow:hidden;text-overflow:ellipsis}
-@media(max-width:1200px){
-  .uxPlanoTable th,.uxPlanoTable td{padding:6px 6px;font-size:11.5px}
-  .uxPlanoWrap{max-height:calc(100vh - 250px)}
-}
+/* --- DS-3. Filtros padronizados --------------------------------------- */
+.dsFilters{background:var(--l3a-surface);border:1px solid var(--l3a-border);border-radius:12px;
+  padding:12px 14px;margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+.dsFilters .field{min-width:130px;flex:1;margin:0}
+.dsFilters .field label{font-size:10px;text-transform:uppercase;letter-spacing:.05em;font-weight:800;
+  color:var(--l3a-text-muted);margin-bottom:3px;display:block}
+.dsFilters .field input,.dsFilters .field select{padding:7px 9px;font-size:12.5px;border-radius:8px}
+.dsFilterActions{display:flex;gap:6px;align-items:flex-end;flex:0 0 auto}
 
+/* --- DS-4. Tabela corporativa ----------------------------------------- */
+.dsTable{width:100%;border-collapse:collapse}
+.dsTable th{padding:7px 10px;background:var(--l3a-bg-soft);font-size:10px;text-transform:uppercase;
+  letter-spacing:.06em;font-weight:800;color:var(--l3a-text-muted);border-bottom:2px solid var(--l3a-border);
+  white-space:nowrap;position:sticky;top:0;z-index:2}
+.dsTable td{padding:7px 10px;border-bottom:1px solid var(--l3a-border);font-size:12.5px;
+  color:var(--l3a-text);vertical-align:middle}
+.dsTable tbody tr:hover td{background:var(--l3a-hover)}
+.dsTable tbody tr:last-child td{border-bottom:0}
+.dsTableWrap{border:1px solid var(--l3a-border);border-radius:12px;overflow:auto;background:var(--l3a-surface);
+  max-height:calc(100vh - 320px)}
+
+/* --- DS-5. Componente Localização ------------------------------------- */
+.dsLoc{display:flex;flex-direction:column;gap:1px;min-width:0}
+.dsLocTag{font-size:10px;font-weight:800;color:var(--l3a-text-muted);text-transform:uppercase;letter-spacing:.04em}
+.dsLocMain{font-size:12.5px;font-weight:700;color:var(--l3a-text)}
+.dsLocSub{font-size:11px;color:var(--l3a-text-soft)}
+
+/* --- DS-6. Badges padronizados ---------------------------------------- */
+.dsBadge{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:99px;
+  font-size:11px;font-weight:750;white-space:nowrap}
+.dsBadge.op{background:#E7F7EC;color:#15803D}          /* Em operação  — Verde   */
+.dsBadge.test{background:#EAF1FE;color:#1D4ED8}        /* Em teste     — Azul    */
+.dsBadge.wait{background:#FDF3DF;color:#B45309}        /* Aguardando   — Amarelo */
+.dsBadge.alert{background:#FEF0E6;color:#C05A0A}       /* Alerta       — Laranja */
+.dsBadge.fail{background:#FCEAE9;color:#B42318}        /* Falha        — Vermelho*/
+.dsBadge.off{background:#EEF1F5;color:#475569}         /* Desativado   — Cinza   */
+.dsBadge.open{background:#EAF1FE;color:#1D4ED8}        /* Aberto (plano)         */
+.dsBadge.prog{background:#FDF3DF;color:#B45309}        /* Em andamento           */
+.dsBadge.done{background:#E7F7EC;color:#15803D}        /* Concluído              */
+.dsBadge.noplan{background:#EEF1F5;color:#475569}      /* Sem plano              */
+.dsBadge.fire{background:#B42318;color:#fff}           /* Incêndio disparado     */
+
+/* --- DS-7. Botões ícone ------------------------------------------------ */
+.dsIco{border:1px solid var(--l3a-border);background:var(--l3a-surface);color:var(--l3a-text-soft);
+  border-radius:8px;padding:5px 8px;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;
+  gap:4px;transition:background var(--l3a-dur) var(--l3a-ease),color var(--l3a-dur) var(--l3a-ease);
+  white-space:nowrap;line-height:1}
+.dsIco:hover{background:var(--l3a-hover);color:var(--l3a-primary);border-color:var(--l3a-border-strong)}
+.dsIco.del{color:var(--l3a-text-muted)}
+.dsIco.del:hover{background:var(--l3a-danger-bg);color:var(--l3a-danger);border-color:var(--l3a-danger-line)}
+.dsIco.prim{background:var(--l3a-primary);color:#fff;border-color:var(--l3a-primary)}
+.dsIco.prim:hover{background:var(--l3a-primary-600)}
+.dsIcoGroup{display:flex;gap:4px;align-items:center}
+
+/* --- DS-8. Portas no Módulo ------------------------------------------- */
+.dsPortas{display:flex;flex-direction:column;gap:3px}
+.dsPortaRow{display:flex;align-items:center;gap:6px;font-size:11.5px}
+.dsPortaDot{width:7px;height:7px;border-radius:50%;flex:0 0 7px;background:var(--l3a-success)}
+.dsPortaDot.fail{background:var(--l3a-danger)}
+.dsPortaLabel{font-weight:700;color:var(--l3a-text-muted);font-size:10px;min-width:20px}
+.dsPortaNome{color:var(--l3a-text);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px}
+
+/* --- DS-9. Card executivo de Laço ------------------------------------- */
+.dsLacoGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
+.dsLacoCard{background:var(--l3a-surface);border:1px solid var(--l3a-border);border-radius:12px;
+  padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+.dsLacoHead{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.dsLacoTitle{font-size:16px;font-weight:800;color:var(--l3a-text);margin:0}
+.dsLacoPainel{font-size:10px;font-weight:800;color:var(--l3a-text-muted);text-transform:uppercase;letter-spacing:.04em}
+.dsLacoStats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.dsLacoStat{background:var(--l3a-bg-soft);border-radius:8px;padding:7px 8px;text-align:center}
+.dsLacoStatLabel{font-size:9.5px;text-transform:uppercase;font-weight:800;color:var(--l3a-text-muted);letter-spacing:.04em}
+.dsLacoStatVal{font-size:18px;font-weight:800;color:var(--l3a-text);line-height:1.1;margin-top:2px}
+.dsLacoActions{display:flex;gap:6px;padding-top:6px;border-top:1px solid var(--l3a-border)}
+
+/* --- DS-10. Linha de data BR ------------------------------------------ */
+.dsDt{white-space:nowrap;font-size:12px;line-height:1.4}
+.dsDt small{display:block;font-size:11px;color:var(--l3a-text-muted)}
 </style>
 </head>
 <body>
@@ -1046,10 +1104,223 @@ const cards=rows.map(r=>`<div class="lacoCard">
 document.getElementById('lacos').innerHTML=`<div class="card"><button class="btn" onclick="formLaco()">+ Criar novo laço</button><div class="toolbar"><div class="field"><label>Painel</label><select onchange="filters.lacoPainel=this.value;render()">${selectOpts(unique(db.paineis.map(p=>p.nome)),fp)}</select></div><div class="field"><label>Laço</label><select onchange="filters.lacoNome=this.value;render()">${selectOpts(unique(db.lacos.map(l=>l.nome)),fl)}</select></div><div class="field"><label>Status</label><select onchange="filters.lacoStatus=this.value;render()">${selectOpts(['Em operação','Com falha'],fs)}</select></div></div></div><div class="card"><h3 class="sectionTitle">Laços cadastrados</h3><p class="msg warn">O Sistema (SDAI / CO2) de cada laço agora só é alterado na aba <b>Painéis</b>, para evitar trocas acidentais aqui.</p>${rows.length?`<div class="lacoCardGrid">${cards}</div>`:'<p class="msg warn">Sem registros.</p>'}</div>`}
 function subTipoCatClass(cat){const c=up(cat); if(c.includes('MODULO'))return 'modulo'; if(c.includes('FUMACA'))return 'fumaca'; if(c.includes('TERMICO'))return 'termico'; if(c.includes('ACIONADOR'))return 'acionador'; if(c.includes('SIRENE')||c.includes('SINALIZ'))return 'sirene'; return 'outro'}
 function subTipos(match){let map={}; db.flms.filter(match).forEach(f=>{let k='Módulo • '+(f.modelo||'FLM');map[k]=(map[k]||0)+1}); db.equipamentos.filter(match).forEach(e=>{let k=(e.tipo||'Equipamento')+' • '+(e.modelo||'S/modelo');map[k]=(map[k]||0)+1}); let entries=Object.entries(map).sort((a,b)=>b[1]-a[1]); if(!entries.length)return '<span class="mutedLine">Sem dispositivos cadastrados</span>'; return '<div class="subTipoGrid">'+entries.map(([k,v])=>{const [cat,modelo]=k.split(' • '); return `<div class="subTipoRow"><span class="subTipoDot cat-${subTipoCatClass(cat)}"></span><span class="subTipoLabel"><b>${esc(cat)}</b><small>${esc(modelo||'')}</small></span><span class="subTipoCount">${v}</span></div>`}).join('')+'</div>'}
-function renderFlms(){let f=filters.flm||{};let paineis=unique(db.paineis.map(p=>p.nome));let lacos=unique(db.lacos.map(l=>l.nome));let pisos=unique(db.flms.map(x=>x.piso).concat(db.lacos.map(x=>x.piso),db.locais.map(x=>x.piso),db.equipamentos.map(x=>x.piso)));let lojas=unique(db.locais.map(x=>x.nome));let rows=db.flms.map(flm=>{let ps=db.portas.filter(p=>p.flmId===flm.id);let portas=ps.map(p=>`${isFalhaStatus(p.status)?'❌':'✅'} P${p.numero}: ${locName(p.localId)||'Sem vínculo'}${p.ligacao?' • '+esc(p.ligacao):''}`).join('<br>');let nomesPortas=ps.map(p=>locName(p.localId)).filter(Boolean).join(' | ');return {...flm,painel:paiName(flm.painelId),laco:lacName(flm.lacoId),portas,lojas:nomesPortas}}).filter(r=>(!f.painel||r.painel===f.painel)&&(!f.laco||r.laco===f.laco)&&(!f.piso||r.piso===f.piso)&&(!f.loja||up(r.lojas).includes(up(f.loja))));document.getElementById('flms').innerHTML=`<div class="card"><button class="btn" onclick="formFlm()">+ Criar novo módulo</button><div class="toolbar"><div class="field"><label>Painel</label><select onchange="filters.flm={...filters.flm,painel:this.value};render()">${selectOpts(paineis,f.painel)}</select></div><div class="field"><label>Laço</label><select onchange="filters.flm={...filters.flm,laco:this.value};render()">${selectOpts(lacos,f.laco)}</select></div><div class="field"><label>Piso</label><select onchange="filters.flm={...filters.flm,piso:this.value};render()">${selectOpts(pisos,f.piso)}</select></div><div class="field"><label>Loja / Área</label><select onchange="filters.flm={...filters.flm,loja:this.value};render()">${selectOpts(lojas,f.loja)}</select></div><button class="btn secondary" onclick="filters.flm={};render()">Limpar filtros</button></div></div><div class="card"><h3 class="sectionTitle">Módulos físicos e portas</h3><p class="msg warn">Status aqui é um resumo do módulo — se uma porta estiver com falha e a outra não, use "Portas" para ver/alterar o status de cada uma individualmente.</p>${table(rows,[['Painel','painel'],['Piso','piso'],['Laço','laco'],['Endereço FLM','endereco'],['Modelo','modelo'],['Portas / Ligações','portas',r=>r.portas||'-'],['Status','status',r=>`<span class="pill ${statusClass(flmStatusAgregado(r.id))}">${esc(flmStatusAgregado(r.id))}</span>`]],r=>`<button class="btn small secondary" onclick="formFlm('${r.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1-4.2L15.5 5.3a1.5 1.5 0 0 1 2.1 0l1.1 1.1a1.5 1.5 0 0 1 0 2.1L8.2 19 4 20Z"/><path d="M13.8 7 17 10.2"/></svg></button> <button class="btn small secondary" onclick="managePortas('${r.id}')">Portas</button> <button class="btn small danger" onclick="del('flms','${r.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2"/><path d="M6.5 7 7.3 19a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4L17.5 7"/><path d="M10 11v6M14 11v6"/></svg></button>`)}</div>`}
-function renderLocais(){let q=filters.locaisQ||'';let rows=db.locais.filter(l=>!q||JSON.stringify(l).toUpperCase().includes(up(q))).map(l=>({...l,painel:paiName(l.painelId),laco:lacName(l.lacoId),flm:flmById(l.flmId)?.endereco||'',porta:db.portas.find(p=>p.id===l.portaId)?.numero||'',qtd:db.equipamentos.filter(e=>e.localId===l.id).length}));document.getElementById('locais').innerHTML=`<div class="card"><button class="btn" onclick="formLocal()">+ Criar nova loja/área</button><div class="toolbar"><div class="field"><label>Busca</label><input value="${esc(q)}" data-filter-input="1" data-filter-path="locaisQ" data-focus-key="locaisBusca" placeholder="Loja, piso, painel, laço..."></div></div></div><div class="card"><h3 class="sectionTitle">Lojas / Áreas vinculadas às portas</h3>${table(rows,[['Nome','nome'],['Classificação','tipo'],['Painel','painel'],['Laço','laco'],['Piso','piso'],['FLM','flm'],['Porta','porta'],['Qtd. equip.','qtd'],['Status','status',r=>`<span class="pill ${statusClass(r.status)}">${esc(r.status)}</span>`]],r=>`<button class="btn small secondary" onclick="openLocal('${r.id}')">Histórico</button> <button class="btn small secondary" onclick="formLocal('${r.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1-4.2L15.5 5.3a1.5 1.5 0 0 1 2.1 0l1.1 1.1a1.5 1.5 0 0 1 0 2.1L8.2 19 4 20Z"/><path d="M13.8 7 17 10.2"/></svg></button> <button class="btn small danger" onclick="del('locais','${r.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2"/><path d="M6.5 7 7.3 19a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4L17.5 7"/><path d="M10 11v6M14 11v6"/></svg></button>`)}</div>`}
-function renderEquipamentos(){let f=filters.eq||{};let tipos=unique(db.equipamentos.map(e=>e.tipo));let modelos=unique(db.equipamentos.map(e=>e.modelo));let status=unique(db.equipamentos.map(e=>normalizeStatus(e.status)));let rows=db.equipamentos.filter(e=>(!f.painel||paiName(e.painelId)===f.painel)&&(!f.laco||lacName(e.lacoId)===f.laco)&&(!f.tipo||e.tipo===f.tipo)&&(!f.modelo||e.modelo===f.modelo)&&(!f.status||normalizeStatus(e.status)===f.status)&&(!f.q||JSON.stringify(e).toUpperCase().includes(up(f.q)))).map(e=>{const porta=e.portaId?db.portas.find(p=>p.id===e.portaId):null;const flm=e.flmId?flmById(e.flmId):null;const ligacao=porta?`${isFalhaStatus(porta.status)?'❌':'✅'} Porta ${porta.numero}${porta.ligacao?' • '+esc(porta.ligacao):''}${flm?' • Módulo '+esc(flm.endereco||flm.modelo):''}`:'—';return {...e,painel:paiName(e.painelId),laco:lacName(e.lacoId),ligacao,status:normalizeStatus(e.status)}});document.getElementById('equipamentos').innerHTML=`<div class="card"><button class="btn" onclick="formEquip()">+ Criar novo detector/acionador</button><div class="toolbar"><div class="field"><label>Painel</label><select onchange="filters.eq={...filters.eq,painel:this.value};render()">${selectOpts(unique(db.paineis.map(p=>p.nome)),f.painel)}</select></div><div class="field"><label>Laço</label><select onchange="filters.eq={...filters.eq,laco:this.value};render()">${selectOpts(unique(db.lacos.map(l=>l.nome)),f.laco)}</select></div><div class="field"><label>Tipo</label><select onchange="filters.eq={...filters.eq,tipo:this.value};render()">${selectOpts(tipos,f.tipo)}</select></div><div class="field"><label>Modelo</label><select onchange="filters.eq={...filters.eq,modelo:this.value};render()">${selectOpts(modelos,f.modelo)}</select></div><div class="field"><label>Status</label><select onchange="filters.eq={...filters.eq,status:this.value};render()">${selectOpts(status,f.status)}</select></div><div class="field"><label>Busca</label><input value="${esc(f.q)}" data-filter-input="1" data-filter-group="eq" data-filter-key="q" data-focus-key="equipBusca"></div></div></div><div class="card"><h3 class="sectionTitle">Detectores / Acionadores cadastrados — status operacional</h3><p class="msg warn">Ao mudar o Status pra uma condição de falha, o sistema já registra a Falha e abre o formulário de conclusão automaticamente — não precisa lançar manualmente na aba Falhas.</p>${table(rows,[['Painel','painel'],['Piso','piso'],['Laço','laco'],['Endereço FLM','endereco'],['Modelo','modelo'],['Portas / Ligações','ligacao'],['Status','status',r=>`<select data-prev-status="${esc(r.status)}" onchange="handleStatusSelectChange(this,v=>quickStatusChange('${r.id}',v))">${STATUS_SISTEMA_OPTIONS.map(st=>statusSistemaOption(st,r.status)).join('')}</select>`]],r=>`<button class="btn small secondary" onclick="openEquip('${r.id}')">Histórico</button> <button class="btn small secondary" onclick="formEquip('${r.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1-4.2L15.5 5.3a1.5 1.5 0 0 1 2.1 0l1.1 1.1a1.5 1.5 0 0 1 0 2.1L8.2 19 4 20Z"/><path d="M13.8 7 17 10.2"/></svg></button> <button class="btn small danger" onclick="del('equipamentos','${r.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2"/><path d="M6.5 7 7.3 19a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4L17.5 7"/><path d="M10 11v6M14 11v6"/></svg></button>`)}</div>`}
-function renderFalhas(){let f=filters.falhas||{};let rows=db.falhas.filter(x=>(!f.status||normalizeStatus(x.status)===f.status)&&(!f.tipo||x.tipo===f.tipo)&&(!f.q||JSON.stringify(x).toUpperCase().includes(up(f.q)))).map(x=>({...x,painel:paiName(x.painelId),laco:lacName(x.lacoId),loja:locName(x.localId)}));document.getElementById('falhas').innerHTML=`<div class="card"><button class="btn" onclick="formFalha()">+ Registrar falha / operação</button><div class="toolbar"><div class="field"><label>Tipo</label><select onchange="filters.falhas={...filters.falhas,tipo:this.value};render()">${selectOpts(unique(db.falhas.map(x=>x.tipo)),f.tipo)}</select></div><div class="field"><label>Status</label><select onchange="filters.falhas={...filters.falhas,status:this.value};render()">${selectOpts(unique(db.falhas.map(x=>normalizeStatus(x.status))),f.status)}</select></div><div class="field"><label>Busca</label><input value="${esc(f.q)}" data-filter-input="1" data-filter-group="falhas" data-filter-key="q" data-focus-key="falhasBusca"></div></div></div><div class="card"><h3 class="sectionTitle">Histórico e falhas</h3>${table(rows,[['Data','data'],['Painel','painel'],['Laço','laco'],['Piso','piso'],['Tipo','tipo'],['Item','itemNome'],['Loja','loja'],['Status','status',r=>`<span class="pill ${statusClass(r.status)}">${esc(r.status)}</span>`],['Origem','origem'],['Motivo','motivo'],['Resolvida em','resolvidaEm']],r=>`<button class="btn small secondary" onclick="formFalha('${r.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1-4.2L15.5 5.3a1.5 1.5 0 0 1 2.1 0l1.1 1.1a1.5 1.5 0 0 1 0 2.1L8.2 19 4 20Z"/><path d="M13.8 7 17 10.2"/></svg></button> <button class="btn small danger" onclick="del('falhas','${r.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2"/><path d="M6.5 7 7.3 19a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4L17.5 7"/><path d="M10 11v6M14 11v6"/></svg></button>`)}</div>`}
+function renderFlms(){
+  let f=filters.flm||{};
+  let paineis=unique(db.paineis.map(p=>p.nome));
+  let lacos=unique(db.lacos.map(l=>l.nome));
+  let pisos=unique(db.flms.map(x=>x.piso).concat(db.lacos.map(x=>x.piso),db.equipamentos.map(x=>x.piso)));
+  let lojas=unique(db.locais.map(x=>x.nome));
+  let rows=db.flms.map(flm=>{
+    let ps=db.portas.filter(p=>p.flmId===flm.id);
+    let nomesPortas=ps.map(p=>locName(p.localId)).filter(Boolean).join(' | ');
+    return {...flm,painel:paiName(flm.painelId),laco:lacName(flm.lacoId),lojas:nomesPortas};
+  }).filter(r=>(!f.painel||r.painel===f.painel)&&(!f.laco||r.laco===f.laco)&&(!f.piso||r.piso===f.piso)&&(!f.loja||up(r.lojas).includes(up(f.loja))));
+
+  const totalFlm=rows.length;
+  const comFalha=rows.filter(r=>isFalhaStatus(flmStatusAgregado(r.id))).length;
+  const emOp=totalFlm-comFalha;
+
+  const trs=rows.map(r=>{
+    const statusAg=flmStatusAgregado(r.id);
+    const loc=dsLocHtml({painel:r.painel,piso:r.piso,laco:r.laco,tipo:'Módulo',endereco:r.endereco});
+    return `<tr>
+      <td>${loc}</td>
+      <td style="font-size:12.5px;font-weight:600">${esc(r.modelo||'—')}</td>
+      <td>${dsPortasHtml(r.id)}</td>
+      <td>${dsBadgeHtml(statusAg)}</td>
+      <td><div class="dsIcoGroup">
+        <button class="dsIco" onclick="formFlm('${r.id}')" title="Editar">✏️</button>
+        <button class="dsIco" onclick="managePortas('${r.id}')" title="Gerenciar portas">🔌 Portas</button>
+        <button class="dsIco del" onclick="del('flms','${r.id}')" title="Excluir">🗑</button>
+      </div></td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('flms').innerHTML=`
+    ${dsKpiStrip([
+      ['Módulos',totalFlm,''],
+      ['Em operação',emOp,'ok'],
+      ['Com falha',comFalha,comFalha>0?'bad':'ok']
+    ])}
+    <div class="dsFilters">
+      <div class="field"><label>Painel</label><select onchange="filters.flm={...filters.flm,painel:this.value};render()">${selectOpts(paineis,f.painel)}</select></div>
+      <div class="field"><label>Laço</label><select onchange="filters.flm={...filters.flm,laco:this.value};render()">${selectOpts(lacos,f.laco)}</select></div>
+      <div class="field"><label>Piso</label><select onchange="filters.flm={...filters.flm,piso:this.value};render()">${selectOpts(pisos,f.piso)}</select></div>
+      <div class="field"><label>Loja / Área</label><select onchange="filters.flm={...filters.flm,loja:this.value};render()">${selectOpts(lojas,f.loja)}</select></div>
+      <div class="dsFilterActions">
+        <button class="dsIco prim" onclick="formFlm()">+ Novo módulo</button>
+        <button class="dsIco" onclick="filters.flm={};render()">Limpar</button>
+      </div>
+    </div>
+    <p class="mutedLine" style="margin-bottom:8px">Status é resumo do módulo — se só uma porta tiver falha, use "🔌 Portas" para ver cada porta individualmente.</p>
+    <div class="dsTableWrap">
+      <table class="dsTable">
+        <thead><tr><th>Localização</th><th>Modelo</th><th>Portas</th><th>Status</th><th>Ações</th></tr></thead>
+        <tbody>${trs||`<tr><td colspan="5"><div class="emptyState">Nenhum módulo cadastrado.</div></td></tr>`}</tbody>
+      </table>
+    </div>`;
+}
+function renderLocais(){
+  let q=filters.locaisQ||'';
+  let rows=db.locais.filter(l=>!q||JSON.stringify(l).toUpperCase().includes(up(q))).map(l=>({
+    ...l,
+    painel:paiName(l.painelId),laco:lacName(l.lacoId),
+    flmEndereco:flmById(l.flmId)?.endereco||'',
+    portaNum:db.portas.find(p=>p.id===l.portaId)?.numero||'',
+    qtd:db.equipamentos.filter(e=>e.localId===l.id).length
+  }));
+
+  const total=rows.length;
+  const emOp=rows.filter(r=>!isFalhaStatus(r.status)).length;
+  const comFalha=rows.filter(r=>isFalhaStatus(r.status)).length;
+
+  const trs=rows.map(r=>{
+    const loc=dsLocHtml({painel:r.painel,piso:r.piso,laco:r.laco,tipo:r.flmEndereco?'Módulo '+r.flmEndereco:'',porta:r.portaNum});
+    return `<tr>
+      <td><div style="font-weight:700;font-size:13.5px">${esc(r.nome)}</div><div style="font-size:11px;color:var(--l3a-text-muted)">${esc(r.tipo||'—')}</div></td>
+      <td>${loc}</td>
+      <td style="font-size:12.5px;text-align:center">${r.qtd}</td>
+      <td>${dsBadgeHtml(r.status)}</td>
+      <td><div class="dsIcoGroup">
+        <button class="dsIco" onclick="openLocal('${r.id}')" title="Histórico">🕒</button>
+        <button class="dsIco" onclick="formLocal('${r.id}')" title="Editar">✏️</button>
+        <button class="dsIco del" onclick="del('locais','${r.id}')" title="Excluir">🗑</button>
+      </div></td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('locais').innerHTML=`
+    ${dsKpiStrip([
+      ['Lojas / Áreas',total,''],
+      ['Em operação',emOp,'ok'],
+      ['Com falha',comFalha,comFalha>0?'bad':'ok']
+    ])}
+    <div class="dsFilters">
+      <div class="field"><label>Busca</label><input value="${esc(q)}" data-filter-input="1" data-filter-path="locaisQ" data-focus-key="locaisBusca" placeholder="Loja, piso, painel, laço..."></div>
+      <div class="dsFilterActions"><button class="dsIco prim" onclick="formLocal()">+ Nova loja/área</button></div>
+    </div>
+    <div class="dsTableWrap">
+      <table class="dsTable">
+        <thead><tr><th>Loja / Área</th><th>Localização</th><th style="text-align:center">Equipamentos</th><th>Status</th><th>Ações</th></tr></thead>
+        <tbody>${trs||`<tr><td colspan="5"><div class="emptyState">Nenhuma loja/área cadastrada.</div></td></tr>`}</tbody>
+      </table>
+    </div>`;
+}
+function renderEquipamentos(){
+  let f=filters.eq||{};
+  let tipos=unique(db.equipamentos.map(e=>e.tipo));
+  let modelos=unique(db.equipamentos.map(e=>e.modelo));
+  let status=unique(db.equipamentos.map(e=>normalizeStatus(e.status)));
+  let rows=db.equipamentos.filter(e=>
+    (!f.painel||paiName(e.painelId)===f.painel)&&
+    (!f.laco||lacName(e.lacoId)===f.laco)&&
+    (!f.tipo||e.tipo===f.tipo)&&
+    (!f.modelo||e.modelo===f.modelo)&&
+    (!f.status||normalizeStatus(e.status)===f.status)&&
+    (!f.q||JSON.stringify(e).toUpperCase().includes(up(f.q)))
+  ).map(e=>{
+    const porta=e.portaId?db.portas.find(p=>p.id===e.portaId):null;
+    const flm=e.flmId?flmById(e.flmId):null;
+    const ligacao=porta?`${isFalhaStatus(porta.status)?'❌':'✅'} P${porta.numero}${flm?' • '+esc(flm.endereco||flm.modelo):''}`:'—';
+    return {...e,painel:paiName(e.painelId),laco:lacName(e.lacoId),ligacao,status:normalizeStatus(e.status)};
+  });
+
+  const total=rows.length;
+  const emOp=rows.filter(r=>!isFalhaStatus(r.status)).length;
+  const comFalha=rows.filter(r=>isFalhaStatus(r.status)).length;
+
+  const trs=rows.map(r=>{
+    const loc=dsLocHtml({painel:r.painel,piso:r.piso,laco:r.laco,tipo:r.tipo,endereco:r.endereco});
+    return `<tr>
+      <td>${loc}</td>
+      <td style="font-size:12px;font-weight:600">${esc(r.modelo||'—')}</td>
+      <td style="font-size:12px">${r.ligacao}</td>
+      <td><select class="dsStatusSel" data-prev-status="${esc(r.status)}" onchange="handleStatusSelectChange(this,v=>quickStatusChange('${r.id}',v))" style="font-size:12px;padding:4px 7px;border-radius:8px;border:1px solid var(--l3a-border)">${STATUS_SISTEMA_OPTIONS.map(st=>statusSistemaOption(st,r.status)).join('')}</select></td>
+      <td><div class="dsIcoGroup">
+        <button class="dsIco" onclick="openEquip('${r.id}')" title="Histórico">🕒</button>
+        <button class="dsIco" onclick="formEquip('${r.id}')" title="Editar">✏️</button>
+        <button class="dsIco del" onclick="del('equipamentos','${r.id}')" title="Excluir">🗑</button>
+      </div></td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('equipamentos').innerHTML=`
+    ${dsKpiStrip([
+      ['Detectores / Acionadores',total,''],
+      ['Em operação',emOp,'ok'],
+      ['Com falha',comFalha,comFalha>0?'bad':'ok']
+    ])}
+    <div class="dsFilters">
+      <div class="field"><label>Painel</label><select onchange="filters.eq={...filters.eq,painel:this.value};render()">${selectOpts(unique(db.paineis.map(p=>p.nome)),f.painel)}</select></div>
+      <div class="field"><label>Laço</label><select onchange="filters.eq={...filters.eq,laco:this.value};render()">${selectOpts(unique(db.lacos.map(l=>l.nome)),f.laco)}</select></div>
+      <div class="field"><label>Tipo</label><select onchange="filters.eq={...filters.eq,tipo:this.value};render()">${selectOpts(tipos,f.tipo)}</select></div>
+      <div class="field"><label>Modelo</label><select onchange="filters.eq={...filters.eq,modelo:this.value};render()">${selectOpts(modelos,f.modelo)}</select></div>
+      <div class="field"><label>Status</label><select onchange="filters.eq={...filters.eq,status:this.value};render()">${selectOpts(status,f.status)}</select></div>
+      <div class="field"><label>Busca</label><input value="${esc(f.q)}" data-filter-input="1" data-filter-group="eq" data-filter-key="q" data-focus-key="equipBusca" placeholder="Loja, endereço, modelo..."></div>
+      <div class="dsFilterActions"><button class="dsIco prim" onclick="formEquip()">+ Novo</button></div>
+    </div>
+    <p class="mutedLine" style="margin-bottom:8px">Ao mudar o Status pra uma condição de falha, o sistema registra a Falha e abre o formulário de conclusão automaticamente.</p>
+    <div class="dsTableWrap">
+      <table class="dsTable">
+        <thead><tr><th>Localização</th><th>Modelo</th><th>Portas / Ligações</th><th>Status</th><th>Ações</th></tr></thead>
+        <tbody>${trs||`<tr><td colspan="5"><div class="emptyState">Nenhum detector/acionador cadastrado.</div></td></tr>`}</tbody>
+      </table>
+    </div>`;
+}
+function renderFalhas(){
+  let f=filters.falhas||{};
+  let rows=db.falhas.filter(x=>
+    (!f.status||normalizeStatus(x.status)===f.status)&&
+    (!f.tipo||x.tipo===f.tipo)&&
+    (!f.q||JSON.stringify(x).toUpperCase().includes(up(f.q)))
+  ).map(x=>({...x,painel:paiName(x.painelId),laco:lacName(x.lacoId),loja:locName(x.localId)}))
+   .sort((a,b)=>String(b.data).localeCompare(String(a.data)));
+
+  const totalFalhas=rows.length;
+  const abertas=rows.filter(r=>!r.resolvidaEm).length;
+  const criticas=rows.filter(r=>isFalhaStatus(r.status)&&!r.resolvidaEm).length;
+  const hoje=rows.filter(r=>r.data&&r.data.startsWith(new Date().toISOString().slice(0,10))).length;
+
+  const trs=rows.map(r=>{
+    const loc=dsLocHtml({painel:r.painel,piso:r.piso,laco:r.laco,tipo:r.tipo,endereco:r.itemNome});
+    const situacao=r.resolvidaEm?'Resolvida':'Em aberto';
+    return `<tr>
+      <td>${dsDateHtml(r.data)}</td>
+      <td><div style="font-weight:700;font-size:13px">${esc(r.loja||'—')}</div></td>
+      <td>${loc}</td>
+      <td>${dsBadgeHtml(r.status)}</td>
+      <td><span class="dsBadge ${r.resolvidaEm?'done':'open'}">${esc(situacao)}</span></td>
+      <td style="font-size:12px">${esc(r.responsavel||'—')}</td>
+      <td><div class="dsIcoGroup">
+        <button class="dsIco" onclick="formFalha('${r.id}')" title="Editar">✏️</button>
+        <button class="dsIco del" onclick="del('falhas','${r.id}')" title="Excluir">🗑</button>
+      </div></td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('falhas').innerHTML=`
+    ${dsKpiStrip([
+      ['Total de registros',totalFalhas,''],
+      ['Em aberto',abertas,abertas>0?'warn':'ok'],
+      ['Críticas (sem plano)',criticas,criticas>0?'bad':'ok'],
+      ['Hoje',hoje,'info']
+    ])}
+    <div class="dsFilters">
+      <div class="field"><label>Tipo</label><select onchange="filters.falhas={...filters.falhas,tipo:this.value};render()">${selectOpts(unique(db.falhas.map(x=>x.tipo)),f.tipo)}</select></div>
+      <div class="field"><label>Status</label><select onchange="filters.falhas={...filters.falhas,status:this.value};render()">${selectOpts(unique(db.falhas.map(x=>normalizeStatus(x.status))),f.status)}</select></div>
+      <div class="field"><label>Busca</label><input value="${esc(f.q)}" data-filter-input="1" data-filter-group="falhas" data-filter-key="q" data-focus-key="falhasBusca" placeholder="Loja, item, status..."></div>
+      <div class="dsFilterActions"><button class="dsIco prim" onclick="formFalha()">+ Registrar</button></div>
+    </div>
+    <div class="dsTableWrap">
+      <table class="dsTable">
+        <thead><tr>
+          <th>Data</th><th>Loja / Área</th><th>Localização</th>
+          <th>Status</th><th>Situação</th><th>Responsável</th><th>Ações</th>
+        </tr></thead>
+        <tbody>${trs||`<tr><td colspan="7"><div class="emptyState">Nenhuma falha registrada.</div></td></tr>`}</tbody>
+      </table>
+    </div>`;
+}
 
 function planoCategorias(){return ['Substituição de material','Manutenção corretiva','Refazer teste','Reconfiguração de nome','Notificar logista']}
 function planoPrioridades(){return ['Crítica','Alta','Média','Baixa']}
@@ -1071,10 +1342,11 @@ function planoForFalha(fid){return db.planos.find(p=>p.falhaId===fid)}
 function renderPlano(){
   let planos=db.planos||[];
   let q=(document.getElementById('plBuscaPlano')?.value||'').toUpperCase();
-  let fprio=document.getElementById('plPrio')?.value||'', fsit=document.getElementById('plSit')?.value||'', fresp=document.getElementById('plResp')?.value||'', ini=document.getElementById('plIni')?.value||'', fim=document.getElementById('plFim')?.value||'';
+  let fcat=document.getElementById('plCat')?.value||'', fprio=document.getElementById('plPrio')?.value||'', fsit=document.getElementById('plSit')?.value||'', fresp=document.getElementById('plResp')?.value||'', ini=document.getElementById('plIni')?.value||'', fim=document.getElementById('plFim')?.value||'';
   let falhas=falhasAtivasParaPlano();
   let rows=[];
 
+  // 1) Planos já criados: nunca somem da base, mesmo concluídos.
   planos.forEach(p=>{
     let f=db.falhas.find(x=>x.id===p.falhaId)||{};
     let inf=f.id?itemInfoFromFalha(f):{};
@@ -1089,18 +1361,19 @@ function renderPlano(){
       local:inf.local||p.local||'',
       itemNome:inf.itemNome||p.item||'',
       statusFalha:f.status||p.statusFalha||'',
+      categoria:p.categoria||'',
       responsavel:p.responsavel||'',
       desde:f.data||p.criadoEm||'',
       criadoEm:p.criadoEm||'',
       concluidoEm:p.concluidoEm||'',
       situacao:p.situacao||'Aberto',
-      direcionamento:p.direcionamento||getDirecionamento(f.status||p.statusFalha),
       justificativa:p.justificativa||'',
       providencia:p.providencia||'',
-      fotos:p.fotos||[]
+      necessitaCompra:p.necessitaCompra?'Sim':'Não'
     });
   });
 
+  // 2) Falhas ativas sem plano: aparecem para permitir criar plano.
   falhas.forEach(f=>{
     if(planoForFalha(f.id)) return;
     let inf=itemInfoFromFalha(f);
@@ -1115,15 +1388,15 @@ function renderPlano(){
       local:inf.local||'',
       itemNome:inf.itemNome||'',
       statusFalha:f.status||'',
+      categoria:'',
       responsavel:'',
       desde:f.data||'',
       criadoEm:'',
       concluidoEm:'',
       situacao:'Sem plano',
-      direcionamento:getDirecionamento(f.status),
       justificativa:f.motivo||f.obs||'',
       providencia:'',
-      fotos:[]
+      necessitaCompra:'Não'
     });
   });
 
@@ -1133,125 +1406,13 @@ function renderPlano(){
     return datas.some(d=>(!ini||d>=ini)&&(!fim||d<=fim+'T23:59'));
   }
   function situacaoPeso(s){return {'Sem plano':0,'Aberto':1,'Em andamento':2,'Concluído':3}[s]??9}
-  function fmtPlanoData(raw){
-    if(!raw)return '—';
-    let d=new Date(raw);
-    if(isNaN(d.getTime()))return esc(raw);
-    const dd=String(d.getDate()).padStart(2,'0'),mm=String(d.getMonth()+1).padStart(2,'0'),yy=String(d.getFullYear()).slice(-2);
-    const hh=String(d.getHours()).padStart(2,'0'),mi=String(d.getMinutes()).padStart(2,'0');
-    return `<span class="uxPlanoDate">${dd}/${mm}/${yy}<small>${hh}:${mi}</small></span>`;
-  }
-  function planoLocHtml(r){
-    const top=[r.piso,r.laco].filter(Boolean).join(' • ')||'—';
-    const item=r.itemNome||'Item não informado';
-    return `<div class="uxPlanoLoc" title="${esc([r.painel,top,item].filter(Boolean).join(' | '))}"><div class="uxPlanoLocTop">${esc(top)}</div><div class="uxPlanoLocItem">${esc(item)}</div></div>`;
-  }
-  function planoAcaoHtml(r){
-    if(!r.planoId)return `<button class="btn small" title="Criar plano" onclick="formPlano('', '${r.falhaId}')">+</button>`;
-    return `<div class="uxPlanoActions">
-      <button class="btn small secondary" title="Editar / ver detalhes" onclick="formPlano('${r.planoId}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1-4.2L15.5 5.3a1.5 1.5 0 0 1 2.1 0l1.1 1.1a1.5 1.5 0 0 1 0 2.1L8.2 19 4 20Z"/><path d="M13.8 7 17 10.2"/></svg></button>
-      ${r.situacao!=='Concluído'?`<button class="btn small secondary" title="Concluir" onclick="concluirPlano('${r.planoId}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5 9 17l10.5-10.5"/></svg></button>`:''}
-      <button class="btn small danger" title="Excluir" onclick="del('planos','${r.planoId}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2"/><path d="M6.5 7 7.3 19a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4L17.5 7"/><path d="M10 11v6M14 11v6"/></svg></button>
-    </div>`;
-  }
-  let filtrados=rows.filter(x=>(!q||JSON.stringify(x).toUpperCase().includes(q))&&(!fprio||x.prioridade===fprio)&&(!fsit||x.situacao===fsit)&&(!fresp||x.responsavel===fresp)&&inPeriodo(x))
+  let filtrados=rows.filter(x=>(!q||JSON.stringify(x).toUpperCase().includes(q))&&(!fcat||x.categoria===fcat)&&(!fprio||x.prioridade===fprio)&&(!fsit||x.situacao===fsit)&&(!fresp||x.responsavel===fresp)&&inPeriodo(x))
     .sort((a,b)=>situacaoPeso(a.situacao)-situacaoPeso(b.situacao)||prioridadePeso(a.prioridade)-prioridadePeso(b.prioridade)||String(a.desde||a.criadoEm).localeCompare(String(b.desde||b.criadoEm)));
 
-  const kpis={
-    aberto:filtrados.filter(x=>x.situacao==='Aberto').length,
-    sem:filtrados.filter(x=>x.situacao==='Sem plano').length,
-    andamento:filtrados.filter(x=>x.situacao==='Em andamento').length,
-    concluido:filtrados.filter(x=>x.situacao==='Concluído').length
-  };
-  const rowsHtml=filtrados.map(r=>`<tr>
-    <td><span class="pill priority-${up(r.prioridade).toLowerCase()}">${esc(r.prioridade)}</span></td>
-    <td><div class="uxPlanoLocal" title="${esc(r.local||'')}">${esc(r.local||'—')}</div></td>
-    <td>${planoLocHtml(r)}</td>
-    <td><span class="pill ${statusClass(r.statusFalha)}" title="${esc(r.statusFalha)}">${esc(r.statusFalha||'—')}</span></td>
-    <td><span class="pill ${r.situacao==='Concluído'?'ok':r.situacao==='Sem plano'?'warn':r.situacao==='Em andamento'?'info':'bad'}">${esc(r.situacao)}</span></td>
-    <td>${fmtPlanoData(r.desde||r.criadoEm)}</td>
-    <td>${planoAcaoHtml(r)}</td>
-  </tr>`).join('');
-
   document.getElementById('plano').innerHTML=`
-    <div class="card">
-      <div class="toolbar">
-        <div class="field" style="flex:2"><label>Pesquisar</label><input id="plBuscaPlano" placeholder="Loja, laço, item..." value="${esc(document.getElementById('plBuscaPlano')?.value||'')}"></div>
-        <div class="field"><label>Prioridade</label><select id="plPrio">${selectOpts(planoPrioridades(),fprio)}</select></div>
-        <div class="field"><label>Situação</label><select id="plSit">${selectOpts(['Sem plano','Aberto','Em andamento','Concluído'],fsit)}</select></div>
-        <div class="field"><label>Responsável</label><select id="plResp">${selectOpts(planoResponsaveis(),fresp)}</select></div>
-        <div class="field"><label>Inicial</label><input id="plIni" type="date" value="${esc(ini)}"></div>
-        <div class="field"><label>Final</label><input id="plFim" type="date" value="${esc(fim)}"></div>
-        <button class="btn" onclick="renderPlano()">Filtrar</button>
-        <button class="btn secondary" onclick="gerarRoteiroPlanoPDF()">PDF Roteiro</button>
-      </div>
-    </div>
-    <div class="card">
-      <h3 class="sectionTitle">Plano de ação <span class="mutedLine">${filtrados.length} registro(s) • ${kpis.aberto} aberto(s) • ${kpis.sem} sem plano • ${kpis.andamento} em andamento • ${kpis.concluido} concluído(s)</span></h3>
-      <div class="uxPlanoWrap">
-        <table class="uxPlanoTable uxResizableTable" data-resize-key="planoAcaoCompacto">
-          <colgroup>
-            <col style="width:8%">
-            <col style="width:18%">
-            <col style="width:24%">
-            <col style="width:16%">
-            <col style="width:12%">
-            <col style="width:12%">
-            <col style="width:10%">
-          </colgroup>
-          <thead><tr>
-            <th class="resizable">Prioridade</th>
-            <th class="resizable">Loja / Área</th>
-            <th class="resizable">Localização</th>
-            <th class="resizable">Status</th>
-            <th class="resizable">Situação</th>
-            <th class="resizable">Abertura</th>
-            <th>Ações</th>
-          </tr></thead>
-          <tbody>${rowsHtml||`<tr><td colspan="7"><p class="msg warn">Sem registros para os filtros selecionados.</p></td></tr>`}</tbody>
-        </table>
-      </div>
-      <p class="mutedLine" style="margin-top:8px">Direcionamento técnico, responsável, evidências e execução realizada ficam em Editar/Detalhes. Arraste a borda do cabeçalho para ajustar a largura das colunas.</p>
-    </div>`;
-  ['plBuscaPlano','plPrio','plSit','plResp','plIni','plFim'].forEach(id=>{let el=document.getElementById(id); if(el){el.onchange=renderPlano; if(id==='plBuscaPlano')el.oninput=()=>setTimeout(renderPlano,80)}});
-  setTimeout(()=>initResizableTables(),0);
-}
-
-
-function initResizableTables(){
-  document.querySelectorAll('table.uxResizableTable').forEach(table=>{
-    if(table.dataset.resizeReady==='1')return;
-    table.dataset.resizeReady='1';
-    const key='ux-colwidths-'+(table.dataset.resizeKey||'default');
-    const cols=[...table.querySelectorAll('colgroup col')];
-    try{
-      const saved=JSON.parse(localStorage.getItem(key)||'[]');
-      saved.forEach((w,i)=>{if(cols[i]&&w)cols[i].style.width=w});
-    }catch(e){}
-    table.querySelectorAll('th.resizable').forEach((th,idx)=>{
-      const h=document.createElement('span');
-      h.className='colResize';
-      h.title='Arraste para ajustar a largura da coluna';
-      th.appendChild(h);
-      h.addEventListener('mousedown',ev=>{
-        ev.preventDefault(); ev.stopPropagation();
-        const startX=ev.clientX;
-        const startW=cols[idx]?.getBoundingClientRect().width||th.getBoundingClientRect().width;
-        const tableW=table.getBoundingClientRect().width||1;
-        function move(e){
-          const px=Math.max(70,startW+(e.clientX-startX));
-          if(cols[idx])cols[idx].style.width=(px/tableW*100).toFixed(2)+'%';
-        }
-        function up(){
-          document.removeEventListener('mousemove',move);
-          document.removeEventListener('mouseup',up);
-          localStorage.setItem(key,JSON.stringify(cols.map(c=>c.style.width||'')));
-        }
-        document.addEventListener('mousemove',move);
-        document.addEventListener('mouseup',up);
-      });
-    });
-  });
+    <div class="card"><h3 class="sectionTitle">Filtros do Plano de Ação</h3><div class="toolbar"><div class="field"><label>Busca</label><input id="plBuscaPlano" placeholder="Loja, laço, item, motivo..." value="${esc(document.getElementById('plBuscaPlano')?.value||'')}"></div><div class="field"><label>Categoria</label><select id="plCat">${selectOpts(planoCategorias(),fcat)}</select></div><div class="field"><label>Prioridade</label><select id="plPrio">${selectOpts(planoPrioridades(),fprio)}</select></div><div class="field"><label>Situação</label><select id="plSit">${selectOpts(['Sem plano','Aberto','Em andamento','Concluído'],fsit)}</select></div><div class="field"><label>Responsável</label><select id="plResp">${selectOpts(planoResponsaveis(),fresp)}</select></div><div class="field"><label>Inicial</label><input id="plIni" type="date" value="${esc(ini)}"></div><div class="field"><label>Final</label><input id="plFim" type="date" value="${esc(fim)}"></div><button class="btn" onclick="renderPlano()">Filtrar</button></div><p class="msg warn">Planos concluídos permanecem registrados para relatório e rastreabilidade.</p></div>
+    <div class="card"><h3 class="sectionTitle">Lançamentos e acompanhamento</h3>${table(filtrados,[['Prioridade','prioridade'],['Painel','painel'],['Laço','laco'],['Piso','piso'],['Loja / Área','local'],['Item','itemNome'],['Falha','statusFalha',r=>`<span class="pill ${statusClass(r.statusFalha)}">${esc(r.statusFalha)}</span>`],['Categoria','categoria'],['Responsável','responsavel'],['Desde','desde'],['Situação','situacao',r=>`<span class="pill ${r.situacao==='Concluído'?'ok':r.situacao==='Sem plano'?'warn':''}">${esc(r.situacao)}</span>`],['Concluído em','concluidoEm']],r=>`${r.planoId?`<button class="btn small secondary" onclick="formPlano('${r.planoId}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1-4.2L15.5 5.3a1.5 1.5 0 0 1 2.1 0l1.1 1.1a1.5 1.5 0 0 1 0 2.1L8.2 19 4 20Z"/><path d="M13.8 7 17 10.2"/></svg> Editar</button>`:`<button class="btn small" onclick="formPlano('', '${r.falhaId}')">+ Criar</button>`} ${r.planoId&&r.situacao!=='Concluído'?`<button class="btn small" onclick="concluirPlano('${r.planoId}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5 9 17l10.5-10.5"/></svg> Concluir</button>`:''}`)}</div>`;
+  ['plBuscaPlano','plCat','plPrio','plSit','plResp','plIni','plFim'].forEach(id=>{let el=document.getElementById(id); if(el)el.onchange=renderPlano});
 }
 
 function renderImportacao(){if(!can('importar')){document.getElementById('importacao').innerHTML='<div class="card"><h3 class="sectionTitle">Importação bloqueada</h3><p class="msg warn">Seu perfil não possui permissão para importar ou substituir base cadastral.</p></div>';return;}document.getElementById('importacao').innerHTML=`<div class="card"><h3 class="sectionTitle">Importar CSV / XLS / XLSX</h3><div class="toolbar"><div class="field"><label>Arquivo</label><input type="file" id="fileImp" accept=".csv,.xls,.xlsx"></div><div class="field"><label>Modo</label><select id="modeImp"><option value="diff">Somente diferença</option><option value="overwrite">Sobrescrever iguais preservando histórico</option><option value="replace">Apagar dados atuais e importar do zero</option></select></div></div><p class="msg warn"><b>Colunas esperadas:</b> Painel, Laço, Piso, Endereço FLM, Porta, Loja, Tipo, Modelo, Endereço, Fabricante, Status, Observação. O sistema valida antes de importar.</p><button class="btn secondary" onclick="previewImport()">Pré-visualizar / validar</button> <button class="btn" onclick="importFile()">Importar</button><div id="impMsg"></div><div id="previewBox"></div></div><div class="card"><h3 class="sectionTitle">Último diagnóstico de importação</h3>${lastImportHtml()}</div>`}
@@ -2256,7 +2417,37 @@ function renderFalhas(){
 }
 
 function setPlanoCategoriaFiltro(cat){const el=document.getElementById('plCat');if(el)el.value=(el.value===cat?'':cat);renderPlano()}
-function fmtDataBR(raw){if(!raw)return '—';const d=new Date(raw);if(isNaN(d))return '—';const dd=String(d.getDate()).padStart(2,'0'),mm=String(d.getMonth()+1).padStart(2,'0'),yy=d.getFullYear(),hh=String(d.getHours()).padStart(2,'0'),mi=String(d.getMinutes()).padStart(2,'0');return `${dd}/${mm}/${yy}<br><small>${hh}:${mi}</small>`;}
+function dsBadgeClass(status){
+  const s=(status||'').toLowerCase();
+  if(s.includes('operação')||s==='em operação'||s==='ok')return 'op';
+  if(s.includes('teste'))return 'test';
+  if(s.includes('incêndio')||s.includes('disparado'))return 'fire';
+  if(s.includes('curto')||s.includes('falha')||s.includes('aberto'))return 'fail';
+  if(s.includes('desativação')||s.includes('desativado'))return 'off';
+  if(s.includes('aguardando'))return 'wait';
+  if(s.includes('alerta'))return 'alert';
+  if(s==='concluído'||s==='concluido')return 'done';
+  if(s==='em andamento')return 'prog';
+  if(s==='aberto'||s==='open')return 'open';
+  if(s==='sem plano')return 'noplan';
+  return 'off';
+}
+function dsBadgeHtml(status){return `<span class="dsBadge ${dsBadgeClass(status)}">${esc(normalizeStatus(status)||'—')}</span>`}
+function dsLocHtml(opts={}){
+  const {painel='',piso='',laco='',tipo='',endereco='',porta='',subLabel=''}=opts;
+  const tag=([piso?`P${piso.replace(/\D/g,'')}`:''],[laco||'']).filter(Boolean).join(' • ');
+  return `<div class="dsLoc">
+    ${painel?`<span class="dsLocTag">${esc(painel)}</span>`:''}
+    ${tag?`<span class="dsLocSub">${esc(tag)}</span>`:''}
+    ${tipo?`<span class="dsLocMain">${esc(tipo)}${endereco?' <span style="color:var(--l3a-text-soft);font-weight:600">'+esc(endereco)+'</span>':''}</span>`:''}
+    ${porta?`<span class="dsLocSub">Porta ${esc(porta)}</span>`:''}
+    ${subLabel?`<span class="dsLocSub">${esc(subLabel)}</span>`:''}
+  </div>`;
+}
+function dsDateHtml(raw){if(!raw)return '<span style="color:var(--l3a-text-muted)">—</span>';const d=new Date(raw);if(isNaN(d))return '<span style="color:var(--l3a-text-muted)">—</span>';const dd=String(d.getDate()).padStart(2,'0'),mm=String(d.getMonth()+1).padStart(2,'0'),yy=d.getFullYear(),hh=String(d.getHours()).padStart(2,'0'),mi=String(d.getMinutes()).padStart(2,'0');return `<div class="dsDt">${dd}/${mm}/${yy}<small>${hh}:${mi}</small></div>`}
+function dsPortasHtml(flmId){const ps=db.portas.filter(p=>p.flmId===flmId);if(!ps.length)return '<span style="color:var(--l3a-text-muted);font-size:11px">Sem portas</span>';return `<div class="dsPortas">${ps.map(p=>{const ok=!isFalhaStatus(p.status);const nome=locName(p.localId)||'Sem vínculo';return `<div class="dsPortaRow"><span class="dsPortaDot ${ok?'':'fail'}"></span><span class="dsPortaLabel">P${p.numero}</span><span class="dsPortaNome" title="${esc(nome)}">${esc(nome)}</span></div>`}).join('')}</div>`}
+function dsKpi(label,value,cls='',click=''){return `<div class="dsKpiCard ${cls}" ${click?`onclick="${click}"`:''}><div class="dsKpiLabel">${esc(label)}</div><div class="dsKpiValue">${esc(String(value))}</div></div>`}
+function dsKpiStrip(items){return `<div class="dsKpiStrip">${items.map(([l,v,c,k])=>dsKpi(l,v,c,k)).join('')}</div>`}
 function renderPlano(){
   let planos=db.planos||[];
   let q=(document.getElementById('plBuscaPlano')?.value||'').toUpperCase();
@@ -2945,111 +3136,6 @@ function openLocal(i){
   let l=db.locais.find(x=>x.id===i); if(!l)return;
   let hist=db.falhas.filter(f=>f.localId===i||f.itemId===i).sort((a,b)=>String(b.data).localeCompare(String(a.data)));
   openModal(`<h2>${esc(lucNomeOficialLocal(l))}</h2><p><b>LUC:</b> ${lucDisplayLocal(l)} • <b>Chave lógica:</b> ${esc(lucChaveLogicaLocal(l))} • <b>Tipo:</b> ${esc(l.tipo)} • <b>Painel:</b> ${esc(paiName(l.painelId))} • <b>Laço:</b> ${esc(lacName(l.lacoId))} • <b>Piso:</b> ${esc(l.piso)}</p>${l.nomeOriginalCadastro?`<p class="note"><b>Nome antigo:</b> ${esc(l.nomeOriginalCadastro)}</p>`:''}<h3>Histórico da loja/área</h3><div class="timeline">${hist.map(h=>`<div class="tl"><b>${esc(h.status)}</b><br><small>${esc(h.data)} • ${esc(h.itemNome||'')}</small><p>${esc(h.motivo||h.obs||'Sem observação')}</p></div>`).join('')||'<p class="msg warn">Sem histórico.</p>'}</div>`);
-}
-
-
-
-/* =========================================================================
-   V8.9 UX GLOBAL — overrides finais de interface.
-   Bloco 100% aditivo: reusa dados e funções existentes, sem alterar schema.
-   ========================================================================= */
-let _uxTableSeq=0;
-function uxAttr(s){return esc(String(s||'')).replace(/'/g,'&#39;')}
-function uxFormatDate(raw){
-  if(!raw)return '<span class="mutedLine">—</span>';
-  const d=new Date(raw); if(isNaN(d.getTime()))return `<span>${esc(raw)}</span>`;
-  const dd=String(d.getDate()).padStart(2,'0'),mm=String(d.getMonth()+1).padStart(2,'0'),yy=String(d.getFullYear()).slice(-2);
-  const hh=String(d.getHours()).padStart(2,'0'),mi=String(d.getMinutes()).padStart(2,'0');
-  return `<div class="uxDate"><b>${dd}/${mm}/${yy}</b><small>${hh}:${mi}</small></div>`;
-}
-function uxLocationBlock(o={}){
-  const painel=o.painel||paiName(o.painelId)||'';
-  const laco=o.laco||lacName(o.lacoId)||'';
-  const piso=o.piso||'';
-  const tipo=o.tipo||'';
-  const endereco=o.endereco||o.itemNome||o.item||'';
-  const porta=o.porta||o.portaNumero||'';
-  const top=[painel, [piso,laco].filter(Boolean).join(' • ')].filter(Boolean).join(' | ');
-  const mid=[tipo,endereco].filter(Boolean).join(' • ')||'—';
-  const bot=porta?`Porta ${porta}`:(o.extra||'');
-  return `<div class="uxLocation"><span class="uxLocTop">${esc(top||'Localização')}</span><span class="uxLocMid" title="${uxAttr(mid)}">${esc(mid)}</span>${bot?`<span class="uxLocBot">${esc(bot)}</span>`:''}</div>`;
-}
-function uxAction(label,icon,onclick,cls=''){
-  return `<button class="uxIconBtn ${cls}" title="${esc(label)}" aria-label="${esc(label)}" onclick="${onclick}">${icon}</button>`;
-}
-function uxSituacaoFalha(r){return r.resolvidaEm?'Resolvida':(isFalhaStatus(r.status)?'Aberta':'Em operação')}
-function uxSituacaoBadge(s){let cls=s==='Concluído'||s==='Resolvida'||s==='Em operação'?'ok':s==='Em andamento'?'info':s==='Sem plano'||s==='Aguardando Loja'||s==='Aguardando Material'?'warn':s==='Aberta'||s==='Aberto'?'bad':'off';return `<span class="pill ${cls}">${esc(s||'—')}</span>`}
-function uxPriorityBadge(p){const key=up(p).includes('CRIT')?'critica':up(p).includes('ALTA')?'alta':up(p).includes('MEDIA')||up(p).includes('MÉDIA')?'media':'baixa';return `<span class="pill priority-${key}">${esc(p||'Média')}</span>`}
-function uxScrollTable(head,body,minWidth='900px'){
-  const id='uxTbl'+(++_uxTableSeq);
-  return `<div class="tableTopScroll" onscroll="const w=document.getElementById('${id}'); if(w) w.scrollLeft=this.scrollLeft"><div style="width:${minWidth}"></div></div><div class="tableWrap" id="${id}" onscroll="const p=this.previousElementSibling; if(p) p.scrollLeft=this.scrollLeft"><table class="uxTable" style="min-width:${minWidth}"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
-}
-function uxKpi(label,val,kind='',onclick=''){
-  return `<div class="uxKpi ${kind}" ${onclick?`onclick="${onclick}"`:''}><small>${esc(label)}</small><b>${esc(val)}</b></div>`;
-}
-
-// Substitui a tabela global por versão corporativa com barra horizontal superior.
-table=function(rows,cols,actions){
-  if(!rows.length)return '<p class="msg warn">Sem registros.</p>';
-  const min=Math.max(760,(cols.length+(actions?1:0))*130)+'px';
-  const head='<tr>'+cols.map(c=>`<th>${c[0]}</th>`).join('')+(actions?'<th style="text-align:right">Ações</th>':'')+'</tr>';
-  const body=rows.map(r=>`<tr>${cols.map(c=>`<td>${c[2]?c[2](r):esc(r[c[1]])}</td>`).join('')}${actions?`<td><div class="uxActions">${actions(r)}</div></td>`:''}</tr>`).join('');
-  return uxScrollTable(head,body,min);
-};
-
-function renderDashboard(){
-  const el=document.getElementById('dashboard'); if(!el)return;
-  const all=[...db.flms.map(f=>({...f,tipo:'Módulo'})),...db.equipamentos];
-  const total=all.length, ativos=all.filter(x=>isOperacaoStatus(x.status)).length, falha=all.filter(x=>isFalhaStatus(x.status)).length, teste=all.filter(x=>isTesteStatus(x.status)).length, desat=all.filter(x=>isDesativadoStatus(x.status)).length;
-  const mod=db.flms.length, det=db.equipamentos.filter(e=>up(e.tipo).includes('DETECTOR')).length, acm=db.equipamentos.filter(e=>up(e.tipo).includes('ACIONADOR')).length;
-  const planosAbertos=(db.planos||[]).filter(p=>p.situacao!=='Concluído'&&p.situacao!=='Cancelado').length;
-  const disp=total?Math.round((ativos/total)*100):0;
-  const hoje=new Date().toISOString().slice(0,10); const ocorrHoje=(db.falhas||[]).filter(f=>String(f.data||'').slice(0,10)===hoje).length;
-  const lojasFalha=new Set((db.falhas||[]).filter(f=>isFalhaStatus(f.status)&&!f.resolvidaEm).map(f=>f.localId).filter(Boolean)).size;
-  const porPiso={}; all.forEach(x=>{const p=x.piso||'Sem piso';porPiso[p]=porPiso[p]||{ativo:0,falha:0,teste:0,total:0};porPiso[p].total++; if(isFalhaStatus(x.status))porPiso[p].falha++; else if(isTesteStatus(x.status))porPiso[p].teste++; else if(isOperacaoStatus(x.status))porPiso[p].ativo++;});
-  const pisoRows=Object.entries(porPiso).sort((a,b)=>pisoSortKey(a[0])-pisoSortKey(b[0])).map(([p,v])=>{const d=v.total?Math.round(v.ativo/v.total*100):0;return `<tr><td><b>${esc(p)}</b></td><td>${v.ativo}</td><td>${v.falha}</td><td>${v.teste}</td><td><div class="bar"><i class="ok" style="width:${d}%"></i></div><small>${d}%</small></td></tr>`}).join('')||'<tr><td colspan="5">Sem dados</td></tr>';
-  const falhasAtivas=(db.falhas||[]).filter(f=>isFalhaStatus(f.status)&&!f.resolvidaEm).slice().sort((a,b)=>String(b.data).localeCompare(String(a.data))).slice(0,12);
-  const falhaRows=falhasAtivas.map(f=>`<tr><td><div class="uxPrimary">${esc(locName(f.localId)||'Sem loja')}</div><div class="uxSub">${esc(f.piso||'—')} • ${esc(lacName(f.lacoId)||'—')}</div></td><td>${uxLocationBlock({painel:paiName(f.painelId),piso:f.piso,laco:lacName(f.lacoId),tipo:f.tipo,endereco:f.itemNome})}</td><td><span class="pill ${statusClass(f.status)}">${esc(normalizeStatus(f.status))}</span></td><td>${uxFormatDate(f.data)}</td></tr>`).join('')||'<tr><td colspan="4">Sem falhas abertas</td></tr>';
-  el.innerHTML=`
-  <div class="card"><div class="uxKpiGrid">
-    ${uxKpi('Disponibilidade Geral',disp+'%','good')}${uxKpi('Equipamentos Ativos',ativos,'good')}${uxKpi('Equipamentos em Falha',falha,'bad')}${uxKpi('Equipamentos em Teste',teste,'warn')}${uxKpi('Equipamentos Desativados',desat,'')}${uxKpi('Módulos Instalados',mod,'info')}${uxKpi('Detectores Instalados',det,'info')}${uxKpi('Acionadores Instalados',acm,'info')}${uxKpi('Lojas Vinculadas',db.locais.length,'info')}${uxKpi('Planos em Aberto',planosAbertos,'warn',"currentView='plano';render()")}${uxKpi('Lojas em Falha',lojasFalha,'bad',"currentView='falhas';render()")}${uxKpi('Ocorrências Hoje',ocorrHoje,'warn')}
-  </div></div>
-  <div class="split2">
-    <div class="card"><h3 class="sectionTitle">Status por piso</h3><div class="tableWrap" style="max-height:360px"><table class="uxTable" style="min-width:0"><thead><tr><th>Piso</th><th>Ativos</th><th>Falhas</th><th>Teste</th><th>Disponibilidade</th></tr></thead><tbody>${pisoRows}</tbody></table></div></div>
-    <div class="card"><h3 class="sectionTitle">Lojas com falha</h3><div class="tableWrap" style="max-height:360px"><table class="uxTable" style="min-width:0"><thead><tr><th>Loja</th><th>Localização</th><th>Status</th><th>Abertura</th></tr></thead><tbody>${falhaRows}</tbody></table></div></div>
-  </div>`;
-}
-
-function renderFlms(){
-  let f=filters.flm||{};let paineis=unique(db.paineis.map(p=>p.nome));let lacos=unique(db.lacos.map(l=>l.nome));let pisos=unique(db.flms.map(x=>x.piso).concat(db.lacos.map(x=>x.piso),db.locais.map(x=>x.piso),db.equipamentos.map(x=>x.piso)));let lojas=unique(db.locais.map(x=>x.nome));
-  let rows=db.flms.map(flm=>{let ps=db.portas.filter(p=>p.flmId===flm.id);let portas=ps.map(p=>`${isFalhaStatus(p.status)?'❌':'✅'} P${p.numero}: ${locName(p.localId)||'Sem vínculo'}`).join('<br>');let nomesPortas=ps.map(p=>locName(p.localId)).filter(Boolean).join(' | ');return {...flm,painel:paiName(flm.painelId),laco:lacName(flm.lacoId),portas,lojas:nomesPortas}}).filter(r=>(!f.painel||r.painel===f.painel)&&(!f.laco||r.laco===f.laco)&&(!f.piso||r.piso===f.piso)&&(!f.loja||up(r.lojas).includes(up(f.loja))));
-  document.getElementById('flms').innerHTML=`<div class="card"><button class="btn" onclick="formFlm()">+ Criar novo módulo</button><div class="toolbar"><div class="field"><label>Painel</label><select onchange="filters.flm={...filters.flm,painel:this.value};render()">${selectOpts(paineis,f.painel)}</select></div><div class="field"><label>Laço</label><select onchange="filters.flm={...filters.flm,laco:this.value};render()">${selectOpts(lacos,f.laco)}</select></div><div class="field"><label>Piso</label><select onchange="filters.flm={...filters.flm,piso:this.value};render()">${selectOpts(pisos,f.piso)}</select></div><div class="field"><label>Loja / Área</label><select onchange="filters.flm={...filters.flm,loja:this.value};render()">${selectOpts(lojas,f.loja)}</select></div><button class="btn secondary" onclick="filters.flm={};render()">Limpar</button></div></div><div class="card"><h3 class="sectionTitle">Módulos físicos e portas</h3>${table(rows,[['Localização','loc',r=>uxLocationBlock({painel:r.painel,piso:r.piso,laco:r.laco,tipo:'Módulo',endereco:r.endereco})],['Modelo','modelo'],['Portas','portas',r=>r.portas||'—'],['Status','status',r=>`<span class="pill ${statusClass(flmStatusAgregado(r.id))}">${esc(flmStatusAgregado(r.id))}</span>`]],r=>`${uxAction('Editar','✏️',`formFlm('${r.id}')`)}${uxAction('Portas','🔌',`managePortas('${r.id}')`)}${uxAction('Excluir','🗑',`del('flms','${r.id}')`,'danger')}`)}</div>`;
-}
-
-function renderEquipamentos(){
-  let f=filters.eq||{};let tipos=unique(db.equipamentos.map(e=>e.tipo));let modelos=unique(db.equipamentos.map(e=>e.modelo));let status=unique(db.equipamentos.map(e=>normalizeStatus(e.status)));
-  let rows=db.equipamentos.filter(e=>(!f.painel||paiName(e.painelId)===f.painel)&&(!f.laco||lacName(e.lacoId)===f.laco)&&(!f.tipo||e.tipo===f.tipo)&&(!f.modelo||e.modelo===f.modelo)&&(!f.status||normalizeStatus(e.status)===f.status)&&(!f.q||JSON.stringify(e).toUpperCase().includes(up(f.q)))).map(e=>{const porta=e.portaId?db.portas.find(p=>p.id===e.portaId):null;return {...e,painel:paiName(e.painelId),laco:lacName(e.lacoId),portaNumero:porta?.numero||'',status:normalizeStatus(e.status)}});
-  document.getElementById('equipamentos').innerHTML=`<div class="card"><button class="btn" onclick="formEquip()">+ Criar detector/acionador</button><div class="toolbar"><div class="field"><label>Painel</label><select onchange="filters.eq={...filters.eq,painel:this.value};render()">${selectOpts(unique(db.paineis.map(p=>p.nome)),f.painel)}</select></div><div class="field"><label>Laço</label><select onchange="filters.eq={...filters.eq,laco:this.value};render()">${selectOpts(unique(db.lacos.map(l=>l.nome)),f.laco)}</select></div><div class="field"><label>Tipo</label><select onchange="filters.eq={...filters.eq,tipo:this.value};render()">${selectOpts(tipos,f.tipo)}</select></div><div class="field"><label>Modelo</label><select onchange="filters.eq={...filters.eq,modelo:this.value};render()">${selectOpts(modelos,f.modelo)}</select></div><div class="field"><label>Status</label><select onchange="filters.eq={...filters.eq,status:this.value};render()">${selectOpts(status,f.status)}</select></div><div class="field"><label>Busca</label><input value="${esc(f.q)}" data-filter-input="1" data-filter-group="eq" data-filter-key="q" data-focus-key="equipBusca"></div></div></div><div class="card"><h3 class="sectionTitle">Detectores / Acionadores</h3>${table(rows,[['Localização','loc',r=>uxLocationBlock({painel:r.painel,piso:r.piso,laco:r.laco,tipo:r.tipo,endereco:r.endereco,porta:r.portaNumero})],['Modelo','modelo'],['Loja / Área','localId',r=>`<div class="uxPrimary">${esc(locName(r.localId)||'—')}</div>`],['Status','status',r=>`<span class="pill ${statusClass(r.status)}">${esc(r.status)}</span>`]],r=>`${uxAction('Histórico','🕒',`openEquip('${r.id}')`)}${uxAction('Editar','✏️',`formEquip('${r.id}')`)}${uxAction('Excluir','🗑',`del('equipamentos','${r.id}')`,'danger')}`)}</div>`;
-}
-
-function renderLocais(){
-  let q=filters.locaisQ||'';let rows=db.locais.filter(l=>!q||JSON.stringify(l).toUpperCase().includes(up(q))).map(l=>{const porta=db.portas.find(p=>p.id===l.portaId);const flm=flmById(l.flmId);return {...l,painel:paiName(l.painelId),laco:lacName(l.lacoId),flm:flm?.endereco||'',porta:porta?.numero||'',qtd:db.equipamentos.filter(e=>e.localId===l.id).length,lucVal:lucValorLocal(l)}});
-  document.getElementById('locais').innerHTML=`<div class="card"><button class="btn" onclick="formLocal()">+ Criar loja/área</button><div class="toolbar"><div class="field"><label>Pesquisar</label><input value="${esc(q)}" data-filter-input="1" data-filter-path="locaisQ" data-focus-key="locaisBusca" placeholder="Loja, LUC, piso, painel..."></div></div></div><div class="card"><h3 class="sectionTitle">Lojas / Áreas</h3>${table(rows,[['Loja / Área','nome',r=>`<div class="uxPrimary" title="${uxAttr(lucNomeOficialLocal(r)||r.nome)}">${esc(lucNomeOficialLocal(r)||r.nome)}</div><div class="uxSub">LUC ${esc(r.lucVal||'—')} • ${esc(r.tipo||'—')}</div>`],['Localização','loc',r=>uxLocationBlock({painel:r.painel,piso:r.piso,laco:r.laco,tipo:'FLM',endereco:r.flm,porta:r.porta})],['Equip.','qtd'],['Status','status',r=>`<span class="pill ${statusClass(r.status)}">${esc(normalizeStatus(r.status))}</span>`]],r=>`${uxAction('Histórico','🕒',`openLocal('${r.id}')`)}${uxAction('Editar','✏️',`formLocal('${r.id}')`)}${uxAction('Excluir','🗑',`del('locais','${r.id}')`,'danger')}`)}</div>`;
-}
-
-function renderFalhas(){
-  let f=filters.falhas||{};let rows=db.falhas.filter(x=>(!f.status||normalizeStatus(x.status)===f.status)&&(!f.tipo||x.tipo===f.tipo)&&(!f.q||JSON.stringify(x).toUpperCase().includes(up(f.q)))).map(x=>({...x,painel:paiName(x.painelId),laco:lacName(x.lacoId),loja:locName(x.localId),sistema:sistemaDaFalha(x),situacao:uxSituacaoFalha(x)}));
-  document.getElementById('falhas').innerHTML=`<div class="card"><button class="btn" onclick="formFalha()">+ Registrar falha / operação</button><div class="toolbar"><div class="field"><label>Status</label><select onchange="filters.falhas={...filters.falhas,status:this.value};render()">${selectOpts(unique(db.falhas.map(x=>normalizeStatus(x.status))),f.status)}</select></div><div class="field"><label>Situação</label><select onchange="filters.falhas={...filters.falhas,q:this.value};render()"><option value="">Todas</option><option value="Aberta" ${f.q==='Aberta'?'selected':''}>Aberta</option><option value="Resolvida" ${f.q==='Resolvida'?'selected':''}>Resolvida</option></select></div><div class="field"><label>Pesquisar</label><input value="${esc(f.q&&!['Aberta','Resolvida'].includes(f.q)?f.q:'')}" data-filter-input="1" data-filter-group="falhas" data-filter-key="q" data-focus-key="falhasBusca" placeholder="Loja, item, laço..."></div></div></div><div class="card"><h3 class="sectionTitle">Histórico e falhas</h3>${table(rows,[['Data','data',r=>uxFormatDate(r.data)],['Loja / Área','loja',r=>`<div class="uxPrimary">${esc(r.loja||'—')}</div><div class="uxSub">${esc(r.sistema||'SDAI')}</div>`],['Localização','loc',r=>uxLocationBlock({painel:r.painel,piso:r.piso,laco:r.laco,tipo:r.tipo,endereco:r.itemNome})],['Status','status',r=>`<span class="pill ${statusClass(r.status)}">${esc(normalizeStatus(r.status))}</span>`],['Situação','situacao',r=>uxSituacaoBadge(r.situacao)],['Responsável','responsavel',r=>esc(r.responsavel||'—')]],r=>`${uxAction('Editar','✏️',`formFalha('${r.id}')`)}${uxAction('Excluir','🗑',`del('falhas','${r.id}')`,'danger')}`)}</div>`;
-}
-
-function renderPlano(){
-  let planos=db.planos||[];let q=(document.getElementById('plBuscaPlano')?.value||'').toUpperCase();let fprio=document.getElementById('plPrio')?.value||'',fsit=document.getElementById('plSit')?.value||'',fresp=document.getElementById('plResp')?.value||'',ini=document.getElementById('plIni')?.value||'',fim=document.getElementById('plFim')?.value||'';let rows=[];
-  planos.forEach(p=>{let f=db.falhas.find(x=>x.id===p.falhaId)||{};let inf=f.id?itemInfoFromFalha(f):{};let fotos=normalizeFotos(p.fotos||[]);rows.push({planoId:p.id,falhaId:p.falhaId||'',prioridade:p.prioridade||'Média',laco:inf.laco||p.laco||'',piso:inf.piso||p.piso||'',local:inf.local||p.local||'',itemNome:inf.itemNome||p.item||'',statusFalha:f.status||p.statusFalha||'',responsavel:p.responsavel||'',desde:f.data||p.criadoEm||'',criadoEm:p.criadoEm||'',concluidoEm:p.concluidoEm||'',situacao:p.situacao||'Aberto',direcionamento:p.direcionamento||getDirecionamento(f.status||p.statusFalha),fotoCount:fotos.length});});
-  falhasAtivasParaPlano().forEach(f=>{if(planoForFalha(f.id))return;let inf=itemInfoFromFalha(f);rows.push({planoId:'',falhaId:f.id,prioridade:'Média',laco:inf.laco||'',piso:inf.piso||'',local:inf.local||'',itemNome:inf.itemNome||'',statusFalha:f.status||'',responsavel:'',desde:f.data||'',criadoEm:'',concluidoEm:'',situacao:'Sem plano',direcionamento:getDirecionamento(f.status),fotoCount:0});});
-  function inPeriodo(x){if(!ini&&!fim)return true;let datas=[x.desde,x.criadoEm,x.concluidoEm].filter(Boolean).map(String);return datas.some(d=>(!ini||d>=ini)&&(!fim||d<=fim+'T23:59'))}
-  let filtrados=rows.filter(x=>(!q||JSON.stringify(x).toUpperCase().includes(q))&&(!fprio||x.prioridade===fprio)&&(!fsit||x.situacao===fsit)&&(!fresp||x.responsavel===fresp)&&inPeriodo(x)).sort((a,b)=>prioridadePeso(a.prioridade)-prioridadePeso(b.prioridade)||String(a.desde).localeCompare(String(b.desde)));
-  document.getElementById('plano').innerHTML=`<div class="card"><div class="toolbar"><div class="field"><label>Pesquisar</label><input id="plBuscaPlano" placeholder="Loja, laço, item..." value="${esc(document.getElementById('plBuscaPlano')?.value||'')}"></div><div class="field"><label>Prioridade</label><select id="plPrio">${selectOpts(planoPrioridades(),fprio)}</select></div><div class="field"><label>Situação</label><select id="plSit">${selectOpts(['Sem plano','Aberto','Em andamento','Concluído','Cancelado'],fsit)}</select></div><div class="field"><label>Responsável</label><select id="plResp">${selectOpts(planoResponsaveis(),fresp)}</select></div><div class="field"><label>Inicial</label><input id="plIni" type="date" value="${esc(ini)}"></div><div class="field"><label>Final</label><input id="plFim" type="date" value="${esc(fim)}"></div><button class="btn" onclick="renderPlano()">Filtrar</button><button class="btn secondary" onclick="gerarPdfPlanoAcao()">PDF Roteiro</button></div></div><div class="card"><h3 class="sectionTitle">Plano de Ação <span class="uxSub">${filtrados.length} registro(s)</span></h3>${table(filtrados,[['Prioridade','prioridade',r=>uxPriorityBadge(r.prioridade)],['Loja / Área','local',r=>`<div class="uxPrimary">${esc(r.local||'—')}</div>`],['Localização','loc',r=>uxLocationBlock({piso:r.piso,laco:r.laco,tipo:'Item',endereco:r.itemNome})],['Status','statusFalha',r=>`<span class="pill ${statusClass(r.statusFalha)}">${esc(normalizeStatus(r.statusFalha)||'—')}</span>`],['Direcionamento Técnico','direcionamento',r=>`<div class="uxPreview" title="${uxAttr(r.direcionamento)}">${esc(r.direcionamento||'—')}</div>`],['Responsável','responsavel'],['Situação','situacao',r=>uxSituacaoBadge(r.situacao)],['Abertura','desde',r=>uxFormatDate(r.desde)],['Conclusão','concluidoEm',r=>uxFormatDate(r.concluidoEm)],['Evidências','fotoCount',r=>`<div class="uxEvidence">${r.fotoCount?`📷 ${r.fotoCount}`:'—'}</div>`]],r=>`${r.planoId?uxAction('Editar','✏️',`formPlano('${r.planoId}')`):`<button class="btn small" onclick="formPlano('','${r.falhaId}')">+ Plano</button>`}${r.planoId&&r.situacao!=='Concluído'?uxAction('Concluir','✔',`concluirPlano('${r.planoId}')`):''}${r.planoId?uxAction('Excluir','🗑',`del('planos','${r.planoId}')`,'danger'):''}`)}</div>`;
-  ['plBuscaPlano','plPrio','plSit','plResp','plIni','plFim'].forEach(id=>{let el=document.getElementById(id);if(el)el.onchange=renderPlano});
 }
 
 function bootSDAIManager(){
