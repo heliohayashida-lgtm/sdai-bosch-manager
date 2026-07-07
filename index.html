@@ -525,7 +525,64 @@ tbody tr:last-child td{border-bottom:0}
 .chartLine.selected{background:var(--l3a-primary-50)}
 .chartLine.selected b{color:var(--l3a-primary-700)}
 
+/* =========================================================================
+   RELATÓRIO GERENCIAL EXECUTIVO SDAI — Fase 1
+   Eleva o padrão visual do módulo de Relatórios reaproveitando os tokens e
+   componentes do Design System já existente (DS-1 a DS-10 acima). Nenhuma
+   nova identidade visual foi criada — apenas novos arranjos dos mesmos
+   tokens (--l3a-*) e das mesmas classes-base (dsKpiStrip, dsBadge, table).
+   ========================================================================= */
+.execCover{position:relative;overflow:hidden;border-radius:var(--l3a-radius-lg);
+  background:linear-gradient(135deg,var(--l3a-secondary-900),var(--l3a-secondary-700) 55%,var(--l3a-primary-700));
+  color:#fff;padding:34px 34px 28px;margin-bottom:20px;box-shadow:var(--l3a-shadow-lg)}
+.execCover:after{content:"";position:absolute;right:-110px;top:-110px;width:300px;height:300px;border-radius:50%;background:rgba(255,255,255,.08)}
+.execCover:before{content:"";position:absolute;left:-70px;bottom:-90px;width:220px;height:220px;border-radius:50%;background:rgba(14,165,183,.16)}
+.execCoverTop{display:flex;align-items:center;justify-content:space-between;gap:16px;position:relative;z-index:1}
+.execCoverLogos{display:flex;align-items:center;gap:14px}
+.execCoverLogoBox{width:56px;height:56px;border-radius:14px;background:#fff;display:grid;place-items:center;overflow:hidden;box-shadow:var(--l3a-shadow-sm)}
+.execCoverLogoBox img{width:100%;height:100%;object-fit:contain;padding:6px}
+.execCoverLogoBox span{font-weight:800;color:var(--l3a-primary-700);font-size:13px}
+.execCoverKicker{font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;font-weight:800;color:#a9c4e8;margin:0 0 6px}
+.execCoverTitle{font-size:30px;font-weight:800;letter-spacing:-.03em;margin:0 0 6px;color:#fff}
+.execCoverSub{font-size:13.5px;color:#cfe0f7;margin:0}
+.execCoverMetaGrid{position:relative;z-index:1;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-top:24px}
+.execCoverMetaItem{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);border-radius:12px;padding:11px 14px}
+.execCoverMetaItem small{display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.08em;font-weight:800;color:#aec6e6}
+.execCoverMetaItem b{display:block;margin-top:4px;font-size:14px;font-weight:750;color:#fff}
+
+.execSectionKicker{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:800;color:var(--l3a-primary-700);margin:0 0 4px}
+.execSectionHead{margin:26px 0 14px}
+.execSectionHead h2{font-size:19px;font-weight:800;letter-spacing:-.02em;color:var(--l3a-text);margin:0 0 3px}
+.execSectionHead p{font-size:12.5px;color:var(--l3a-text-muted);margin:0}
+.execSectionHead:first-child{margin-top:0}
+
+.execChartGrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.execChartGrid.execChartGrid3{grid-template-columns:repeat(3,1fr)}
+.execChartBox{border:1px solid var(--l3a-border);border-radius:var(--l3a-radius-lg);padding:16px;background:linear-gradient(180deg,#fff,var(--l3a-bg-soft));break-inside:avoid}
+.execChartBox h4{margin:0 0 2px;font-size:13.5px;font-weight:800;color:var(--l3a-text)}
+.execChartBox p{margin:0 0 10px;font-size:11.5px;color:var(--l3a-text-muted)}
+.execChartCanvasWrap{position:relative;width:100%}
+
+.execPainelCard{border:1px solid var(--l3a-border);border-radius:var(--l3a-radius-lg);padding:16px 18px;margin-bottom:14px;break-inside:avoid;background:var(--l3a-surface)}
+.execPainelHead{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.execPainelHead h3{margin:0;font-size:16px;font-weight:800;color:var(--l3a-text)}
+
+.execLacoGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-bottom:16px}
+.execRanking{display:grid;gap:6px}
+.execRankRow{display:grid;grid-template-columns:28px 1fr 60px;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid var(--l3a-border);font-size:12.5px}
+.execRankRow:last-child{border-bottom:0}
+.execRankPos{width:26px;height:26px;border-radius:50%;background:var(--l3a-primary-50);color:var(--l3a-primary-700);font-weight:800;font-size:11.5px;display:grid;place-items:center}
+.execRankVal{text-align:right;font-weight:800;color:var(--l3a-text)}
+
+.execPageBreak{break-before:page}
+.execAvoidBreak{break-inside:avoid}
+.execRunningFooter{display:none}
+.execConclusao{border:1px solid var(--l3a-border);border-radius:var(--l3a-radius-lg);padding:16px 18px;background:var(--l3a-bg-soft);margin:18px 0}
+.execConclusao h3{margin:0 0 6px;font-size:14.5px;font-weight:800}
+.execConclusao p{margin:0;font-size:12.5px;color:var(--l3a-text-soft);line-height:1.6}
+
 /* ---------- 17. IMPRESSÃO (geração de relatório em PDF) --------------------- */
+@page{size:A4;margin:16mm 12mm 20mm 12mm}
 @media print{
   *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
   .side,.top,.hidePrint,.modal,.userMenu,.drawerClose{display:none!important}
@@ -537,15 +594,20 @@ tbody tr:last-child td{border-bottom:0}
   body{background:#fff;color:#0f172a}
   .reportCover{border-radius:0;margin:-8mm -8mm 8mm -8mm;padding:22mm 12mm 18mm}
   .reportCover h2{font-size:24px}
+  .execCover{border-radius:0;margin:-16mm -12mm 10mm -12mm;padding:20mm 12mm 14mm}
   .grid,.premiumGrid{grid-template-columns:repeat(4,1fr);gap:8px}
   .metric{padding:10px;border-radius:10px}
   .metric strong{font-size:20px}
-  .chartGrid{grid-template-columns:1fr 1fr;gap:8px}
-  .chartPanel{break-inside:avoid;padding:10px}
+  .chartGrid,.execChartGrid,.execChartGrid3{grid-template-columns:1fr 1fr;gap:8px}
+  .chartPanel,.execChartBox,.execPainelCard,.dsLacoCard{break-inside:avoid;padding:10px}
   .reportBlock{break-inside:avoid;border-radius:10px;padding:10px;margin:8px 0}
+  .execLacoGrid{grid-template-columns:1fr 1fr}
+  .execPageBreak{break-before:page}
   table{min-width:0;font-size:9px}
   th,td{font-size:9px;padding:5px}
   .reportFooter{font-size:10px}
+  .execRunningFooter{display:flex;position:fixed;left:12mm;right:12mm;bottom:6mm;justify-content:space-between;
+    font-size:8.5px;color:#61728a;border-top:1px solid #d8dee7;padding-top:4px}
 }
 
 /* ======================================================================
@@ -1418,7 +1480,18 @@ function renderImportacao(){if(!can('importar')){document.getElementById('import
 function lastImportHtml(){let r=db.imports.at(-1); if(!r)return '<p class="msg warn">Nenhuma importação executada.</p>'; let cards=Object.entries(r.stats).map(([k,v])=>`<div class="diagItem"><small>${esc(k)}</small><b>${esc(v)}</b></div>`).join(''); let rom=r.romannel?`<div class="msg ${r.romannel.ok?'ok':'err'}">ROMANNEL: ${esc(r.romannel.msg)}</div>`:''; return `${rom}<div class="diag">${cards}</div><h4>Erros / ignorados</h4>${table(r.errors||[],[['Linha','linha'],['Motivo','motivo'],['Registro','registro']])}`}
 function renderExportacao(){document.getElementById('exportacao').innerHTML=`<div class="card"><h3 class="sectionTitle">Exportações</h3><div class="toolbar"><button class="btn" onclick="exportJson()">Base completa JSON</button><button class="btn" onclick="exportAllCsv()">Base completa CSV</button><button class="btn secondary" onclick="exportEntity('locais')">Lojas / Áreas</button><button class="btn secondary" onclick="exportEntity('flms')">FLMs</button><button class="btn secondary" onclick="exportEntity('equipamentos')">Equipamentos</button><button class="btn secondary" onclick="exportEntity('planos')">Plano de ação</button><button class="btn secondary" onclick="exportEntity('inconsistencias')">Inconsistências</button><button class="btn danger" onclick="if(confirm('Apagar toda base local?'))clearAll()">Limpar base local</button></div></div>`}
 function reportData(){let ini=document.getElementById('repIni')?.value||'',fim=document.getElementById('repFim')?.value||'',painel=document.getElementById('repPainel')?.value||''; let fal=db.falhas.filter(f=>(!painel||paiName(f.painelId)===painel)&&(!ini||f.data>=ini)&&(!fim||f.data<=fim+'T23:59')); let lanc=fal.filter(f=>isFalhaStatus(f.status)).length; let resol=fal.filter(f=>up(f.status).includes('OPER')||f.resolvidaEm).length; let byPainel={}; db.paineis.filter(p=>!painel||p.nome===painel).forEach(p=>{byPainel[p.nome]={op:0,falha:0,tipos:{}}}); db.equipamentos.forEach(e=>{let pn=paiName(e.painelId); if(!byPainel[pn])return; let st=isFalhaStatus(e.status)?'falha':'op'; byPainel[pn][st]++; byPainel[pn].tipos[e.tipo]=(byPainel[pn].tipos[e.tipo]||{op:0,falha:0}); byPainel[pn].tipos[e.tipo][st]++}); db.flms.forEach(f=>{let pn=paiName(f.painelId); if(!byPainel[pn])return; let st=isFalhaStatus(f.status)?'falha':'op'; byPainel[pn][st]++; byPainel[pn].tipos['Módulo']=(byPainel[pn].tipos['Módulo']||{op:0,falha:0}); byPainel[pn].tipos['Módulo'][st]++}); return {ini,fim,painel,fal,lanc,resol,byPainel}}
-function renderRelatorios(){let pain=unique(db.paineis.map(p=>p.nome));document.getElementById('relatorios').innerHTML=`<div class="card hidePrint"><h3 class="sectionTitle">Central de relatórios</h3><p class="msg warn">Escolha o período e o painel. Você pode apenas visualizar na tela ou gerar PDF para envio ao cliente.</p><div class="toolbar"><div class="field"><label>Data inicial</label><input type="date" id="repIni"></div><div class="field"><label>Data final</label><input type="date" id="repFim"></div><div class="field"><label>Painel</label><select id="repPainel">${selectOpts(pain)}</select></div><button class="btn" onclick="drawReport()">Visualizar relatório</button><button class="btn secondary" onclick="drawReport();setTimeout(()=>window.print(),250)">Gerar PDF</button></div></div><div id="reportOut" class="printArea"></div>`}
+function renderRelatorios(){
+  let pain=unique(db.paineis.map(p=>p.nome));
+  document.getElementById('relatorios').innerHTML=`<div class="card hidePrint">
+    <h3 class="sectionTitle">Relatório Gerencial Executivo SDAI</h3>
+    <p class="msg warn">100% automático — todos os indicadores usam exatamente os mesmos cálculos do Dashboard operacional. Filtre por painel (opcional) e gere o relatório para visualizar na tela ou exportar em PDF (A4).</p>
+    <div class="toolbar">
+      <div class="field"><label>Painel (opcional)</label><select id="repPainel">${selectOpts(pain)}</select></div>
+      <button class="btn" onclick="renderRelatorioExecutivoSDAI()">Gerar Relatório Executivo</button>
+      <button class="btn secondary" onclick="renderRelatorioExecutivoSDAI();setTimeout(()=>window.print(),350)">Gerar PDF (A4)</button>
+    </div>
+  </div><div id="reportOut" class="printArea"></div>`;
+}
 function pct(v,t){return t?Math.round((v/t)*100):0}
 function chartBarRows(rows,max){return `<div class="chartBars">${rows.map(r=>`<div class="chartLine"><b>${esc(r.label)}</b><div class="chartTrack"><i class="${r.cls||''}" style="width:${Math.max(2,pct(r.value,max))}%"></i></div><strong>${r.value}</strong></div>`).join('')}</div>`}
 function donutChart(ok,bad){let total=ok+bad,deg=total?Math.round((bad/total)*360):0;return `<div class="donutWrap"><div class="donut" style="--deg:${deg}deg"></div><div class="legend"><span><i class="dot ok"></i>Em operação: ${ok}</span><span><i class="dot bad"></i>Em falha: ${bad}</span><span>Total: ${total}</span></div></div>`}
@@ -2653,38 +2726,326 @@ function gerarPdfPlanoDetalhado(){
   document.getElementById('reportOut').innerHTML=`<div class="card"><div class="reportCover"><h2>Plano de Ação — Relatório Detalhado</h2><p>L3A Engenharia • ${esc(rotulo)}, com detalhes completos do atendimento${periodoTxt}</p><div class="reportMeta"><span>Total de itens: ${itens.length}</span><span>Gerado em: ${now()}</span></div></div>${blocos||'<div class="emptyState">Nenhum item encontrado para os filtros escolhidos.</div>'}<div class="reportFooter"><span>L3A Engenharia</span><span>Documento técnico gerado pelo SDAI Bosch Manager</span></div></div>`;
   setTimeout(()=>window.print(),400);
 }
-function drawReport(){
-  let r=reportData();
-  let geral=Object.values(r.byPainel).reduce((a,d)=>{a.op+=d.op;a.falha+=d.falha;Object.entries(d.tipos).forEach(([t,v])=>{a.tipos[t]=a.tipos[t]||{op:0,falha:0};a.tipos[t].op+=(v.op||0);a.tipos[t].falha+=(v.falha||0)});return a},{op:0,falha:0,tipos:{}});
-  let maxPain=Math.max(1,...Object.values(r.byPainel).map(d=>d.op+d.falha));
-  let painelChart=chartBarRows(Object.entries(r.byPainel).map(([pn,d])=>({label:pn,value:d.op+d.falha})),maxPain);
-  let tipoRows=Object.entries(geral.tipos).map(([t,v])=>({label:t,value:(v.op||0)+(v.falha||0)}));
-  let tipoChart=chartBarRows(tipoRows,Math.max(1,...tipoRows.map(x=>x.value)));
-
-  // ===== V8.2: quebra por piso (onde estão os problemas, não só quantos) =====
-  let byPiso={};
-  db.equipamentos.filter(e=>!r.painel||paiName(e.painelId)===r.painel).forEach(e=>{const p=pisoEfetivo(e)||'Sem piso';byPiso[p]=byPiso[p]||{op:0,falha:0};byPiso[p][dashStatusBucket(e.status)==='falha'?'falha':'op']++});
-  db.flms.filter(f=>!r.painel||paiName(f.painelId)===r.painel).forEach(f=>{const p=pisoEfetivo(f)||'Sem piso';byPiso[p]=byPiso[p]||{op:0,falha:0};byPiso[p][dashStatusBucket(f.status)==='falha'?'falha':'op']++});
-  let pisoEntries=Object.entries(byPiso).sort((a,b)=>pisoSortKey(a[0])-pisoSortKey(b[0]));
-  let pisoRowsChart=pisoEntries.map(([p,d])=>({label:p,value:d.op+d.falha}));
-  let pisoChart=chartBarRows(pisoRowsChart,Math.max(1,...pisoRowsChart.map(x=>x.value)));
-  let pisoTable=table(pisoEntries.map(([p,d])=>({piso:p,operacao:d.op,falha:d.falha,total:d.op+d.falha,disponibilidade:pct(d.op,d.op+d.falha)+'%'})),[['Piso','piso'],['Em operação','operacao'],['Falha','falha'],['Total','total'],['Disponibilidade','disponibilidade']]);
-
-  let painBlocks=Object.entries(r.byPainel).map(([pn,d])=>{
-    let lacos=db.lacos.filter(l=>paiName(l.painelId)===pn).map(l=>{
-      let eq=db.equipamentos.filter(e=>e.lacoId===l.id);let fl=db.flms.filter(f=>f.lacoId===l.id);let tipos={};
-      eq.forEach(e=>{tipos[e.tipo]=tipos[e.tipo]||{op:0,falha:0};tipos[e.tipo][isFalhaStatus(e.status)?'falha':'op']++});
-      fl.forEach(f=>{tipos['Módulo']=tipos['Módulo']||{op:0,falha:0};tipos['Módulo'][isFalhaStatus(f.status)?'falha':'op']++});
-      let totalL=Object.values(tipos).reduce((a,v)=>a+(v.op||0)+(v.falha||0),0);
-      let falhaL=Object.values(tipos).reduce((a,v)=>a+(v.falha||0),0);
-      return `<div class="reportBlock"><b>${esc(l.nome)} — ${totalL} itens / ${falhaL} em falha</b><div class="premiumTable">${table(Object.entries(tipos).map(([t,v])=>({tipo:t,operacao:v.op||0,falha:v.falha||0,total:(v.op||0)+(v.falha||0)})),[['Tipo','tipo'],['Em operação','operacao'],['Falha','falha'],['Total','total']])}</div></div>`;
-    }).join('');
-    let rowsTipo=Object.entries(d.tipos).map(([t,v])=>({tipo:t,operacao:v.op||0,falha:v.falha||0,total:(v.op||0)+(v.falha||0)}));
-    return `<div class="reportBlock"><h3>${esc(pn)}</h3><div class="miniChart"><div class="chartCard"><h4>Em operação</h4><b>${d.op}</b></div><div class="chartCard"><h4>Em falha</h4><b>${d.falha}</b></div><div class="chartCard"><h4>Disponibilidade</h4><b>${pct(d.op,d.op+d.falha)}%</b></div></div><div class="chartPanel"><h4>Status do painel</h4>${donutChart(d.op,d.falha)}</div><h4>Compilado por tipo</h4><div class="premiumTable">${table(rowsTipo,[['Tipo','tipo'],['Em operação','operacao'],['Falha','falha'],['Total','total']])}</div><h4>Por laço</h4>${lacos}</div>`;
-  }).join('');
-
-  document.getElementById('reportOut').innerHTML=`<div class="card"><div class="reportCover"><h2>Relatório Técnico L3A</h2><p>L3A Engenharia • Diagnóstico operacional do sistema de detecção e alarme de incêndio</p><div class="reportMeta"><span>Período: ${esc(r.ini||'início')} até ${esc(r.fim||'atual')}</span><span>Painel: ${esc(r.painel||'Todos')}</span><span>Gerado em: ${now()}</span></div></div><div class="grid">${kpi('Falhas lançadas no período',r.lanc)}${kpi('Falhas resolvidas no período',r.resol)}${kpi('Itens em operação',geral.op)}${kpi('Itens em falha',geral.falha)}${kpi('Disponibilidade',pct(geral.op,geral.op+geral.falha)+'%')}${kpi('Total avaliado',geral.op+geral.falha)}</div><div class="chartGrid"><div class="chartPanel"><h4>Status geral do sistema</h4>${donutChart(geral.op,geral.falha)}</div><div class="chartPanel"><h4>Dispositivos por tipo</h4>${tipoChart}</div><div class="chartPanel"><h4>Total por painel</h4>${painelChart}</div><div class="chartPanel"><h4>Total por piso</h4>${pisoChart}</div></div><div class="reportBlock"><h3>Compilado por piso</h3><p class="mutedLine">Onde a falha está concentrada, não apenas o total do sistema.</p>${pisoTable}</div><div class="reportBlock"><h3>Compilado geral por tipo</h3><div class="premiumTable">${table(Object.entries(geral.tipos).map(([t,v])=>({tipo:t,operacao:v.op||0,falha:v.falha||0,total:(v.op||0)+(v.falha||0)})),[['Tipo','tipo'],['Em operação','operacao'],['Falha','falha'],['Total','total']])}</div></div>${painBlocks}${reportPlanoBlock(r)}<div class="reportBlock"><h3>Conclusão técnica</h3><p>Relatório compilado com indicadores por painel, laço, piso, tipo de dispositivo e status operacional. A base segue a estrutura Empreendimento → Painel → Laço → FLM físico → Porta → Loja/Área → Equipamentos → Histórico de falhas.</p></div><div class="reportFooter"><span>L3A Engenharia</span><span>Documento técnico gerado pelo SDAI Bosch Manager</span></div></div>`;
+/* =========================================================================
+   FASE 1 — RELATÓRIO GERENCIAL EXECUTIVO SDAI (100% automático)
+   -------------------------------------------------------------------------
+   Fonte única de verdade: todas as agregações abaixo REAPROVEITAM as mesmas
+   funções já usadas pelo Dashboard operacional (counts, dashPisoStats,
+   dashPanoramaLacos, dashLojasComFalha, dashPorLaco, pisoEfetivo,
+   dashStatusBucket, isFalhaStatus/isOperacaoStatus/isTesteStatus/
+   isDesativadoStatus, timeSince, planoForFalha). Nenhum cálculo do
+   Dashboard foi duplicado — apenas novos agrupamentos (por fabricante,
+   modelo, responsável, prioridade etc.) que o Dashboard ainda não fazia.
+   Nenhuma regra de negócio, login, sincronização, importação, exportação
+   ou permissão existente foi alterada. CFTV/Som/Acesso/Organograma/Dados
+   contratuais ficam para as próximas fases, conforme escopo desta etapa.
+   ========================================================================= */
+const L3A_CHART_COLORS={primary:'#0B5FAD',primaryLight:'#3E86C9',accent:'#0EA5B7',success:'#15803D',warning:'#B45309',danger:'#B42318',neutral:'#8695AB',secondary:'#0E2A44'};
+window._relCharts=window._relCharts||{};
+let _relChartQueue=[];
+function relDestroyChart(k){if(window._relCharts[k]){try{window._relCharts[k].destroy()}catch(e){}delete window._relCharts[k]}}
+function relDestroyAllCharts(){Object.keys(window._relCharts).forEach(relDestroyChart)}
+function relQueueChart(id,type,data,options){_relChartQueue.push({id,type,data,options})}
+function relFlushCharts(){
+  if(typeof Chart==='undefined'){_relChartQueue=[];return}
+  _relChartQueue.forEach(({id,type,data,options})=>{
+    relDestroyChart(id);
+    const ctx=document.getElementById(id);
+    if(!ctx)return;
+    window._relCharts[id]=new Chart(ctx,{type,data,options:Object.assign({responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}},options||{})});
+  });
+  _relChartQueue=[];
 }
+function execChartBox(id,title,sub,heightPx){
+  return `<div class="execChartBox"><h4>${esc(title)}</h4>${sub?`<p>${esc(sub)}</p>`:''}<div class="execChartCanvasWrap" style="height:${heightPx||220}px"><canvas id="${id}" role="img" aria-label="${esc(title)}"></canvas></div></div>`;
+}
+
+// ---- Resumo geral: reaproveita counts() e dashPisoStats() (mesmas do Dashboard) ----
+function relResumoGeral(){
+  const c=counts();
+  const pisos=dashPisoStats();
+  const totalEquip=(db.equipamentos||[]).length+(db.flms||[]).length;
+  const op=pisos.reduce((a,p)=>a+p.operacao,0);
+  const teste=pisos.reduce((a,p)=>a+p.teste,0);
+  const desativado=pisos.reduce((a,p)=>a+p.desativada,0);
+  const falha=pisos.reduce((a,p)=>a+p.falha,0);
+  const disponibilidade=totalEquip?Math.round((op/totalEquip)*100):0;
+  const lojasFalha=dashLojasComFalha();
+  const planosAbertos=(db.planos||[]).filter(p=>p.situacao!=='Concluído').length;
+  const planosConcluidos=(db.planos||[]).filter(p=>p.situacao==='Concluído').length;
+  return {c,pisos,totalEquip,op,teste,desativado,falha,disponibilidade,lojasFalha,planosAbertos,planosConcluidos};
+}
+// ---- Tempo médio das falhas em aberto (novo indicador; reaproveita a mesma lógica de data usada em timeSince) ----
+function relTempoMedioFalhasHoras(){
+  const abertas=(db.falhas||[]).filter(f=>!f.resolvidaEm);
+  if(!abertas.length)return 0;
+  const soma=abertas.reduce((a,f)=>{const t=new Date(f.data).getTime();return a+(isNaN(t)?0:Math.max(0,(Date.now()-t)/3600000))},0);
+  return Math.round(soma/abertas.length);
+}
+// ---- Falhas por prioridade — junta Falha ao Plano via planoForFalha() já existente (não duplica cadastro de prioridade) ----
+function relFalhasPorPrioridade(){
+  const map={'Crítica':0,'Alta':0,'Média':0,'Baixa':0,'Sem plano':0};
+  (db.falhas||[]).forEach(f=>{const p=planoForFalha(f.id);const k=p?(p.prioridade||'Sem plano'):'Sem plano';map[k]=(map[k]||0)+1});
+  return map;
+}
+function relPorCampoGenerico(arr,getter,fallback){
+  const map={};arr.forEach(x=>{const k=getter(x)||fallback;map[k]=(map[k]||0)+1});
+  return Object.entries(map).map(([label,value])=>({label,value})).sort((a,b)=>b.value-a.value);
+}
+// ---- Falhas: dashboard executivo (novo; reaproveita paiName/lacName/locName/isFalhaStatus já existentes) ----
+function relFalhasResumo(){
+  const rows=(db.falhas||[]).map(f=>({...f,painel:paiName(f.painelId),laco:lacName(f.lacoId),loja:locName(f.localId)}));
+  const abertas=rows.filter(r=>!r.resolvidaEm);
+  return {
+    total:rows.length,abertas:abertas.length,concluidas:rows.length-abertas.length,
+    prioridade:relFalhasPorPrioridade(),
+    porTipo:relPorCampoGenerico(rows,r=>r.tipo,'Não classificada'),
+    porPainel:relPorCampoGenerico(rows,r=>r.painel,'Sem painel'),
+    porLaco:relPorCampoGenerico(rows,r=>r.laco,'Sem laço'),
+    porPiso:relPorCampoGenerico(rows,r=>r.piso,'Sem piso'),
+    porLoja:relPorCampoGenerico(rows,r=>r.loja,'Sem loja/área').slice(0,10),
+    tempoMedioHoras:relTempoMedioFalhasHoras()
+  };
+}
+// ---- Plano de Ação: dashboard executivo (novo; reaproveita planoCategorias/prioridadePeso já existentes) ----
+function relPlanoResumo(){
+  const planos=db.planos||[];
+  const hojeIso=isoNow().slice(0,10);
+  return {
+    total:planos.length,
+    abertos:planos.filter(p=>p.situacao==='Aberto').length,
+    emAndamento:planos.filter(p=>p.situacao==='Em andamento').length,
+    concluidos:planos.filter(p=>p.situacao==='Concluído').length,
+    atrasados:planos.filter(p=>p.situacao!=='Concluído'&&p.prazo&&p.prazo<hojeIso).length,
+    porPrioridade:relPorCampoGenerico(planos,p=>p.prioridade,'Não definida'),
+    porResponsavel:relPorCampoGenerico(planos,p=>p.responsavel,'Não atribuído'),
+    porSituacao:relPorCampoGenerico(planos,p=>p.situacao,'Aberto'),
+    timeline:planos.slice().sort((a,b)=>String(b.criadoEm||'').localeCompare(String(a.criadoEm||''))).slice(0,12)
+  };
+}
+// ---- Equipamentos: resumos por tipo/fabricante/modelo/status/piso/painel/laço (novo; reaproveita pisoEfetivo/normalizeStatus/paiName/lacName) ----
+function relEquipResumo(){
+  const eq=db.equipamentos||[];
+  return {
+    total:eq.length,
+    porTipo:relPorCampoGenerico(eq,e=>e.tipo,'Não classificado'),
+    porFabricante:relPorCampoGenerico(eq,e=>e.fabricante,'Não informado'),
+    porModelo:relPorCampoGenerico(eq,e=>e.modelo,'Não informado').slice(0,10),
+    porStatus:relPorCampoGenerico(eq,e=>normalizeStatus(e.status),'Não informado'),
+    porPiso:relPorCampoGenerico(eq,e=>pisoEfetivo(e),'Sem piso').sort((a,b)=>pisoSortKey(a.label)-pisoSortKey(b.label)),
+    porPainel:relPorCampoGenerico(eq,e=>paiName(e.painelId),'Sem painel'),
+    porLaco:relPorCampoGenerico(eq,e=>lacName(e.lacoId),'Sem laço').slice(0,12)
+  };
+}
+// ---- Lojas/Áreas: indicadores executivos (novo; reaproveita dashLojasComFalha/dashStatusBucket/pisoEfetivo) ----
+function relLojasResumo(){
+  const locais=db.locais||[];
+  const comFalha=dashLojasComFalha();
+  const semDispositivo=locais.filter(l=>!l.flmId&&!l.portaId&&!(db.equipamentos||[]).some(e=>e.localId===l.id)).length;
+  const rankingFalhas=(()=>{const map={};(db.falhas||[]).forEach(f=>{if(!f.localId)return;const nome=locName(f.localId)||'—';map[nome]=(map[nome]||0)+1});return Object.entries(map).map(([label,value])=>({label,value})).sort((a,b)=>b.value-a.value).slice(0,10)})();
+  return {
+    total:locais.length,
+    porPiso:relPorCampoGenerico(locais,l=>pisoEfetivo(l)||l.piso,'Sem piso').sort((a,b)=>pisoSortKey(a.label)-pisoSortKey(b.label)),
+    monitoradas:locais.filter(l=>l.flmId||l.portaId||l.lacoId).length,
+    comFalha:comFalha.length,
+    emTeste:locais.filter(l=>dashStatusBucket(l.status)==='teste').length,
+    semDispositivo,
+    rankingFalhas
+  };
+}
+// ---- Inventário hierárquico Painel→Laço (novo agrupamento; reaproveita dashPanoramaLacos() do Dashboard, sem recalcular status) ----
+function relInventarioPorPainel(){
+  const panorama=dashPanoramaLacos();
+  const map={};
+  panorama.forEach(r=>{
+    map[r.painel]=map[r.painel]||{painel:r.painel,lacos:[],total:0,op:0,falha:0,teste:0};
+    map[r.painel].lacos.push(r);
+    map[r.painel].total+=r.total;map[r.painel].op+=r.op;map[r.painel].falha+=r.falha;map[r.painel].teste+=r.teste;
+  });
+  return Object.values(map).map(p=>({...p,disp:p.total?Math.round((p.op/p.total)*100):0}));
+}
+// ---- Detalhe por tipo de dispositivo dentro de um laço (novo; complementa dashPanoramaLacos, que não abre por tipo) ----
+function relLacoTiposDetalhe(lacoId){
+  const map={};
+  (db.equipamentos||[]).filter(e=>e.lacoId===lacoId).forEach(e=>{
+    const k=e.tipo||'Não classificado';map[k]=map[k]||{tipo:k,op:0,falha:0,teste:0,total:0};
+    const b=dashStatusBucket(e.status);map[k][b==='teste'?'teste':(b==='falha'?'falha':'op')]++;map[k].total++;
+  });
+  (db.flms||[]).filter(f=>f.lacoId===lacoId).forEach(f=>{
+    const k='Módulo';map[k]=map[k]||{tipo:k,op:0,falha:0,teste:0,total:0};
+    const b=dashStatusBucket(f.status);map[k][b==='teste'?'teste':(b==='falha'?'falha':'op')]++;map[k].total++;
+  });
+  return Object.values(map);
+}
+// ---- Histórico: apenas leitura/agrupamento do log de auditoria já existente (db.historico) — nenhum dado novo criado ----
+function relHistoricoResumo(){
+  const rows=(db.historico||[]).slice(-300).reverse();
+  const porEntidade={};
+  rows.forEach(h=>{const k=h.entidade||'Outro';porEntidade[k]=porEntidade[k]||[];porEntidade[k].push(h)});
+  return {rows,porEntidade};
+}
+
+function execRankingHtml(rows,unidade){
+  if(!rows.length)return '<div class="emptyState">Sem dados suficientes ainda.</div>';
+  return `<div class="execRanking">${rows.map((r,i)=>`<div class="execRankRow"><span class="execRankPos">${i+1}</span><span>${esc(r.label)}</span><span class="execRankVal">${r.value}${unidade||''}</span></div>`).join('')}</div>`;
+}
+
+// ---- Construção do Relatório Gerencial Executivo SDAI (substitui o antigo relatório) ----
+function renderRelatorioExecutivoSDAI(){
+  const el=document.getElementById('relatorios'); if(!el)return;
+  const out=document.getElementById('reportOut'); if(!out)return;
+  const painelFiltro=document.getElementById('repPainel')?.value||'';
+
+  const resumo=relResumoGeral();
+  const inv=relInventarioPorPainel().filter(p=>!painelFiltro||p.painel===painelFiltro);
+  const panorama=dashPanoramaLacos().filter(l=>!painelFiltro||l.painel===painelFiltro);
+  const falhasR=relFalhasResumo();
+  const planoR=relPlanoResumo();
+  const equipR=relEquipResumo();
+  const lojasR=relLojasResumo();
+  const histR=relHistoricoResumo();
+  const cfg=db.config||{};
+  const emp=db.empreendimento||{};
+
+  _relChartQueue=[];
+
+  // ----- Capa -----
+  const capa=`<div class="execCover">
+    <div class="execCoverTop">
+      <div class="execCoverLogos">
+        <div class="execCoverLogoBox">${cfg.logoData?`<img src="${esc(cfg.logoData)}" alt="Logo">`:'<span>L3A</span>'}</div>
+        <div><p class="execCoverKicker">Relatório Gerencial Executivo • SDAI</p><h2 class="execCoverTitle">${esc(emp.nome||cfg.empreendimento||'Empreendimento')}</h2><p class="execCoverSub">${esc(emp.cliente||cfg.cliente||'Cliente')} • Sistema de Detecção e Alarme de Incêndio</p></div>
+      </div>
+    </div>
+    <div class="execCoverMetaGrid">
+      <div class="execCoverMetaItem"><small>Referência</small><b>${new Date().toLocaleDateString('pt-BR',{month:'long',year:'numeric'})}</b></div>
+      <div class="execCoverMetaItem"><small>Painel filtrado</small><b>${esc(painelFiltro||'Todos')}</b></div>
+      <div class="execCoverMetaItem"><small>Responsável técnico</small><b>${esc(cfg.responsavelTecnico||'—')}</b></div>
+      <div class="execCoverMetaItem"><small>Responsável pelo contrato</small><b>${esc(currentUser().nome||'—')}</b></div>
+      <div class="execCoverMetaItem"><small>Data de emissão</small><b>${now()}</b></div>
+    </div>
+  </div>`;
+
+  // ----- Resumo executivo (reaproveita dsKpiStrip, já usado em Falhas/Equipamentos) -----
+  const resumoExecutivo=`<div class="execSectionHead"><p class="execSectionKicker">Visão geral</p><h2>Resumo Executivo</h2><p>Indicadores calculados automaticamente a partir da base técnica atual — mesma fonte de dados do Dashboard operacional.</p></div>
+    ${dsKpiStrip([
+      ['Painéis',resumo.c.paineis,''],['Laços',resumo.c.lacos,''],['Equipamentos',resumo.c.equipamentos,''],['Lojas / Áreas',resumo.c.locais,''],
+      ['Disponibilidade',resumo.disponibilidade+'%',resumo.disponibilidade>=90?'ok':resumo.disponibilidade>=70?'warn':'bad'],
+      ['Em operação',resumo.op,'ok'],['Em falha',resumo.falha,resumo.falha>0?'bad':'ok'],['Em teste',resumo.teste,'warn'],['Desativados',resumo.desativado,''],
+      ['Falhas totais',falhasR.total,''],['Planos em aberto',resumo.planosAbertos,resumo.planosAbertos>0?'warn':'ok'],['Planos concluídos',resumo.planosConcluidos,'ok'],
+      ['Tempo médio de falha aberta',falhasR.tempoMedioHoras+'h','']
+    ])}`;
+
+  // ----- Dashboard operacional (Chart.js — substitui integralmente os gráficos antigos em CSS) -----
+  relQueueChart('relChartDisponibilidade','doughnut',{labels:['Em operação','Em falha','Outros'],datasets:[{data:[resumo.op,resumo.falha,Math.max(0,resumo.totalEquip-resumo.op-resumo.falha)],backgroundColor:[L3A_CHART_COLORS.success,L3A_CHART_COLORS.danger,L3A_CHART_COLORS.neutral]}]},{plugins:{legend:{display:true,position:'bottom',labels:{boxWidth:10,font:{size:11}}}}});
+  relQueueChart('relChartFalhasPainel','bar',{labels:inv.map(p=>p.painel),datasets:[{label:'Falhas',data:inv.map(p=>p.falha),backgroundColor:L3A_CHART_COLORS.danger}]},{scales:{x:{grid:{display:false}},y:{grid:{display:false},ticks:{precision:0}}}});
+  relQueueChart('relChartFalhasPiso','bar',{labels:resumo.pisos.map(p=>p.piso),datasets:[{label:'Falhas',data:resumo.pisos.map(p=>p.falha),backgroundColor:L3A_CHART_COLORS.danger}]},{scales:{x:{grid:{display:false}},y:{grid:{display:false},ticks:{precision:0}}}});
+  const porLaco=dashPorLaco();
+  relQueueChart('relChartFalhasLaco','bar',{labels:porLaco.map(p=>p.label),datasets:[{label:'Falhas ativas',data:porLaco.map(p=>p.value),backgroundColor:L3A_CHART_COLORS.danger}]},{indexAxis:'y',scales:{x:{grid:{display:false},ticks:{precision:0}},y:{grid:{display:false}}}});
+  relQueueChart('relChartEquipTipo','bar',{labels:equipR.porTipo.map(r=>r.label),datasets:[{label:'Quantidade',data:equipR.porTipo.map(r=>r.value),backgroundColor:L3A_CHART_COLORS.primary}]},{scales:{x:{grid:{display:false}},y:{grid:{display:false},ticks:{precision:0}}}});
+  relQueueChart('relChartEquipStatus','bar',{labels:equipR.porStatus.map(r=>r.label),datasets:[{label:'Quantidade',data:equipR.porStatus.map(r=>r.value),backgroundColor:L3A_CHART_COLORS.accent}]},{indexAxis:'y',scales:{x:{grid:{display:false},ticks:{precision:0}},y:{grid:{display:false}}}});
+  relQueueChart('relChartPlanoPrioridade','bar',{labels:planoR.porPrioridade.map(r=>r.label),datasets:[{label:'Planos',data:planoR.porPrioridade.map(r=>r.value),backgroundColor:L3A_CHART_COLORS.warning}]},{scales:{x:{grid:{display:false}},y:{grid:{display:false},ticks:{precision:0}}}});
+  relQueueChart('relChartPlanoResponsavel','bar',{labels:planoR.porResponsavel.map(r=>r.label),datasets:[{label:'Planos',data:planoR.porResponsavel.map(r=>r.value),backgroundColor:L3A_CHART_COLORS.primaryLight}]},{indexAxis:'y',scales:{x:{grid:{display:false},ticks:{precision:0}},y:{grid:{display:false}}}});
+  relQueueChart('relChartPlanoSituacao','doughnut',{labels:planoR.porSituacao.map(r=>r.label),datasets:[{data:planoR.porSituacao.map(r=>r.value),backgroundColor:[L3A_CHART_COLORS.warning,L3A_CHART_COLORS.primary,L3A_CHART_COLORS.success,L3A_CHART_COLORS.neutral]}]},{plugins:{legend:{display:true,position:'bottom',labels:{boxWidth:10,font:{size:11}}}}});
+  relQueueChart('relChartDistPiso','bar',{labels:resumo.pisos.map(p=>p.piso),datasets:[{label:'Total de dispositivos',data:resumo.pisos.map(p=>p.operacao+p.teste+p.falha+p.desativada),backgroundColor:L3A_CHART_COLORS.secondary}]},{scales:{x:{grid:{display:false}},y:{grid:{display:false},ticks:{precision:0}}}});
+  relQueueChart('relChartDistPainel','bar',{labels:inv.map(p=>p.painel),datasets:[{label:'Total de dispositivos',data:inv.map(p=>p.total),backgroundColor:L3A_CHART_COLORS.primary}]},{scales:{x:{grid:{display:false}},y:{grid:{display:false},ticks:{precision:0}}}});
+  relQueueChart('relChartDistTipo','doughnut',{labels:equipR.porTipo.map(r=>r.label),datasets:[{data:equipR.porTipo.map(r=>r.value),backgroundColor:[L3A_CHART_COLORS.primary,L3A_CHART_COLORS.accent,L3A_CHART_COLORS.warning,L3A_CHART_COLORS.danger,L3A_CHART_COLORS.neutral,L3A_CHART_COLORS.secondary]}]},{plugins:{legend:{display:true,position:'bottom',labels:{boxWidth:10,font:{size:11}}}}});
+
+  const dashboardOperacional=`<div class="execSectionHead execPageBreak"><p class="execSectionKicker">Indicadores</p><h2>Dashboard Operacional</h2><p>Mesmos cálculos do Dashboard do sistema — apresentados em Chart.js para o relatório executivo.</p></div>
+    <div class="execChartGrid">
+      ${execChartBox('relChartDisponibilidade','Disponibilidade geral','Em operação × Em falha × Outros')}
+      ${execChartBox('relChartFalhasPainel','Falhas por painel')}
+    </div>
+    <div class="execChartGrid">
+      ${execChartBox('relChartFalhasPiso','Falhas por piso')}
+      ${execChartBox('relChartFalhasLaco','Falhas por laço (top 8)',null,Math.max(160,porLaco.length*30+40))}
+    </div>
+    <div class="execChartGrid">
+      ${execChartBox('relChartEquipTipo','Equipamentos por tipo')}
+      ${execChartBox('relChartEquipStatus','Status dos equipamentos',null,Math.max(160,equipR.porStatus.length*30+40))}
+    </div>
+    <div class="execChartGrid">
+      ${execChartBox('relChartPlanoPrioridade','Plano de ação por prioridade')}
+      ${execChartBox('relChartPlanoResponsavel','Plano de ação por responsável',null,Math.max(160,planoR.porResponsavel.length*30+40))}
+    </div>
+    <div class="execChartGrid">
+      ${execChartBox('relChartPlanoSituacao','Plano de ação por situação')}
+      ${execChartBox('relChartDistPiso','Distribuição de dispositivos por piso')}
+    </div>
+    <div class="execChartGrid">
+      ${execChartBox('relChartDistPainel','Distribuição de dispositivos por painel')}
+      ${execChartBox('relChartDistTipo','Distribuição de dispositivos por tipo')}
+    </div>`;
+
+  // ----- Inventário do sistema (hierárquico Painel → Laço; reaproveita dashPanoramaLacos) -----
+  const inventario=`<div class="execSectionHead execPageBreak"><p class="execSectionKicker">Base técnica</p><h2>Inventário do Sistema</h2><p>Painel → Laço → Módulo → Porta → Loja → Equipamento, na mesma hierarquia usada em toda a aplicação.</p></div>
+    ${inv.map(p=>`<div class="execPainelCard"><div class="execPainelHead"><h3>${esc(p.painel)}</h3><span class="dsBadge ${p.disp>=90?'op':p.disp>=70?'test':'fail'}">${p.disp}% disponível</span></div>
+      ${dsKpiStrip([['Laços',p.lacos.length,''],['Dispositivos',p.total,''],['Em operação',p.op,'ok'],['Em falha',p.falha,p.falha>0?'bad':'ok'],['Em teste',p.teste,'warn']])}
+    </div>`).join('')||'<div class="emptyState">Nenhum painel cadastrado.</div>'}`;
+
+  // ----- Detalhamento dos laços (cards executivos; reaproveita dsLacoCard/dashPanoramaLacos e relLacoTiposDetalhe) -----
+  const lacoCards=panorama.map(l=>{
+    const laco=(db.lacos||[]).find(x=>paiName(x.painelId)===l.painel&&x.nome===l.laco);
+    const tipos=laco?relLacoTiposDetalhe(laco.id):[];
+    const tiposHtml=tipos.length?`<div class="subTipoGrid" style="margin-top:8px">${tipos.map(t=>`<div class="subTipoRow"><span class="subTipoLabel"><b>${esc(t.tipo)}</b><small>${t.op} ativos • ${t.falha} falha • ${t.teste} teste</small></span><span class="subTipoCount">${t.total}</span></div>`).join('')}</div>`:'';
+    return `<div class="dsLacoCard"><div class="dsLacoHead"><div><p class="dsLacoPainel">${esc(l.painel)} • ${esc(l.pisoDisplay||'Sem piso')}</p><h4 class="dsLacoTitle">${esc(l.laco)}</h4></div><span class="dsBadge ${l.sistema==='CO2'?'wait':'op'}">${esc(l.sistema)}</span></div>
+      <div class="dsLacoStats"><div class="dsLacoStat"><div class="dsLacoStatLabel">Total</div><div class="dsLacoStatVal">${l.total}</div></div><div class="dsLacoStat"><div class="dsLacoStatLabel">Falha</div><div class="dsLacoStatVal">${l.falha}</div></div><div class="dsLacoStat"><div class="dsLacoStatLabel">Disp.</div><div class="dsLacoStatVal">${l.disp}%</div></div></div>
+      ${tiposHtml}</div>`;
+  }).join('');
+  const detalhamentoLacos=`<div class="execSectionHead execPageBreak"><p class="execSectionKicker">Base técnica</p><h2>Detalhamento dos Laços</h2><p>Quantidade ativa, em falha, em teste e desativada por tipo de dispositivo (detector de fumaça, térmico, acionador, módulo, sirene) em cada laço.</p></div>
+    <div class="execLacoGrid">${lacoCards||'<div class="emptyState">Nenhum laço cadastrado.</div>'}</div>`;
+
+  // ----- Dispositivos (resumos por tipo/fabricante/modelo/status/piso/painel/laço) -----
+  const dispositivos=`<div class="execSectionHead execPageBreak"><p class="execSectionKicker">Base técnica</p><h2>Dispositivos</h2><p>Resumo executivo de todos os detectores, acionadores, módulos e sirenes cadastrados.</p></div>
+    <div class="execChartGrid execChartGrid3">
+      <div class="execChartBox"><h4>Por fabricante</h4>${table(equipR.porFabricante,[['Fabricante','label'],['Qtd.','value']])}</div>
+      <div class="execChartBox"><h4>Por modelo (top 10)</h4>${table(equipR.porModelo,[['Modelo','label'],['Qtd.','value']])}</div>
+      <div class="execChartBox"><h4>Por painel</h4>${table(equipR.porPainel,[['Painel','label'],['Qtd.','value']])}</div>
+    </div>`;
+
+  // ----- Lojas / Áreas -----
+  const lojas=`<div class="execSectionHead execPageBreak"><p class="execSectionKicker">Operação</p><h2>Lojas / Áreas</h2><p>Cobertura de monitoramento e concentração de falhas por loja/área.</p></div>
+    ${dsKpiStrip([['Total cadastrado',lojasR.total,''],['Monitoradas',lojasR.monitoradas,'ok'],['Com falha',lojasR.comFalha,lojasR.comFalha>0?'bad':'ok'],['Em teste',lojasR.emTeste,'warn'],['Sem dispositivo vinculado',lojasR.semDispositivo,lojasR.semDispositivo>0?'warn':'ok']])}
+    <div class="execChartGrid">
+      <div class="execChartBox"><h4>Lojas por piso</h4>${table(lojasR.porPiso,[['Piso','label'],['Qtd.','value']])}</div>
+      <div class="execChartBox"><h4>Ranking — lojas com mais falhas registradas</h4>${execRankingHtml(lojasR.rankingFalhas,' falha(s)')}</div>
+    </div>`;
+
+  // ----- Falhas: dashboard executivo -----
+  const falhas=`<div class="execSectionHead execPageBreak"><p class="execSectionKicker">Operação</p><h2>Falhas</h2><p>Indicadores consolidados de todas as falhas já lançadas no sistema.</p></div>
+    ${dsKpiStrip([['Total',falhasR.total,''],['Em aberto',falhasR.abertas,falhasR.abertas>0?'warn':'ok'],['Concluídas',falhasR.concluidas,'ok'],
+      ['Críticas',falhasR.prioridade['Crítica']||0,'bad'],['Altas',falhasR.prioridade['Alta']||0,'warn'],['Médias',falhasR.prioridade['Média']||0,''],['Baixas',falhasR.prioridade['Baixa']||0,''],
+      ['Tempo médio em aberto',falhasR.tempoMedioHoras+'h','']])}
+    <div class="execChartGrid execChartGrid3">
+      <div class="execChartBox"><h4>Por tipo</h4>${table(falhasR.porTipo,[['Tipo','label'],['Qtd.','value']])}</div>
+      <div class="execChartBox"><h4>Por painel</h4>${table(falhasR.porPainel,[['Painel','label'],['Qtd.','value']])}</div>
+      <div class="execChartBox"><h4>Por piso</h4>${table(falhasR.porPiso,[['Piso','label'],['Qtd.','value']])}</div>
+    </div>
+    <div class="execChartBox"><h4>Ranking — lojas com mais falhas</h4>${execRankingHtml(falhasR.porLoja,' falha(s)')}</div>`;
+
+  // ----- Plano de Ação -----
+  const planoTimelineHtml=planoR.timeline.length?`<div class="timeline">${planoR.timeline.map(p=>`<div class="tl"><b>${esc(p.item||'Item')}</b> ${dsBadgeHtml(p.situacao)}<br><small>${esc(fmtDateSimple(p.criadoEm)||'—')} • ${esc(p.responsavel||'Não atribuído')} • Prioridade ${esc(p.prioridade||'—')}</small></div>`).join('')}</div>`:'<div class="emptyState">Nenhum plano de ação registrado ainda.</div>';
+  const planoAcao=`<div class="execSectionHead execPageBreak"><p class="execSectionKicker">Operação</p><h2>Plano de Ação</h2><p>Situação consolidada de todos os planos de ação vinculados a falhas ativas.</p></div>
+    ${dsKpiStrip([['Total',planoR.total,''],['Abertos',planoR.abertos,planoR.abertos>0?'warn':'ok'],['Em andamento',planoR.emAndamento,'warn'],['Concluídos',planoR.concluidos,'ok'],['Atrasados',planoR.atrasados,planoR.atrasados>0?'bad':'ok']])}
+    <div class="execChartGrid"><div class="execChartBox"><h4>Linha do tempo — últimos planos criados</h4>${planoTimelineHtml}</div>
+    <div class="execChartBox"><h4>Por prioridade</h4>${table(planoR.porPrioridade,[['Prioridade','label'],['Qtd.','value']])}</div></div>`;
+
+  // ----- Histórico (apenas leitura do log já existente) -----
+  const histBlocos=Object.entries(histR.porEntidade).map(([ent,rows])=>`<div class="execChartBox"><h4>${esc(ent)}</h4><div class="timeline">${rows.slice(0,8).map(h=>`<div class="tl"><b>${esc(h.acao)}</b><br><small>${esc(fmtDataHora(h.data))} • ${esc(h.usuario||'—')}</small><p>${esc(h.descricao||'')}</p></div>`).join('')||'<p class="mutedLine">Sem eventos.</p>'}</div></div>`).join('');
+  const historico=`<div class="execSectionHead execPageBreak"><p class="execSectionKicker">Auditoria</p><h2>Histórico</h2><p>Linha do tempo das alterações já registradas pelo sistema, separadas por entidade — nenhum dado novo foi criado para esta seção.</p></div>
+    <div class="execChartGrid execChartGrid3">${histBlocos||'<div class="emptyState">Nenhum evento de histórico registrado ainda.</div>'}</div>`;
+
+  const conclusao=`<div class="execConclusao"><h3>Conclusão técnica</h3><p>Relatório gerado automaticamente a partir da base técnica vigente do SDAI (Painel → Laço → Módulo → Porta → Loja/Área → Equipamento → Falha → Plano de Ação), com os mesmos cálculos utilizados no Dashboard operacional do sistema. Este documento cobre exclusivamente o subsistema SDAI — CFTV, Sonorização, Controle de Acesso, organograma e dados contratuais serão incorporados em fases seguintes.</p></div>
+    <div class="reportFooter"><span>L3A Engenharia</span><span>Relatório Gerencial Executivo SDAI • Gerado em ${now()} por ${esc(currentUser().nome||'usuário')}</span></div>
+    <div class="execRunningFooter"><span>L3A Engenharia • Relatório Gerencial Executivo SDAI</span><span>${esc(emp.nome||cfg.empreendimento||'')} • ${now()}</span></div>`;
+
+  out.innerHTML=`<div class="card">${capa}${resumoExecutivo}${dashboardOperacional}${inventario}${detalhamentoLacos}${dispositivos}${lojas}${falhas}${planoAcao}${historico}${conclusao}</div>`;
+
+  if(!el.classList.contains('active'))return; // evita desenhar Chart.js em canvas oculto (largura zero), igual ao Dashboard
+  relFlushCharts();
+}
+// Mantido por compatibilidade — qualquer chamada existente a drawReport() passa a acionar o novo Relatório Executivo SDAI.
+function drawReport(){renderRelatorioExecutivoSDAI()}
 
 async function verificarBaseAoAbrir(){
   if(!isLoggedIn())return;
