@@ -1458,11 +1458,26 @@ function normalizeFotos(f){
   }
   return [];
 }
-function fotosThumbsHtml(fotos,tamanho=38){
+function fotosThumbsHtml(fotos,tamanho=38,planoId=''){
   const lista=normalizeFotos(fotos);
   if(!lista.length)return '<span class="mutedLine">—</span>';
-  const thumbs=lista.map(u=>{const src=normalizeFotoUrl(u);const href=fotoHref(u);return `<a href="${esc(href)}" target="_blank" rel="noopener" title="Abrir foto em tamanho maior"><img src="${esc(src)}" alt="Foto do serviço" loading="lazy" style="width:${tamanho}px;height:${tamanho}px;object-fit:cover;border-radius:6px;border:1px solid var(--l3a-border)" onerror="this.style.display='none';this.nextSibling&&(this.nextSibling.style.display='inline')"><span style="display:none;font-size:11px;padding:4px;background:var(--l3a-neutral-bg,#eef0f3);border-radius:6px">🔗 foto</span></a>`}).join('');
-  return `<div style="display:flex;flex-direction:column;gap:4px"><small class="note"><b>${lista.length}</b> foto${lista.length===1?'':'s'}</small><div style="display:flex;gap:5px;flex-wrap:wrap;max-width:${tamanho*5+40}px">${thumbs}</div></div>`;
+  const thumbs=lista.map((u,idx)=>{
+    const src=normalizeFotoUrl(u);
+    const href=fotoHref(u);
+    const delBtn=planoId?`<button onclick="excluirFoto('${planoId}',${idx})" title="Excluir foto" style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,.6);border:none;border-radius:50%;width:18px;height:18px;cursor:pointer;color:#fff;font-size:11px;display:flex;align-items:center;justify-content:center;padding:0;line-height:1">✕</button>`:'';
+    return `<div style="position:relative;display:inline-block"><a href="${esc(href)}" target="_blank" rel="noopener" title="Abrir foto em tamanho maior"><img src="${esc(src)}" alt="Foto do serviço" loading="lazy" style="width:${tamanho}px;height:${tamanho}px;object-fit:cover;border-radius:6px;border:1px solid var(--l3a-border);display:block" onerror="this.style.display='none';this.nextSibling&&(this.nextSibling.style.display='inline')"><span style="display:none;font-size:11px;padding:4px;background:var(--l3a-neutral-bg,#eef0f3);border-radius:6px">🔗 foto</span></a>${delBtn}</div>`;
+  }).join('');
+  return `<div style="display:flex;flex-direction:column;gap:4px"><small class="note"><b>${lista.length}</b> foto${lista.length===1?'':'s'}</small><div style="display:flex;gap:5px;flex-wrap:wrap">${thumbs}</div></div>`;
+}
+function excluirFoto(planoId,idx){
+  if(!confirm('Excluir esta foto do chamado? (o arquivo no Drive não será apagado)'))return;
+  const plano=(db.planos||[]).find(p=>p.id===planoId); if(!plano)return;
+  plano.fotos=normalizeFotos(plano.fotos);
+  plano.fotos.splice(idx,1);
+  markDirty('foto excluída do plano');
+  renderPlano();
+  const grid=document.getElementById('mFotoGrid');
+  if(grid)grid.innerHTML=fotosThumbsHtml(plano.fotos,72,planoId);
 }
 function ensurePhotoUploadFrame(){
   if(document.getElementById('photoUploadFrame'))return;
@@ -1580,7 +1595,7 @@ function handleFotoUploadResult(data){
   if(pend){
     if(data.ok&&data.url){
       const plano=(db.planos||[]).find(p=>p.id===pend.planoId);
-      if(plano){plano.fotos=normalizeFotos(plano.fotos);plano.fotos.push(data.url);markDirty('foto anexada ao plano');renderPlano();const grid=document.getElementById('mFotoGrid');if(grid)grid.innerHTML=fotosThumbsHtml(plano.fotos,72)}
+      if(plano){plano.fotos=normalizeFotos(plano.fotos);plano.fotos.push(data.url);markDirty('foto anexada ao plano');renderPlano();const grid=document.getElementById('mFotoGrid');if(grid)grid.innerHTML=fotosThumbsHtml(plano.fotos,72,plano.id)}
       if(pend.timedOut){alert('Foto recebida com sucesso (chegou depois do aviso de demora). Já foi salva no chamado.');}
       if(data.conta&&!window._contaFotoAvisada){window._contaFotoAvisada=true;const elc=document.getElementById('mFotoConta');if(elc)elc.innerHTML=`Foto salva na conta <b>${esc(data.conta)}</b>${data.pastaUrl?` — <a href="${esc(data.pastaUrl)}" target="_blank" rel="noopener">abrir pasta no Drive</a>`:''}.`}
     } else {
@@ -1603,7 +1618,7 @@ function formPlano(i='',falhaId=''){
     <div class="field" style="grid-column:1/-1"><label>Material necessário / quantidade</label><input id="mMaterial" value="${esc(o.material)}" placeholder="Ex.: FLM-420/4-CON-S/D - 01 unidade"></div>
     <div class="field" style="grid-column:1/-1"><label>Justificativa técnica</label><textarea id="mJust">${esc(o.justificativa||f.motivo||f.obs||'')}</textarea></div>
     <div class="field" style="grid-column:1/-1"><label>Providência executada / próxima ação</label><textarea id="mProv">${esc(o.providencia)}</textarea></div>
-    ${i?`<div class="field" style="grid-column:1/-1"><label>Fotos do serviço (galeria do dispositivo, sem limite de quantidade)</label><input type="file" id="mFotoInput" accept="image/*" multiple onchange="queueFotoUploads('${i}',this.files);this.value=''"><small id="mFotoStatus" class="note"></small><small id="mFotoConta" class="note"></small><div id="mFotoGrid" style="margin-top:8px">${fotosThumbsHtml(o.fotos,72)}</div><br><button type="button" class="btn small secondary" onclick="verDiagnosticoUpload()">Ver diagnóstico do último upload</button><pre id="mFotoDiag" style="white-space:pre-wrap;font-size:11px;margin-top:8px;display:none;background:var(--l3a-neutral-bg,#f4f5f7);padding:10px;border-radius:8px;max-height:200px;overflow:auto"></pre></div>`:`<div class="field" style="grid-column:1/-1"><p class="mutedLine">Salve o plano primeiro para poder anexar fotos.</p></div>`}
+    ${i?`<div class="field" style="grid-column:1/-1"><label>Fotos do serviço (galeria do dispositivo, sem limite de quantidade)</label><input type="file" id="mFotoInput" accept="image/*" multiple onchange="queueFotoUploads('${i}',this.files);this.value=''"><small id="mFotoStatus" class="note"></small><small id="mFotoConta" class="note"></small><div id="mFotoGrid" style="margin-top:8px">${fotosThumbsHtml(o.fotos,72,i)}</div><br><button type="button" class="btn small secondary" onclick="verDiagnosticoUpload()">Ver diagnóstico do último upload</button><pre id="mFotoDiag" style="white-space:pre-wrap;font-size:11px;margin-top:8px;display:none;background:var(--l3a-neutral-bg,#f4f5f7);padding:10px;border-radius:8px;max-height:200px;overflow:auto"></pre></div>`:`<div class="field" style="grid-column:1/-1"><p class="mutedLine">Salve o plano primeiro para poder anexar fotos.</p></div>`}
   </div><br><button class="btn" onclick="savePlano('${i}','${falhaId||o.falhaId||''}')">Salvar plano</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`)
 }
 function savePlano(i,falhaId=''){
