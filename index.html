@@ -709,6 +709,21 @@ async function senhaConfere(senhaDigitada,senhaArmazenada){
 const id=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
 const n=s=>String(s??'').trim(); const up=s=>n(s).toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
 const STATUS_SISTEMA_OPTIONS=['Em operação','Laço aberto','Módulo aberto','Módulo em curto','Incêndio disparado','Desativação','Em teste','__renomear__'];
+const DIRECIONAMENTO_TECNICO={
+  'Em operação':'Confirmar o funcionamento do dispositivo por meio de teste funcional, verificar o histórico de eventos na central e registrar se a ocorrência permanece ativa ou corresponde a uma condição intermitente.',
+  'Laço aberto':'Localizar o ponto de interrupção do laço, verificando continuidade da fiação, conexões, emendas e dispositivos até restabelecer a comunicação com a central.',
+  'Módulo aberto':'Verificar alimentação, resistência de fim de linha (EOL), continuidade do circuito supervisionado, conexões e dispositivos vinculados ao módulo, corrigindo a condição de circuito aberto.',
+  'Módulo em curto':'Localizar e eliminar o curto-circuito no circuito supervisionado, inspecionando cabeamento, dispositivos, conexões e caixas de passagem. Após a correção, validar a supervisão pela central.',
+  'Incêndio disparado':'Identificar a origem do disparo, realizar testes funcionais no dispositivo acionado e verificar se o evento foi provocado por princípio de incêndio, falso disparo ou falha operacional.',
+  'Desativação':'Confirmar o motivo da desativação, verificar se existe autorização para essa condição e, quando aplicável, restabelecer o dispositivo em operação após os testes de funcionamento.',
+  'Em teste':'Executar os testes previstos para o dispositivo, validar seu funcionamento conforme procedimento técnico e retornar o sistema ao modo normal de operação ao término da atividade.',
+  '__renomear__':'Registrar procedimento técnico específico para esta ocorrência, descrevendo as verificações e ações necessárias para execução da atividade.'
+};
+function getDirecionamento(status){
+  if(!status)return '';
+  const norm=normalizeStatus(status);
+  return DIRECIONAMENTO_TECNICO[norm]||DIRECIONAMENTO_TECNICO['__renomear__']||'';
+}
 const STATUS_SISTEMA_LABELS={__renomear__:'Renomear'};
 function statusSistemaOption(val,selected){
   const label=STATUS_SISTEMA_LABELS[val]||val;
@@ -1682,8 +1697,9 @@ function formPlano(i='',falhaId=''){
     <div class="field"><label>Previsão</label><input id="mPrazo" type="date" value="${esc(o.prazo)}"></div>
     <div class="field"><label>Necessita compra?</label><select id="mCompra"><option value="Não" ${!o.necessitaCompra?'selected':''}>Não</option><option value="Sim" ${o.necessitaCompra?'selected':''}>Sim</option></select></div>
     <div class="field" style="grid-column:1/-1"><label>Material necessário / quantidade</label><input id="mMaterial" value="${esc(o.material)}" placeholder="Ex.: FLM-420/4-CON-S/D - 01 unidade"></div>
-    <div class="field" style="grid-column:1/-1"><label>Justificativa técnica <small style="font-weight:400;color:var(--l3a-text-muted)">(da aba Falhas — orienta a equipe no atendimento)</small></label><div style="background:var(--l3a-neutral-bg,#f4f5f7);border:1px solid var(--l3a-border);border-radius:var(--l3a-radius-md);padding:10px 12px;font-size:13.5px;color:var(--l3a-text);min-height:48px;white-space:pre-wrap">${esc(f.obs||f.motivo||o.justificativa||'Nenhuma observação técnica registrada na falha.')}</div></div>
-    <div class="field" style="grid-column:1/-1"><label>Providência executada / próxima ação</label><textarea id="mProv">${esc(o.providencia)}</textarea></div>
+    <div class="field" style="grid-column:1/-1"><label>Diagnóstico da falha <small style="font-weight:400;color:var(--l3a-text-muted)">(registrado na aba Falhas)</small></label><div style="background:var(--l3a-neutral-bg,#f4f5f7);border:1px solid var(--l3a-border);border-radius:var(--l3a-radius-md);padding:10px 12px;font-size:13.5px;color:var(--l3a-text);min-height:36px;white-space:pre-wrap">${esc(f.obs||f.motivo||'Nenhuma observação técnica registrada na falha.')}</div></div>
+    <div class="field" style="grid-column:1/-1"><label>Direcionamento técnico <small style="font-weight:400;color:var(--l3a-text-muted)">(orientação operacional — gerado automaticamente pelo status da falha)</small></label><div style="background:var(--l3a-neutral-bg,#f4f5f7);border:1px solid var(--l3a-border);border-radius:var(--l3a-radius-md);padding:10px 12px;font-size:13.5px;color:var(--l3a-text);min-height:36px;white-space:pre-wrap">${esc(o.direcionamento||getDirecionamento(f.status||o.statusFalha))}</div></div>
+    <div class="field" style="grid-column:1/-1"><label>Execução realizada <small style="font-weight:400;color:var(--l3a-text-muted)">(registro do técnico em campo)</small></label><textarea id="mProv" placeholder="Ex.: Substituído módulo FLM. Refeito cabeamento. Identificado curto causado por infiltração.">${esc(o.providencia)}</textarea></div>
     ${i?`<div class="field" style="grid-column:1/-1"><label>Fotos do serviço (galeria do dispositivo, sem limite de quantidade)</label><input type="file" id="mFotoInput" accept="image/*" multiple onchange="queueFotoUploads('${i}',this.files);this.value=''"><small id="mFotoStatus" class="note"></small><small id="mFotoConta" class="note"></small><div id="mFotoGrid" style="margin-top:8px">${fotosThumbsHtml(o.fotos,72,i)}</div><br><button type="button" class="btn small secondary" onclick="verDiagnosticoUpload()">Ver diagnóstico do último upload</button><pre id="mFotoDiag" style="white-space:pre-wrap;font-size:11px;margin-top:8px;display:none;background:var(--l3a-neutral-bg,#f4f5f7);padding:10px;border-radius:8px;max-height:200px;overflow:auto"></pre></div>`:`<div class="field" style="grid-column:1/-1"><p class="mutedLine">Salve o plano primeiro para poder anexar fotos.</p></div>`}
   </div><br><button class="btn" onclick="savePlano('${i}','${falhaId||o.falhaId||''}')">Salvar plano</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`)
 }
@@ -1692,7 +1708,7 @@ function savePlano(i,falhaId=''){
   let f=db.falhas.find(x=>x.id===falhaId)||{}; let inf=f.id?itemInfoFromFalha(f):{}; let o=i?db.planos.find(x=>x.id===i):{id:id(),criadoEm:isoNow(),falhaId};
   if(!o){alert('Plano não encontrado — feche e tente editar novamente.');return}
   const prioridadeNova=val('mPrioridade')||o.prioridade||'Média';
-  Object.assign(o,{falhaId:falhaId||o.falhaId,categoria:val('mCategoria')||o.categoria,prioridade:prioridadeNova,responsavel:val('mRespPlano')||o.responsavel,situacao:val('mSituacao')||o.situacao,prazo:val('mPrazo'),necessitaCompra:val('mCompra')==='Sim',material:n(val('mMaterial')),justificativa:f.obs||f.motivo||o.justificativa||'',providencia:n(val('mProv')),painel:inf.painel||o.painel,laco:inf.laco||o.laco,piso:inf.piso||o.piso,local:inf.local||o.local,item:inf.itemNome||o.item,statusFalha:f.status||o.statusFalha,atualizadoEm:isoNow()});
+  Object.assign(o,{falhaId:falhaId||o.falhaId,categoria:val('mCategoria')||o.categoria,prioridade:prioridadeNova,responsavel:val('mRespPlano')||o.responsavel,situacao:val('mSituacao')||o.situacao,prazo:val('mPrazo'),necessitaCompra:val('mCompra')==='Sim',material:n(val('mMaterial')),justificativa:f.obs||f.motivo||o.justificativa||'',direcionamento:o.direcionamento||getDirecionamento(f.status||o.statusFalha),providencia:n(val('mProv')),painel:inf.painel||o.painel,laco:inf.laco||o.laco,piso:inf.piso||o.piso,local:inf.local||o.local,item:inf.itemNome||o.item,statusFalha:f.status||o.statusFalha,atualizadoEm:isoNow()});
   if(o.situacao==='Concluído'&&!o.concluidoEm)o.concluidoEm=isoNow(); if(!i)db.planos.push(o); closeModal(); save()
 }
 function concluirPlano(i){let o=db.planos.find(x=>x.id===i); if(!o)return; o.situacao='Concluído'; o.concluidoEm=isoNow(); let f=db.falhas.find(x=>x.id===o.falhaId); if(f){let itemId=f.itemId||'';let isFlm=String(itemId).startsWith('flm:');let item=isFlm?flmById(String(itemId).slice(4)):db.equipamentos.find(e=>e.id===itemId);let loc=localById(f.localId||'');let statusAnterior=(item&&item.status)||f.status||'Falha'; if(item){item.status='Em operação';item.ultimaAlteracao=isoNow()} if(loc){loc.status='Em operação';loc.ultimaAlteracao=isoNow()} if(item||loc){db.falhas.push({id:id(),data:isoNow(),painelId:(item&&item.painelId)||f.painelId,lacoId:(item&&item.lacoId)||f.lacoId,piso:(item&&item.piso)||f.piso,tipo:isFlm?'Módulo':((item&&item.tipo)||f.tipo),itemId:f.itemId,itemNome:f.itemNome,localId:f.localId,status:'Em operação',statusAnterior,responsavel:o.responsavel,origem:'Plano de Ação',motivo:'Plano de ação concluído',obs:o.providencia,resolvidaEm:isoNow()});alert('Plano concluído. Status do equipamento e da loja atualizado para Em operação.')}else{alert('Plano concluído.')}} save()}
@@ -2212,8 +2228,9 @@ function gerarPdfPlanoDetalhado(){
         <span><b>Concluído em:</b> ${esc(fmtDateSimple(p.concluidoEm)||'—')}</span>
         <span><b>Necessita compra:</b> ${p.necessitaCompra?'Sim':'Não'}</span>
       </div>
-      <div class="detTexto"><b>Justificativa:</b> ${esc(p.justificativa||'—')}</div>
-      <div class="detTexto"><b>Providência tomada:</b> ${esc(p.providencia||'—')}</div>
+      <div class="detTexto"><b>Diagnóstico da falha:</b> ${esc(f.obs||f.motivo||'—')}</div>
+      <div class="detTexto"><b>Direcionamento técnico:</b> ${esc(p.direcionamento||getDirecionamento(p.statusFalha)||'—')}</div>
+      <div class="detTexto"><b>Execução realizada:</b> ${esc(p.providencia||'—')}</div>
       ${fotos}
     </div>`;
   }).join('');
