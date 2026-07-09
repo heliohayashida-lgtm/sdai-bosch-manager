@@ -840,10 +840,26 @@ function syncCfg(){try{return Object.assign({configured:false,auto:true,interval
 function setSyncCfg(o){localStorage.setItem(SYNC_KEY,JSON.stringify(Object.assign(syncCfg(),o))); updateSyncFooter()}
 let _persistLocalFalhouAvisado=false;
 function persistLocal(){try{localStorage.setItem(KEY,JSON.stringify(db));return true}catch(e){alert('ATENÇÃO: não foi possível salvar localmente ('+e.message+'). Isso costuma acontecer em navegação privada ou quando o armazenamento do navegador está cheio. Sua última alteração NÃO foi salva — não feche esta aba agora, ou você vai perder o que fez. Sincronize com o Google (Sistema → Banco de Dados → Sincronizar agora) assim que possível.');return false}}
-function markDirty(reason='alteração'){persistLocal(); setSyncCfg({dirty:true,lastReason:reason}); scheduleAutoSync(1500)}
+// CORREÇÃO (lentidão / alterações perdidas na sincronização): _dbVersion é incrementado a cada
+// alteração local. syncNow() guarda a versão vigente no início do envio e, se o usuário editar de
+// novo enquanto o envio ainda está em andamento (rede/Apps Script lento), a versão muda — e o
+// sincronismo, ao terminar, percebe isso e NÃO marca "Sincronizado" indevidamente: ele mantém
+// "Alterações pendentes" e reagenda um novo envio imediatamente com o dado mais recente. Antes, o
+// término de um envio antigo podia sobrescrever o indicador como sincronizado mesmo com edições
+// mais novas ainda não enviadas, dando a impressão de que a alteração "sumiu".
+let _dbVersion=0;
+function markDirty(reason='alteração'){persistLocal(); _dbVersion++; setSyncCfg({dirty:true,lastReason:reason}); scheduleAutoSync(1500)}
 function save(){markDirty('salvamento');render()}
 function updateSyncFooter(status){const c=syncCfg(); const dot=document.getElementById('syncDot'), txt=document.getElementById('syncText'); if(!dot||!txt)return; dot.className='syncDot '+(status==='saving'?'warn':status==='error'?'bad':(!c.configured?'warn':c.dirty?'warn':'ok')); txt.textContent=status==='saving'?'Sincronizando...':status==='error'?'Falha ao sincronizar':(!c.configured?'Banco Google não configurado':c.dirty?'Alterações pendentes':'Sincronizado '+(c.lastSync||''));}
 let autoSyncTimer=null; let _recuperandoBaseInicial=false; function scheduleAutoSync(ms){const c=syncCfg(); if(!c.configured||!c.auto||_recuperandoBaseInicial)return; clearTimeout(autoSyncTimer); autoSyncTimer=setTimeout(()=>syncNow(false),ms||((c.intervalSec||30)*1000));}
+// CORREÇÃO: trava simples contra sincronizações simultâneas. Antes, se o usuário editasse de novo
+// enquanto um envio anterior ainda estava em andamento (comum quando o Apps Script/Sheets demora),
+// um SEGUNDO syncNow() podia disparar por cima do primeiro — dois envios concorrentes ao mesmo
+// tempo, competindo e deixando o sistema ainda mais lento, sem nenhuma garantia de qual "venceria"
+// no Google Sheets. Agora, uma sincronização automática que chega enquanto outra já está rodando
+// simplesmente é reagendada para logo após a atual terminar, em vez de rodar em paralelo.
+let _syncEmAndamento=false;
+let _syncReagendarAposAtual=false;
 const API_TOKEN_KEY=KEY+':apiToken';
 function getApiToken(){return localStorage.getItem(API_TOKEN_KEY)||''}
 function setApiToken(t){localStorage.setItem(API_TOKEN_KEY,String(t||''))}
@@ -864,7 +880,47 @@ async function loadGoogle(){try{updateSyncFooter('saving'); const r=await jsonp(
 function baseParecevazia(){return !(db.paineis||[]).length && !(db.equipamentos||[]).length && !(db.locais||[]).length && !(db.flms||[]).length}
 function lucContagemDB(d){return {locais:(d?.locais||[]).length,paineis:(d?.paineis||[]).length,equipamentos:(d?.equipamentos||[]).length,baseLojas:(d?.baseLojas||[]).length,flms:(d?.flms||[]).length}}
 async function verificarSyncSalvou(esperado){try{const r=await jsonp('load'); if(!r.ok||!r.db)return {ok:false,motivo:r.error||'Resposta inválida do Google ao conferir'}; const atual=lucContagemDB(r.db); const chaves=Object.keys(esperado); for(const k of chaves){if((atual[k]||0)!==(esperado[k]||0))return {ok:false,motivo:`Divergência em "${k}": local tinha ${esperado[k]}, Google Sheets tem ${atual[k]}`}} return {ok:true}}catch(e){return {ok:false,motivo:'Não foi possível conferir: '+e.message}}}
-async function syncNow(showAlert=true){const c=syncCfg(); if(!c.configured){ if(showAlert) alert('Configure/valide o banco Google primeiro.'); return; } if(baseParecevazia()){ if(!showAlert){updateSyncFooter();return} if(!confirm('ATENÇÃO: a base local está vazia (sem painéis, laços, FLMs, equipamentos ou lojas). Sincronizar agora vai SUBSTITUIR os dados no Google Sheets por uma base vazia — isso pode apagar tudo que já está lá. Use "Carregar base Google" antes, a menos que você realmente queira começar do zero. Deseja continuar mesmo assim?'))return } try{updateSyncFooter('saving'); persistLocal(); const esperado=lucContagemDB(db); await apiPost('save',{db}); await new Promise(r=>setTimeout(r,1200)); const verif=await verificarSyncSalvou(esperado); if(!verif.ok){updateSyncFooter('error'); if(showAlert) alert('ATENÇÃO: o envio foi disparado, mas a conferência mostra que o Google Sheets NÃO foi atualizado corretamente.\n\nMotivo: '+verif.motivo+'\n\nIsso costuma indicar problema no deploy/permissão do Apps Script (Code.gs), não no app. Seus dados continuam salvos localmente neste navegador. Recomenda-se verificar a implantação do Apps Script antes de sair da página.'); setSyncCfg({dirty:true,lastReason:'falha confirmada na sincronização'}); renderSistema(); return;} setSyncCfg({dirty:false,lastSync:new Date().toLocaleTimeString('pt-BR')}); if(showAlert) alert('Sincronização confirmada: os dados foram lidos de volta do Google Sheets e conferem com o local.'); renderSistema();}catch(e){updateSyncFooter('error'); if(showAlert) alert('Falha ao sincronizar: '+e.message)}}
+async function syncNow(showAlert=true){
+  const c=syncCfg();
+  if(!c.configured){ if(showAlert) alert('Configure/valide o banco Google primeiro.'); return; }
+  if(baseParecevazia()){ if(!showAlert){updateSyncFooter();return} if(!confirm('ATENÇÃO: a base local está vazia (sem painéis, laços, FLMs, equipamentos ou lojas). Sincronizar agora vai SUBSTITUIR os dados no Google Sheets por uma base vazia — isso pode apagar tudo que já está lá. Use "Carregar base Google" antes, a menos que você realmente queira começar do zero. Deseja continuar mesmo assim?'))return }
+  // CORREÇÃO: se já existe uma sincronização em andamento, não dispara uma segunda em paralelo —
+  // marca para reagendar assim que a atual terminar (usando sempre o dado mais recente).
+  if(_syncEmAndamento){ _syncReagendarAposAtual=true; return; }
+  _syncEmAndamento=true;
+  const versaoAoIniciar=_dbVersion;
+  try{
+    updateSyncFooter('saving');
+    persistLocal();
+    const esperado=lucContagemDB(db);
+    await apiPost('save',{db});
+    await new Promise(r=>setTimeout(r,1200));
+    const verif=await verificarSyncSalvou(esperado);
+    if(!verif.ok){
+      updateSyncFooter('error');
+      if(showAlert) alert('ATENÇÃO: o envio foi disparado, mas a conferência mostra que o Google Sheets NÃO foi atualizado corretamente.\n\nMotivo: '+verif.motivo+'\n\nIsso costuma indicar problema no deploy/permissão do Apps Script (Code.gs), não no app. Seus dados continuam salvos localmente neste navegador. Recomenda-se verificar a implantação do Apps Script antes de sair da página.');
+      setSyncCfg({dirty:true,lastReason:'falha confirmada na sincronização'}); renderSistema();
+      return;
+    }
+    // CORREÇÃO: só marca "Sincronizado" (dirty:false) se NENHUMA alteração nova chegou enquanto este
+    // envio estava em andamento. Se chegou (versão mudou), mantém "Alterações pendentes" e reagenda
+    // um novo envio em seguida — em vez de dar a entender (erradamente) que tudo já estava salvo.
+    if(_dbVersion!==versaoAoIniciar){
+      setSyncCfg({dirty:true,lastReason:'nova alteração durante a sincronização'});
+      _syncReagendarAposAtual=true;
+    } else {
+      setSyncCfg({dirty:false,lastSync:new Date().toLocaleTimeString('pt-BR')});
+      if(showAlert) alert('Sincronização confirmada: os dados foram lidos de volta do Google Sheets e conferem com o local.');
+    }
+    renderSistema();
+  }catch(e){
+    updateSyncFooter('error');
+    if(showAlert) alert('Falha ao sincronizar: '+e.message);
+  }finally{
+    _syncEmAndamento=false;
+    if(_syncReagendarAposAtual){ _syncReagendarAposAtual=false; setTimeout(()=>syncNow(false),400); } // dispara direto (não passa por scheduleAutoSync) para valer mesmo com "auto" desligado — é a conclusão de um envio já pedido, não um novo ciclo automático
+  }
+}
 function setAutoInterval(sec){setSyncCfg({intervalSec:Number(sec)||30,dirty:syncCfg().dirty}); scheduleAutoSync((Number(sec)||30)*1000); renderSistema()}
 function setAutoEnabled(v){setSyncCfg({auto:!!v}); if(v) scheduleAutoSync(1000); renderSistema()}
 
@@ -1387,7 +1443,15 @@ function planoCategorias(){return ['Substituição de material','Manutenção co
 function planoPrioridades(){return ['Crítica','Alta','Média','Baixa']}
 function planoResponsaveis(){return ['L3A Engenharia','Brigada','Logista','Shopping','Terceiro / Fornecedor']}
 function prioridadePeso(p){return {'Crítica':1,'Alta':2,'Média':3,'Baixa':4}[p]||9}
-function isFalhaStatus(s){s=up(normalizeStatus(s));return s.includes('ABERT')||s.includes('CURTO')||s.includes('INCEND')||s.includes('DISPAR')||s.includes('DESATIV')||s.includes('TESTE')}
+function isFalhaStatus(s){s=up(normalizeStatus(s));return s.includes('ABERT')||s.includes('CURTO')||s.includes('INCEND')||s.includes('DISPAR')}
+// CORREÇÃO (bug reportado): esta era a definição de isFalhaStatus() que REALMENTE valia em todo o
+// sistema (a última declaração de uma função sobrepõe as anteriores em JavaScript), e ela incluía
+// erroneamente 'TESTE' e 'DESATIV' como falha. Por isso um lançamento em "Em teste" contabilizava
+// como falha (abria Plano de Ação automaticamente, marcava equipamento/loja como falha no Dashboard,
+// Relatório e telas de Painéis/Laços/Equipamentos). Agora só ABERT/CURTO/INCEND/DISPAR contam como
+// falha — "Em teste" e "Desativação" continuam sendo lançamentos normais na tela de Falhas, só que
+// contabilizados nos buckets corretos (isTesteStatus/isDesativadoStatus, dashStatusBucket), igual ao
+// que o Dashboard já fazia. Nenhum outro comportamento foi alterado.
 function itemInfoFromFalha(f){
   let isFlm=String(f.itemId||'').startsWith('flm:'), item=isFlm?flmById(String(f.itemId).slice(4)):db.equipamentos.find(e=>e.id===f.itemId);
   let localId=f.localId||item?.localId||'';
@@ -1746,7 +1810,12 @@ function quickStatusChange(itemSel,newStatus){
   const statusAnterior=alvo.status||'Em operação';
   alvo.status=newStatus; alvo.ultimaAlteracao=isoNow();
   if(porta&&flm)flm.status=flmStatusAgregado(flm.id);
-  if(isFalhaStatus(newStatus)){
+  if(newStatus!=='Em operação'){
+    // CORREÇÃO: antes disparava só quando isFalhaStatus(newStatus) era verdadeiro — e a versão de
+    // isFalhaStatus() que valia (ver correção acima) tratava "Em teste"/"Desativação" como falha.
+    // Trocado para "qualquer status diferente de Em operação" para manter EXATAMENTE o mesmo
+    // comportamento de antes (lançamento continua sendo criado e aparecendo em Falhas para
+    // Em teste/Desativação também) — só a contagem de falha em si é que ficou correta agora.
     const existente=findFalhaAbertaPorItem(itemSel);
     if(existente){save();formFalha(existente.id);return}
     const localId=porta?.localId||equip?.localId||'';
