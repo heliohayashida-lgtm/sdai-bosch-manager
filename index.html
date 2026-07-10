@@ -833,7 +833,7 @@ const KEY='sdai_bosch_manager_v4_flm_portas';
 const API_URL='https://script.google.com/macros/s/AKfycby45dTdw4g-pkcvY9sys3_gmvVcmnSyf6PZzJbRsbSFjhtuWbV1D5XSBEc-J1UtOBYftA/exec';
 const SYNC_KEY=KEY+':syncConfig';
 const emptyDB=()=>({empreendimento:{nome:'Empreendimento',cliente:'Cliente'},config:{appName:'Contratos L3A',subtitle:'Gestão operacional • SDAI • Contratos',logoData:''},usuarios:[{id:'admin-default',nome:'Administrador',email:'admin@local',perfil:'Administrador',senha:'1234',ativo:'Sim',criadoEm:''}],paineis:[],lacos:[],flms:[],portas:[],locais:[],equipamentos:[],falhas:[],planos:[],inconsistencias:[],imports:[]});
-let db=load(); let currentView='dashboard'; let filters={};
+let db=load(); let currentView='dashboard'; let filters={}; let _locaisMaisFiltrosOpen=false; let _localModalState={id:'',tab:'dados'};
 let searchRenderTimer=null;
 let lastSearchFocus=null;
 function onSearchInput(el){
@@ -845,7 +845,7 @@ function onSearchInput(el){
   else if(path){ filters[path]=val; }
   lastSearchFocus={key:el.dataset.focusKey||path||((group||'')+'.'+(key||'')),start:el.selectionStart??val.length,end:el.selectionEnd??val.length};
   clearTimeout(searchRenderTimer);
-  searchRenderTimer=setTimeout(()=>render(),120);
+  searchRenderTimer=setTimeout(()=>render(),250);
 }
 function attachSearchInputs(){
   document.querySelectorAll('[data-filter-input="1"]').forEach(el=>{
@@ -1227,6 +1227,7 @@ function clearAll(){db=emptyDB();persistLocal();markDirty('limpeza');render()}
 function counts(){let tipos=unique(db.equipamentos.map(e=>e.tipo).concat(['Módulo'])); let c={paineis:db.paineis.length,lacos:db.lacos.length,flms:db.flms.length,portas:db.portas.length,locais:db.locais.length,equipamentos:db.equipamentos.length,totalDispositivos:db.equipamentos.length+db.flms.length,tipos:{},status:{}}; tipos.forEach(t=>c.tipos[t]=0); db.flms.forEach(()=>c.tipos['Módulo']=(c.tipos['Módulo']||0)+1); db.equipamentos.forEach(e=>{c.tipos[e.tipo]=(c.tipos[e.tipo]||0)+1;{let st=normalizeStatus(e.status); c.status[st]=(c.status[st]||0)+1}}); db.flms.forEach(f=>{{let st=normalizeStatus(f.status||'Em operação'); c.status[st]=(c.status[st]||0)+1}}); return c}
 function table(rows,cols,actions){if(!rows.length)return '<p class="msg warn">Sem registros.</p>';return `<div class="tableWrap"><table><thead><tr>${cols.map(c=>`<th>${c[0]}</th>`).join('')}${actions?'<th>Ações</th>':''}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${c[2]?c[2](r):esc(r[c[1]])}</td>`).join('')}${actions?`<td>${actions(r)}</td>`:''}</tr>`).join('')}</tbody></table></div>`}
 function selectOpts(vals,sel='',allLabel='Todos'){return `<option value="">${esc(allLabel)}</option>`+vals.map(v=>`<option ${v===sel?'selected':''}>${esc(v)}</option>`).join('')}
+function selectOpts2(pairs,sel=''){return pairs.map(([v,l])=>`<option value="${esc(v)}" ${v===sel?'selected':''}>${esc(l)}</option>`).join('')}
 function kpi(label,val){return `<div class="metric"><small>${esc(label)}</small><strong>${esc(val)}</strong></div>`}
 function render(){ensureDefaultUsers(); if(!isLoggedIn()){showLogin()} else {hideLogin()} document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));document.getElementById(currentView).classList.add('active'); document.getElementById('pageTitle').textContent={dashboard:'Dashboard',paineis:'Painéis',lacos:'Laços',flms:'Módulos',locais:'Lojas / Áreas',equipamentos:'Detectores / Acionadores',falhas:'Falhas',plano:'Plano de Ação',importacao:'Importação',exportacao:'Exportação',relatorios:'Relatórios',sistema:'Banco de Dados',usuarios:'Usuários e Acessos',configuracoes:'Configurações',backup:'Backup',logs:'Logs do Sistema',sobre:'Sobre'}[currentView]||'SDAI'; renderDashboard();renderPaineis();renderLacos();renderFlms();renderLocais();renderEquipamentos();renderFalhas();renderPlano();renderImportacao();renderExportacao();renderRelatorios();renderSistema();renderUsuarios();renderConfiguracoes();renderBackup();renderLogs();renderSobre();applyBrand();applyRoleUI();attachSearchInputs();restoreSearchFocus();updateSyncFooter();}
 document.querySelectorAll('.nav button').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.nav button').forEach(x=>x.classList.remove('active'));b.classList.add('active');currentView=b.dataset.view;render()})); function updateClock(){const d=new Date();const cd=document.getElementById('clockDate');const ct=document.getElementById('clockTime');if(cd)cd.textContent=d.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'}).replace('.','');if(ct)ct.textContent=d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});} updateClock(); setInterval(updateClock,1000);
@@ -1428,19 +1429,57 @@ function renderFlms(){
       </table>
     </div>`;
 }
+function ultimaInspecaoLoja(l){
+  const insp=(l&&l.inspecoes)||[];
+  if(!insp.length)return null;
+  return insp.slice().sort((a,b)=>String(b.data||'').localeCompare(String(a.data||'')))[0];
+}
+function localPossuiFalhaAberta(l){
+  if(isFalhaStatus(l.status))return true;
+  return (db.falhas||[]).some(f=>f.localId===l.id&&isFalhaStatus(f.status)&&!f.resolvidaEm);
+}
+function locaisResponsaveisDisponiveis(){
+  const s1=(db.locais||[]).flatMap(l=>(l.inspecoes||[]).map(x=>x.responsavel)).filter(Boolean);
+  const s2=(db.usuarios||[]).map(u=>u.nome).filter(Boolean);
+  return unique(s1.concat(s2));
+}
 function renderLocais(){
   let q=filters.locaisQ||'';
-  let rows=db.locais.filter(l=>!q||JSON.stringify(l).toUpperCase().includes(up(q))).map(l=>({
+  let f=filters.locaisF||{};
+  let rows0=db.locais.map(l=>({
     ...l,
     painel:paiName(l.painelId),laco:lacName(l.lacoId),
     flmEndereco:flmById(l.flmId)?.endereco||'',
     portaNum:db.portas.find(p=>p.id===l.portaId)?.numero||'',
-    qtd:db.equipamentos.filter(e=>e.localId===l.id).length
+    qtd:db.equipamentos.filter(e=>e.localId===l.id).length,
+    _ultimaInspecao:ultimaInspecaoLoja(l),
+    _possuiFalha:localPossuiFalhaAberta(l)
   }));
+  let rows=rows0.filter(r=>{
+    if(q&&!JSON.stringify(r).toUpperCase().includes(up(q)))return false;
+    if(f.status&&normalizeStatus(r.status)!==f.status)return false;
+    if(f.piso&&(r.piso||'')!==f.piso)return false;
+    if(f.painel&&r.painel!==f.painel)return false;
+    if(f.laco&&r.laco!==f.laco)return false;
+    if(f.tipo&&r.tipo!==f.tipo)return false;
+    if(f.responsavel&&(r._ultimaInspecao?.responsavel||'')!==f.responsavel)return false;
+    if(f.falha==='sim'&&!r._possuiFalha)return false;
+    if(f.falha==='nao'&&r._possuiFalha)return false;
+    if(f.dataDe&&(!r._ultimaInspecao||String(r._ultimaInspecao.data||'').slice(0,10)<f.dataDe))return false;
+    if(f.dataAte&&(!r._ultimaInspecao||String(r._ultimaInspecao.data||'').slice(0,10)>f.dataAte))return false;
+    return true;
+  });
 
   const total=rows.length;
   const emOp=rows.filter(r=>!isFalhaStatus(r.status)).length;
   const comFalha=rows.filter(r=>isFalhaStatus(r.status)).length;
+
+  const pisosOpts=unique(db.locais.map(l=>l.piso).filter(Boolean));
+  const paineisOpts=unique(db.locais.map(l=>paiName(l.painelId)).filter(Boolean));
+  const lacosOpts=unique(db.locais.map(l=>lacName(l.lacoId)).filter(Boolean));
+  const statusOpts=unique(db.locais.map(l=>normalizeStatus(l.status)).filter(Boolean));
+  const tiposOpts=['Loja','Área Comum','Área Técnica'];
+  const respOpts=locaisResponsaveisDisponiveis();
 
   const trs=rows.map(r=>{
     const loc=dsLocHtml({painel:r.painel,piso:r.piso,laco:r.laco,tipo:r.flmEndereco?'Módulo '+r.flmEndereco:'',porta:r.portaNum});
@@ -1451,6 +1490,7 @@ function renderLocais(){
       <td>${dsBadgeHtml(r.status)}</td>
       <td><div class="dsIcoGroup">
         <button class="dsIco" onclick="openLocal('${r.id}')" title="Histórico">🕒</button>
+        <button class="btn small secondary" onclick="formInspecao('${r.id}')" title="Executar Teste">Executar Teste</button>
         <button class="dsIco" onclick="formLocal('${r.id}')" title="Editar">✏️</button>
         <button class="dsIco del" onclick="del('locais','${r.id}')" title="Excluir">🗑</button>
       </div></td>
@@ -1465,8 +1505,23 @@ function renderLocais(){
     ])}
     <div class="dsFilters">
       <div class="field"><label>Busca</label><input value="${esc(q)}" data-filter-input="1" data-filter-path="locaisQ" data-focus-key="locaisBusca" placeholder="Loja, piso, painel, laço..."></div>
-      <div class="dsFilterActions"><button class="dsIco prim" onclick="formLocal()">+ Nova loja/área</button></div>
+      <div class="field"><label>Status</label><select onchange="filters.locaisF={...filters.locaisF,status:this.value};render()">${selectOpts(statusOpts,f.status)}</select></div>
+      <div class="field"><label>Piso</label><select onchange="filters.locaisF={...filters.locaisF,piso:this.value};render()">${selectOpts(pisosOpts,f.piso)}</select></div>
+      <div class="field"><label>Painel</label><select onchange="filters.locaisF={...filters.locaisF,painel:this.value};render()">${selectOpts(paineisOpts,f.painel)}</select></div>
+      <div class="field"><label>Laço</label><select onchange="filters.locaisF={...filters.locaisF,laco:this.value};render()">${selectOpts(lacosOpts,f.laco)}</select></div>
+      <div class="dsFilterActions"><button class="btn small secondary" onclick="formLocal()">+ Nova loja/área</button></div>
     </div>
+    <details class="card" style="padding:10px 14px" ${_locaisMaisFiltrosOpen?'open':''} ontoggle="_locaisMaisFiltrosOpen=this.open">
+      <summary style="cursor:pointer;font-weight:700;font-size:12.5px;color:var(--l3a-text-soft)">Mais filtros</summary>
+      <div class="dsFilters" style="margin-top:10px;border:0;padding:0">
+        <div class="field"><label>Tipo</label><select onchange="filters.locaisF={...filters.locaisF,tipo:this.value};render()">${selectOpts(tiposOpts,f.tipo)}</select></div>
+        <div class="field"><label>Responsável</label><select onchange="filters.locaisF={...filters.locaisF,responsavel:this.value};render()">${selectOpts(respOpts,f.responsavel)}</select></div>
+        <div class="field"><label>Última inspeção de</label><input type="date" value="${esc(f.dataDe||'')}" onchange="filters.locaisF={...filters.locaisF,dataDe:this.value};render()"></div>
+        <div class="field"><label>Última inspeção até</label><input type="date" value="${esc(f.dataAte||'')}" onchange="filters.locaisF={...filters.locaisF,dataAte:this.value};render()"></div>
+        <div class="field"><label>Possui falha</label><select onchange="filters.locaisF={...filters.locaisF,falha:this.value};render()">${selectOpts2([['','Todos'],['sim','Sim'],['nao','Não']],f.falha)}</select></div>
+        <div class="dsFilterActions"><button class="btn small secondary" onclick="filters.locaisF={};render()">Limpar filtros</button></div>
+      </div>
+    </details>
     <div class="dsTableWrap">
       <table class="dsTable">
         <thead><tr><th>Loja / Área</th><th>Localização</th><th style="text-align:center">Equipamentos</th><th>Status</th><th>Ações</th></tr></thead>
@@ -3879,13 +3934,124 @@ function saveLocal(i){
   lucSincronizarIrmaos(o);
   closeModal();save();
 }
+function readFilesAsDataUrls(fileList){
+  const arr=Array.from(fileList||[]);
+  return Promise.all(arr.map(f=>new Promise((resolve)=>{
+    const r=new FileReader();
+    r.onload=()=>resolve({name:f.name,tipo:f.type||'',dataUrl:r.result});
+    r.onerror=()=>resolve(null);
+    r.readAsDataURL(f);
+  }))).then(list=>list.filter(Boolean));
+}
+function ultimaInspecaoLocalOrdenada(l){return (l.inspecoes||[]).slice().sort((a,b)=>String(b.data||'').localeCompare(String(a.data||'')))}
+function inspAnexosHtml(lista,label){
+  if(!lista||!lista.length)return '';
+  const thumbs=lista.map(a=>{
+    if(a.tipo&&a.tipo.startsWith('image/'))return `<a href="${a.dataUrl}" target="_blank" title="${esc(a.name)}"><img src="${a.dataUrl}" style="width:52px;height:52px;object-fit:cover;border-radius:8px;border:1px solid var(--l3a-border)"></a>`;
+    return `<a href="${a.dataUrl}" download="${esc(a.name)}" class="pill neutral" style="font-size:11px">${esc(a.name)}</a>`;
+  }).join(' ');
+  return `<div style="margin-top:6px"><small class="note">${esc(label)} (${lista.length})</small><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">${thumbs}</div></div>`;
+}
+function formInspecao(localId,i=''){
+  if(!requireAccess('cadastro','Seu perfil não pode registrar inspeções/testes.'))return;
+  const l=db.locais.find(x=>x.id===localId); if(!l)return;
+  const o=i?(l.inspecoes||[]).find(x=>x.id===i)||{}:{};
+  openModal(`<h2>${i?'Editar':'Executar Teste'} — ${esc(l.nome)}</h2>
+  <p class="msg warn">Registre a inspeção/teste técnico da loja/área. Se o resultado for <b>Não Conforme</b>, o sistema cria automaticamente uma Falha e o respectivo Plano de Ação vinculados a este teste.</p>
+  <input type="hidden" id="mInspLocalId" value="${esc(localId)}">
+  <div class="formGrid">
+    <div class="field"><label>Data e hora</label><input id="mInspData" type="datetime-local" value="${esc(o.data?o.data.slice(0,16):isoNow().slice(0,16))}"></div>
+    <div class="field"><label>Responsável</label><input id="mInspResp" list="mInspRespList" value="${esc(o.responsavel||'')}" placeholder="Nome do técnico responsável"><datalist id="mInspRespList">${locaisResponsaveisDisponiveis().map(r=>`<option value="${esc(r)}">`).join('')}</datalist></div>
+    <div class="field"><label>Resultado</label><select id="mInspResultado">${['Conforme','Ajustado','Não Conforme'].map(op=>`<option ${o.resultado===op?'selected':''}>${op}</option>`).join('')}</select></div>
+    <div class="field" style="grid-column:1/-1"><label>Observações técnicas</label><textarea id="mInspObs" placeholder="Detalhe o que foi testado/observado">${esc(o.observacoes||'')}</textarea></div>
+    <div class="field"><label>Fotos</label><input type="file" id="mInspFotos" accept="image/*" multiple></div>
+    <div class="field"><label>Vídeos (opcional)</label><input type="file" id="mInspVideos" accept="video/*" multiple></div>
+    <div class="field"><label>Documentos (opcional)</label><input type="file" id="mInspDocs" multiple></div>
+  </div><br>
+  <button class="btn" onclick="saveInspecao('${localId}','${i}')">Salvar teste</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`);
+}
+async function saveInspecao(localId,i){
+  const l=db.locais.find(x=>x.id===localId); if(!l)return;
+  l.inspecoes=l.inspecoes||[];
+  const resultado=document.getElementById('mInspResultado').value;
+  const responsavel=n(document.getElementById('mInspResp').value);
+  const observacoes=n(document.getElementById('mInspObs').value);
+  const dataVal=document.getElementById('mInspData').value||isoNow();
+  const [fotos,videos,documentos]=await Promise.all([
+    readFilesAsDataUrls(document.getElementById('mInspFotos').files),
+    readFilesAsDataUrls(document.getElementById('mInspVideos').files),
+    readFilesAsDataUrls(document.getElementById('mInspDocs').files)
+  ]);
+  let rec=i?l.inspecoes.find(x=>x.id===i):{id:id(),criadoEm:isoNow()};
+  if(!rec){rec={id:id(),criadoEm:isoNow()}}
+  rec.data=dataVal;
+  rec.responsavel=responsavel;
+  rec.resultado=resultado;
+  rec.observacoes=observacoes;
+  rec.fotos=(rec.fotos||[]).concat(fotos);
+  rec.videos=(rec.videos||[]).concat(videos);
+  rec.documentos=(rec.documentos||[]).concat(documentos);
+  if(!i)l.inspecoes.push(rec);
+
+  // Regra: Conforme/Ajustado NÃO cria Falha. Não Conforme cria Falha + Plano de Ação vinculados.
+  if(resultado==='Não Conforme'&&!rec.falhaGeradaId){
+    const falhaRec={
+      id:id(),data:isoNow(),painelId:l.painelId,lacoId:l.lacoId,piso:l.piso,tipo:'Inspeção',
+      itemId:'',itemNome:l.nome,localId:l.id,status:'Falha em inspeção',statusAnterior:l.status||'Em operação',
+      responsavel,origem:'Inspeção',motivo:'Não conformidade identificada em teste/inspeção',
+      obs:observacoes,resolvidaEm:'',origemInspecaoId:rec.id
+    };
+    db.falhas.push(falhaRec);
+    rec.falhaGeradaId=falhaRec.id;
+    l.status=normalizeStatus(falhaRec.status);
+    l.ultimaAlteracao=isoNow();
+    if(!db.planos.find(p=>p.falhaId===falhaRec.id)){
+      db.planos.push({id:id(),falhaId:falhaRec.id,criadoEm:isoNow(),categoria:'Manutenção corretiva',prioridade:'Média',
+        responsavel:'L3A Engenharia',situacao:'Aberto',painel:paiName(falhaRec.painelId),laco:lacName(falhaRec.lacoId),
+        piso:falhaRec.piso,local:locName(falhaRec.localId),item:falhaRec.itemNome,statusFalha:falhaRec.status,
+        justificativa:falhaRec.motivo,providencia:'',necessitaCompra:false,material:''});
+    }
+  }
+  closeModal();save();
+  _localModalState={id:localId,tab:'historico'};
+  openLocal(localId);
+}
+function verInspecao(localId,i){
+  const l=db.locais.find(x=>x.id===localId); if(!l)return;
+  const insp=(l.inspecoes||[]).find(x=>x.id===i); if(!insp)return;
+  openModal(`<h2>Teste — ${esc(l.nome)}</h2>
+  <p><b>Data:</b> ${esc(fmtDataHoraTexto?fmtDataHoraTexto(insp.data):insp.data)} • <b>Responsável:</b> ${esc(insp.responsavel||'—')} • <b>Resultado:</b> ${esc(insp.resultado)}</p>
+  <p><b>Observações:</b> ${esc(insp.observacoes||'—')}</p>
+  ${inspAnexosHtml(insp.fotos,'Fotos')}${inspAnexosHtml(insp.videos,'Vídeos')}${inspAnexosHtml(insp.documentos,'Documentos')}
+  ${insp.falhaGeradaId?`<p class="msg warn" style="margin-top:10px">Esta inspeção gerou a Falha/Plano de Ação vinculado (não conformidade).</p>`:''}
+  <br><button class="btn secondary" onclick="_localModalState={id:'${localId}',tab:'historico'};openLocal('${localId}')">Voltar</button>`);
+}
+function localModalSetTab(tab){_localModalState.tab=tab;openLocal(_localModalState.id);}
+function localModalDadosHtml(l){
+  return `<p><b>LUC:</b> ${lucDisplayLocal(l)} • <b>Chave lógica:</b> ${esc(lucChaveLogicaLocal(l))} • <b>Tipo:</b> ${esc(l.tipo)} • <b>Painel:</b> ${esc(paiName(l.painelId))} • <b>Laço:</b> ${esc(lacName(l.lacoId))} • <b>Piso:</b> ${esc(l.piso)}</p>${l.nomeOriginalCadastro?`<p class="note"><b>Nome antigo:</b> ${esc(l.nomeOriginalCadastro)}</p>`:''}<p><b>Status atual:</b> ${dsBadgeHtml(l.status)}</p><div class="toolbar"><button class="btn small" onclick="formInspecao('${l.id}')">Executar Teste</button><button class="btn small secondary" onclick="formLocal('${l.id}')">Editar cadastro</button></div>`;
+}
+function localModalHistoricoHtml(l){
+  const insp=(l.inspecoes||[]).map(x=>({tipo:'Inspeção/Teste',data:x.data,responsavel:x.responsavel,
+    resumo:`Resultado: ${x.resultado}${x.observacoes?' — '+x.observacoes:''}`,ref:x.id}));
+  const falhas=(db.falhas||[]).filter(f=>f.localId===l.id).map(f=>({tipo:'Falha',data:f.data,responsavel:f.responsavel,
+    resumo:`${f.status}${f.motivo?' — '+f.motivo:''}`,ref:f.id}));
+  const planos=(db.planos||[]).filter(p=>falhas.some(f=>f.ref===p.falhaId)).map(p=>({tipo:'Plano de Ação',data:p.criadoEm,
+    responsavel:p.responsavel,resumo:`${p.situacao} — ${p.categoria||''}`,ref:p.id}));
+  const eventos=insp.concat(falhas,planos).sort((a,b)=>String(b.data||'').localeCompare(String(a.data||'')));
+  if(!eventos.length)return '<p class="msg warn">Sem eventos registrados.</p>';
+  return `<div class="timeline">${eventos.map(ev=>`<div class="tl"><b>${esc(ev.tipo)}</b> • <small>${esc(ev.data||'')} • ${esc(ev.responsavel||'—')}</small><p>${esc(ev.resumo)}</p>${ev.tipo==='Inspeção/Teste'?`<button class="btn small secondary" onclick="verInspecao('${l.id}','${ev.ref}')">Ver detalhes</button>`:''}</div>`).join('')}</div>`;
+}
 function openLocal(i){
   ensureLucSchema();
   let l=db.locais.find(x=>x.id===i); if(!l)return;
-  let hist=db.falhas.filter(f=>f.localId===i||f.itemId===i).sort((a,b)=>String(b.data).localeCompare(String(a.data)));
-  openModal(`<h2>${esc(lucNomeOficialLocal(l))}</h2><p><b>LUC:</b> ${lucDisplayLocal(l)} • <b>Chave lógica:</b> ${esc(lucChaveLogicaLocal(l))} • <b>Tipo:</b> ${esc(l.tipo)} • <b>Painel:</b> ${esc(paiName(l.painelId))} • <b>Laço:</b> ${esc(lacName(l.lacoId))} • <b>Piso:</b> ${esc(l.piso)}</p>${l.nomeOriginalCadastro?`<p class="note"><b>Nome antigo:</b> ${esc(l.nomeOriginalCadastro)}</p>`:''}<h3>Histórico da loja/área</h3><div class="timeline">${hist.map(h=>`<div class="tl"><b>${esc(h.status)}</b><br><small>${esc(h.data)} • ${esc(h.itemNome||'')}</small><p>${esc(h.motivo||h.obs||'Sem observação')}</p></div>`).join('')||'<p class="msg warn">Sem histórico.</p>'}</div>`);
+  l.inspecoes=l.inspecoes||[];
+  _localModalState={id:i,tab:_localModalState.id===i?_localModalState.tab:'dados'};
+  const tab=_localModalState.tab;
+  const tabs=[['dados','Dados'],['historico','Histórico']];
+  const tabsHtml=tabs.map(([k,label])=>`<button class="btn small ${tab===k?'':'secondary'}" onclick="localModalSetTab('${k}')">${label}</button>`).join(' ');
+  const body=tab==='historico'?localModalHistoricoHtml(l):localModalDadosHtml(l);
+  openModal(`<h2>${esc(lucNomeOficialLocal(l))}</h2><div class="toolbar" style="margin-bottom:10px">${tabsHtml}</div>${body}`);
 }
-
 function bootSDAIManager(){
   try{
     ensureLucSchema();
