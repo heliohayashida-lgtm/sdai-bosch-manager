@@ -289,6 +289,34 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 input[type=checkbox],input[type=radio]{accent-color:var(--l3a-primary)}
 .formGrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 
+/* ---------- 8.5 PLANO DE AÇÃO — interface reestruturada (2026-07) --------- */
+.planoToolbarCard{padding:10px 14px}
+.planoFiltrosRow{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.planoFiltrosAvancados{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px;padding-top:8px;border-top:1px dashed var(--l3a-border)}
+.planoFiltrosRow .field.grow{flex:1 1 220px;min-width:180px;margin:0}
+.planoFiltrosRow .field.grow input{height:34px}
+.planoSelect,.planoDate{height:34px;border:1px solid var(--l3a-border);border-radius:var(--l3a-radius-sm,8px);background:var(--l3a-surface);color:var(--l3a-text);font-size:12.5px;padding:0 8px;min-width:118px}
+.btn.small{padding:6px 10px;font-size:12.5px;height:34px;display:inline-flex;align-items:center}
+.pdfMenu{position:relative}
+.pdfMenu summary{list-style:none;cursor:pointer}
+.pdfMenu summary::-webkit-details-marker{display:none}
+.pdfMenuList{position:absolute;right:0;top:calc(100% + 4px);background:var(--l3a-surface);border:1px solid var(--l3a-border);border-radius:var(--l3a-radius-md);box-shadow:var(--l3a-shadow-md);min-width:190px;z-index:20;display:flex;flex-direction:column;padding:6px;gap:2px}
+.pdfMenuList button{background:transparent;border:0;text-align:left;padding:8px 10px;border-radius:8px;font-size:12.5px;cursor:pointer;color:var(--l3a-text)}
+.pdfMenuList button:hover{background:var(--l3a-hover)}
+.dsKpiStrip.planoKpiStrip{grid-template-columns:repeat(4,1fr);margin:12px 0}
+.planoTableCard{padding:0;overflow:hidden;display:flex;flex-direction:column}
+.planoTableHead{padding:10px 16px 6px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--l3a-border)}
+.planoTableWrap{max-height:calc(100vh - 300px);min-height:360px;overflow:auto;flex:1 1 auto}
+.planoAcoes{display:flex;gap:4px;align-items:center}
+.iconBtn{border:1px solid var(--l3a-border);background:var(--l3a-surface);border-radius:8px;width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;font-size:13px;cursor:pointer;color:var(--l3a-text)}
+.iconBtn:hover{background:var(--l3a-hover);border-color:var(--l3a-primary)}
+.maisOpcoesLista{display:flex;flex-direction:column;gap:8px}
+@media (max-width:900px){
+  .planoFiltrosRow .field.grow{flex:1 1 100%}
+  .planoSelect,.planoDate{flex:1 1 46%}
+  .planoKpiStrip{grid-template-columns:repeat(2,1fr)}
+}
+
 /* ---------- 9. TABELAS ------------------------------------------------------ */
 .tableWrap{overflow:auto;border:1px solid var(--l3a-border);border-radius:var(--l3a-radius-md);background:var(--l3a-surface)}
 .softTable table{min-width:0}
@@ -1198,7 +1226,7 @@ function ensureEquip(obj,mode='diff'){obj.status=normalizeStatus(obj.status); le
 function clearAll(){db=emptyDB();persistLocal();markDirty('limpeza');render()}
 function counts(){let tipos=unique(db.equipamentos.map(e=>e.tipo).concat(['Módulo'])); let c={paineis:db.paineis.length,lacos:db.lacos.length,flms:db.flms.length,portas:db.portas.length,locais:db.locais.length,equipamentos:db.equipamentos.length,totalDispositivos:db.equipamentos.length+db.flms.length,tipos:{},status:{}}; tipos.forEach(t=>c.tipos[t]=0); db.flms.forEach(()=>c.tipos['Módulo']=(c.tipos['Módulo']||0)+1); db.equipamentos.forEach(e=>{c.tipos[e.tipo]=(c.tipos[e.tipo]||0)+1;{let st=normalizeStatus(e.status); c.status[st]=(c.status[st]||0)+1}}); db.flms.forEach(f=>{{let st=normalizeStatus(f.status||'Em operação'); c.status[st]=(c.status[st]||0)+1}}); return c}
 function table(rows,cols,actions){if(!rows.length)return '<p class="msg warn">Sem registros.</p>';return `<div class="tableWrap"><table><thead><tr>${cols.map(c=>`<th>${c[0]}</th>`).join('')}${actions?'<th>Ações</th>':''}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${c[2]?c[2](r):esc(r[c[1]])}</td>`).join('')}${actions?`<td>${actions(r)}</td>`:''}</tr>`).join('')}</tbody></table></div>`}
-function selectOpts(vals,sel=''){return '<option value="">Todos</option>'+vals.map(v=>`<option ${v===sel?'selected':''}>${esc(v)}</option>`).join('')}
+function selectOpts(vals,sel='',allLabel='Todos'){return `<option value="">${esc(allLabel)}</option>`+vals.map(v=>`<option ${v===sel?'selected':''}>${esc(v)}</option>`).join('')}
 function kpi(label,val){return `<div class="metric"><small>${esc(label)}</small><strong>${esc(val)}</strong></div>`}
 function render(){ensureDefaultUsers(); if(!isLoggedIn()){showLogin()} else {hideLogin()} document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));document.getElementById(currentView).classList.add('active'); document.getElementById('pageTitle').textContent={dashboard:'Dashboard',paineis:'Painéis',lacos:'Laços',flms:'Módulos',locais:'Lojas / Áreas',equipamentos:'Detectores / Acionadores',falhas:'Falhas',plano:'Plano de Ação',importacao:'Importação',exportacao:'Exportação',relatorios:'Relatórios',sistema:'Banco de Dados',usuarios:'Usuários e Acessos',configuracoes:'Configurações',backup:'Backup',logs:'Logs do Sistema',sobre:'Sobre'}[currentView]||'SDAI'; renderDashboard();renderPaineis();renderLacos();renderFlms();renderLocais();renderEquipamentos();renderFalhas();renderPlano();renderImportacao();renderExportacao();renderRelatorios();renderSistema();renderUsuarios();renderConfiguracoes();renderBackup();renderLogs();renderSobre();applyBrand();applyRoleUI();attachSearchInputs();restoreSearchFocus();updateSyncFooter();}
 document.querySelectorAll('.nav button').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.nav button').forEach(x=>x.classList.remove('active'));b.classList.add('active');currentView=b.dataset.view;render()})); function updateClock(){const d=new Date();const cd=document.getElementById('clockDate');const ct=document.getElementById('clockTime');if(cd)cd.textContent=d.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'}).replace('.','');if(ct)ct.textContent=d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});} updateClock(); setInterval(updateClock,1000);
@@ -2126,7 +2154,13 @@ function saveFalha(i){
     // Plano de Ação com Situação = Aberto, independentemente do Status Técnico selecionado (antes só
     // criava plano se isFalhaStatus(rec.status) fosse verdadeiro, então "Em teste"/"Desativação"/
     // "Em operação" nunca geravam plano). Nada mais do fluxo de cadastro de falha foi alterado.
-    if(!db.planos.find(p=>p.falhaId===rec.id)){db.planos.push({id:id(),falhaId:rec.id,criadoEm:isoNow(),categoria:'Manutenção corretiva',prioridade:'Média',responsavel:'L3A Engenharia',situacao:'Aberto',painel:paiName(rec.painelId),laco:lacName(rec.lacoId),piso:rec.piso,local:locName(rec.localId),item:rec.itemNome,statusFalha:rec.status,justificativa:rec.motivo||rec.obs||'',providencia:'',necessitaCompra:false});}
+    if(!db.planos.find(p=>p.falhaId===rec.id)){
+      // Se o cadastro veio de "Duplicar" (aba Plano de Ação), aplica o molde copiado do plano de
+      // origem — só nos campos descritivos, nunca na Situação (que é sempre "Aberto" para plano novo).
+      const tpl=window._planoTemplate||null;
+      db.planos.push({id:id(),falhaId:rec.id,criadoEm:isoNow(),categoria:tpl?.categoria||'Manutenção corretiva',prioridade:tpl?.prioridade||'Média',responsavel:tpl?.responsavel||'L3A Engenharia',situacao:'Aberto',painel:paiName(rec.painelId),laco:lacName(rec.lacoId),piso:rec.piso,local:locName(rec.localId),item:rec.itemNome,statusFalha:rec.status,justificativa:rec.motivo||rec.obs||'',providencia:'',necessitaCompra:tpl?.necessitaCompra||false,material:tpl?.material||'',direcionamento:tpl?.direcionamento||undefined});
+      if(tpl)window._planoTemplate=null;
+    }
   } closeModal(); save()
 }
 
@@ -2332,6 +2366,35 @@ function savePlano(i,falhaId=''){
   const prioridadeNova=val('mPrioridade')||o.prioridade||'Média';
   Object.assign(o,{falhaId:falhaId||o.falhaId,categoria:val('mCategoria')||o.categoria,prioridade:prioridadeNova,responsavel:val('mRespPlano')||o.responsavel,situacao:val('mSituacao')||o.situacao,prazo:val('mPrazo'),necessitaCompra:val('mCompra')==='Sim',material:n(val('mMaterial')),justificativa:f.obs||f.motivo||o.justificativa||'',direcionamento:o.direcionamento||getDirecionamento(f.status||o.statusFalha),providencia:n(val('mProv')),painel:inf.painel||o.painel,laco:inf.laco||o.laco,piso:inf.piso||o.piso,local:inf.local||o.local,item:inf.itemNome||o.item,statusFalha:f.status||o.statusFalha,atualizadoEm:isoNow()});
   if(o.situacao==='Concluído'&&!o.concluidoEm)o.concluidoEm=isoNow(); if(!i)db.planos.push(o); closeModal(); save()
+}
+function abrirEvidencias(i){formPlano(i)}
+function maisOpcoesPlano(planoId,falhaId){
+  openModal(`<h2>Mais opções</h2><div class="maisOpcoesLista">
+    <button class="btn secondary" onclick="closeModal();formPlano('${esc(planoId)}','${esc(falhaId)}')">✏ Editar</button>
+    <button class="btn secondary" onclick="closeModal();abrirEvidencias('${esc(planoId)}')">📷 Adicionar evidências</button>
+    <button class="btn secondary" onclick="closeModal();historicoPlano('${esc(falhaId)}')">🕘 Histórico</button>
+    <button class="btn secondary" onclick="duplicarPlano('${esc(planoId)}')">⧉ Duplicar</button>
+    <button class="btn danger" onclick="del('planos','${esc(planoId)}')">🗑 Excluir</button>
+  </div><br><button class="btn secondary" onclick="closeModal()">Fechar</button>`);
+}
+function historicoPlano(falhaId){
+  const f=db.falhas.find(x=>x.id===falhaId);
+  if(!f){alert('Falha não encontrada para exibir histórico.');return}
+  if(f.localId&&db.locais.find(x=>x.id===f.localId))return openLocal(f.localId);
+  if(f.itemId&&!String(f.itemId).startsWith('flm:')&&db.equipamentos.find(x=>x.id===f.itemId))return openEquip(f.itemId);
+  openModal(`<h2>Histórico</h2><div class="timeline"><div class="tl"><b>${esc(normalizeStatus(f.status))}</b><br><small>${esc(f.data)} • ${esc(f.itemNome||'')}</small><p>${esc(f.motivo||f.obs||'Sem observação')}</p></div></div><br><button class="btn secondary" onclick="closeModal()">Fechar</button>`);
+}
+function duplicarPlano(planoId){
+  // "Duplicar" (item 7 do pedido de reestruturação, 2026-07) não cria um segundo plano para a MESMA
+  // falha — isso quebraria a garantia estrutural 1 falha ⇄ 1 plano corrigida nesta sessão. Em vez
+  // disso, copia os dados descritivos do plano (categoria, prioridade, responsável, material,
+  // direcionamento) como um "molde" que é aplicado automaticamente ao PRÓXIMO plano criado a partir
+  // de uma nova falha — útil para ocorrências recorrentes no mesmo padrão de atendimento.
+  const p=db.planos.find(x=>x.id===planoId); if(!p)return;
+  window._planoTemplate={categoria:p.categoria,prioridade:p.prioridade,responsavel:p.responsavel,material:p.material,necessitaCompra:p.necessitaCompra,direcionamento:p.direcionamento};
+  closeModal();
+  alert('Dados do plano copiados (categoria, prioridade, responsável, material). Registre a nova falha em Falhas → "+ Registrar" — o plano gerado automaticamente já virá preenchido com os mesmos dados.');
+  formFalha();
 }
 function concluirPlano(i){let o=db.planos.find(x=>x.id===i); if(!o)return; o.situacao='Concluído'; o.concluidoEm=isoNow(); let f=db.falhas.find(x=>x.id===o.falhaId); if(f){
     // CORREÇÃO (item 5/6 do pedido do usuário, 2026-07): antes só a falha SINTÉTICA "Em operação"
@@ -2727,7 +2790,12 @@ function renderDashboard(){
    ========================================================================= */
 function toggleFalhaPiso(label){filters.falhas=filters.falhas||{};filters.falhas.piso=(filters.falhas.piso===label?'':label);render()}
 
-function setPlanoCategoriaFiltro(cat){const el=document.getElementById('plCat');if(el)el.value=(el.value===cat?'':cat);renderPlano()}
+function setPlanoCategoriaFiltro(cat){
+  // Mantida por compatibilidade (não é mais chamada pela UI atual — o antigo gráfico "Itens por
+  // categoria" foi substituído pelos 4 cards de KPI na reestruturação de 2026-07 — mas outra tela ou
+  // um atalho salvo poderia ainda referenciar esta função pelo nome).
+  const cur=filters.plano||{}; filters.plano={...cur,cat:cur.cat===cat?'':cat}; render();
+}
 function dsBadgeClass(status){
   const s=(status||'').toLowerCase();
   if(s.includes('operação')||s==='em operação'||s==='ok')return 'op';
@@ -2780,34 +2848,39 @@ function buildPlanoRowsBase(){
   return rows;
 }
 function planoFiltrosAtuais(){
-  // Lê os filtros atualmente aplicados na tela do Plano de Ação. Usado tanto pelo renderPlano quanto
-  // pelos geradores de PDF, para que o PDF sempre respeite exatamente o que está filtrado na tela
-  // (item 3 e 6 do pedido do usuário, 2026-07).
+  // Lê os filtros atualmente aplicados na tela do Plano de Ação a partir de `filters.plano` — mesmo
+  // padrão de estado já usado nas abas Falhas/Equipamentos/Locais (filters.<aba>={...}) — em vez de
+  // ler direto do DOM. Isso permite atualização automática a cada mudança (item 3 do pedido de
+  // reestruturação, 2026-07: "remover botão Filtrar") sem perder o valor ao re-renderizar a tabela,
+  // e é usado tanto pelo renderPlano quanto pelos geradores de PDF, que assim sempre respeitam
+  // exatamente o que está filtrado na tela.
+  const f=filters.plano||{};
   return {
-    q:(document.getElementById('plBuscaPlano')?.value||'').toUpperCase(),
-    cat:document.getElementById('plCat')?.value||'',
-    prio:document.getElementById('plPrio')?.value||'',
-    sit:document.getElementById('plSit')?.value||'',
-    resp:document.getElementById('plResp')?.value||'',
-    painel:document.getElementById('plPainel')?.value||'',
-    laco:document.getElementById('plLaco')?.value||'',
-    piso:document.getElementById('plPiso')?.value||'',
-    loja:document.getElementById('plLoja')?.value||'',
-    ini:document.getElementById('plIni')?.value||'',
-    fim:document.getElementById('plFim')?.value||'',
-    statusTec:document.getElementById('plStatusTec')?.value||''
+    q:(f.q||'').toUpperCase(),
+    cat:f.cat||'',
+    prio:f.prio||'',
+    sit:f.sit||'',
+    resp:f.resp||'',
+    painel:f.painel||'',
+    laco:f.laco||'',
+    piso:f.piso||'',
+    loja:f.loja||'',
+    ini:f.ini||'',
+    fim:f.fim||'',
+    statusTec:f.statusTec||'',
+    avancado:!!f.avancado
   };
 }
 function inPeriodoPlano(x,ini,fim){if(!ini&&!fim)return true;let datas=[x.desde,x.criadoEm,x.concluidoEm].filter(Boolean).map(String);return datas.some(d=>(!ini||d>=ini)&&(!fim||d<=fim+'T23:59'))}
 function situacaoPesoPlano(s){return {'Sem plano':0,'Aberto':1,'Em andamento':2,'Concluído':3}[s]??9}
-function planoRowsFiltrados(fx,{ignorarSituacao=false,ignorarCategoria=false}={}){
-  // Aplica os filtros (exceto os overrides explícitos acima, usados pelo gráfico "Itens por
-  // categoria" e pelos PDFs, que precisam de variações do mesmo filtro base) sobre a base de linhas.
+function planoRowsFiltrados(fx,{ignorarSituacao=false,ignorarCategoria=false,ignorarPrioridade=false}={}){
+  // Aplica os filtros (exceto os overrides explícitos acima, usados pelos cards de KPI clicáveis e
+  // pelos PDFs, que precisam de variações do mesmo filtro base) sobre a base de linhas.
   let rows=buildPlanoRowsBase();
   return rows.filter(x=>
     (!fx.q||JSON.stringify(x).toUpperCase().includes(fx.q))&&
     (ignorarCategoria||!fx.cat||(x.categoria||'Sem categoria')===fx.cat)&&
-    (!fx.prio||x.prioridade===fx.prio)&&
+    (ignorarPrioridade||!fx.prio||x.prioridade===fx.prio)&&
     (ignorarSituacao||!fx.sit||x.situacao===fx.sit)&&
     (!fx.resp||x.responsavel===fx.resp)&&
     (!fx.painel||x.painel===fx.painel)&&
@@ -2818,26 +2891,66 @@ function planoRowsFiltrados(fx,{ignorarSituacao=false,ignorarCategoria=false}={}
     inPeriodoPlano(x,fx.ini,fx.fim)
   );
 }
+/* =========================================================================
+   PLANO DE AÇÃO — Reestruturação da interface (2026-07)
+   -------------------------------------------------------------------------
+   Objetivo: central operacional enxuta (inspirada em SAP PM / Planner /
+   Monday / ClickUp / Sienge / HikCentral / Bosch Remote Portal), não mais
+   uma tela de banco de dados. Mudanças de INTERFACE apenas — toda a lógica
+   de dados (buildPlanoRowsBase, planoRowsFiltrados, criação/edição/conclusão
+   de plano, vínculo 1 falha ⇄ 1 plano, PDFs) é a mesma já auditada e
+   corrigida nesta sessão; nada do Dashboard/Falhas/Login/Permissões/
+   Importação/Exportação/Sincronização foi tocado.
+   - Filtros principais sempre visíveis: Busca, Situação, Prioridade,
+     Categoria, Responsável, Período. Sem botão "Filtrar": todo campo
+     atualiza a tabela sozinho (onchange nos selects/datas; a busca usa o
+     mesmo mecanismo de debounce com preservação de foco já usado em
+     Falhas/Locais/Equipamentos — attachSearchInputs/onSearchInput).
+   - Filtros avançados (Painel, Laço, Loja, Piso, Status Técnico) atrás de
+     "▾ Mais filtros", ocultos por padrão (estado em filters.plano.avancado).
+   - Gráfico de barras por categoria substituído por 4 cards de KPI
+     clicáveis (Pendentes/Em andamento/Concluídos/Críticos), no mesmo padrão
+     visual (dsKpiStrip/dsKpi) já usado na aba Falhas.
+   - Botões de PDF consolidados em um único menu suspenso.
+   ========================================================================= */
+function togglePlanoFiltrosAvancados(){filters.plano={...(filters.plano||{}),avancado:!(filters.plano||{}).avancado};render()}
+function setPlanoCardFiltro(tipo){
+  const cur=filters.plano||{};
+  if(tipo==='pendentes')filters.plano={...cur,sit:cur.sit==='Aberto'?'':'Aberto'};
+  else if(tipo==='andamento')filters.plano={...cur,sit:cur.sit==='Em andamento'?'':'Em andamento'};
+  else if(tipo==='concluidos')filters.plano={...cur,sit:cur.sit==='Concluído'?'':'Concluído'};
+  else if(tipo==='criticos')filters.plano={...cur,prio:cur.prio==='Crítica'?'':'Crítica'};
+  render();
+}
 function renderPlano(){
   let fx=planoFiltrosAtuais();
   let fcat=fx.cat,fsit=fx.sit;
   let rows=buildPlanoRowsBase();
-  let rowsPreCat=planoRowsFiltrados(fx,{ignorarCategoria:true});
-  let catMap={};rowsPreCat.forEach(x=>{const c=x.categoria||'Sem categoria';catMap[c]=(catMap[c]||0)+1});
-  let catRows=Object.entries(catMap).map(([label,value])=>({label,value})).sort((a,b)=>b.value-a.value);
-  let maxCat=Math.max(1,...catRows.map(r=>r.value));
-  let catChartHtml=catRows.length?`<div class="chartBars">${catRows.map(r=>`<div class="chartLine clickable ${fcat===r.label?'selected':''}" onclick="setPlanoCategoriaFiltro('${esc(r.label)}')"><b>${esc(r.label)}</b><div class="chartTrack"><i style="width:${Math.max(2,pct(r.value,maxCat))}%"></i></div><strong>${r.value}</strong></div>`).join('')}</div>`:'<div class="emptyState">Sem itens.</div>';
-  let filtrados=rowsPreCat.filter(x=>!fcat||(x.categoria||'Sem categoria')===fcat)
+
+  // KPIs dos 4 cards: respeitam todos os filtros ativos, EXCETO a própria dimensão que cada card
+  // representa (Situação/Prioridade) — assim o card continua mostrando a contagem certa mesmo
+  // depois de clicado (mesmo princípio do antigo gráfico de categoria, que ignorava só a categoria).
+  const rowsParaCards=planoRowsFiltrados(fx,{ignorarSituacao:true,ignorarPrioridade:true});
+  const kpiPendentes=rowsParaCards.filter(x=>x.situacao==='Aberto').length;
+  const kpiAndamento=rowsParaCards.filter(x=>x.situacao==='Em andamento').length;
+  const kpiConcluidos=rowsParaCards.filter(x=>x.situacao==='Concluído').length;
+  const kpiCriticos=rowsParaCards.filter(x=>x.prioridade==='Crítica'&&x.situacao!=='Concluído').length;
+
+  let filtrados=planoRowsFiltrados(fx)
     .sort((a,b)=>situacaoPesoPlano(a.situacao)-situacaoPesoPlano(b.situacao)||prioridadePeso(a.prioridade)-prioridadePeso(b.prioridade)||String(a.desde||a.criadoEm).localeCompare(String(b.desde||b.criadoEm)));
 
-  // Build compact table rows
   const situBadge=s=>{const cls=s==='Concluído'?'ok':s==='Em andamento'?'info':s==='Sem plano'||s==='Cancelado'?'warn':'';return `<span class="pill ${cls}" style="font-size:11px">${esc(s)}</span>`};
-  const prioBadge=p=>{const cls=p==='Alta'||p==='Urgente'?'bad':p==='Média'?'warn':'';return `<span class="pill ${cls}" style="font-size:10px;padding:2px 7px">${esc(p)}</span>`};
+  const prioBadge=p=>{const cls=p==='Crítica'||p==='Alta'||p==='Urgente'?'bad':p==='Média'?'warn':'';return `<span class="pill ${cls}" style="font-size:10px;padding:2px 7px">${esc(p)}</span>`};
   const trs=filtrados.map(r=>{
     const locHtml=`<div style="line-height:1.3"><span style="font-size:11px;font-weight:700;color:var(--l3a-text-muted)">P${esc(r.piso?.replace(/\D/g,''))??''} • ${esc(r.laco||'—')}</span><br><span style="font-size:12px;font-weight:600">${esc(r.itemNome||'—')}</span></div>`;
     const dirPreview=r.direcionamento?`<span title="${esc(r.direcionamento)}" style="font-size:12px;color:var(--l3a-text-soft);cursor:help">${esc(r.direcionamento.slice(0,48))}${r.direcionamento.length>48?'…':''}</span>`:'<span class="mutedLine">—</span>';
-    const evid=r.fotoCount?`<span title="${r.fotoCount} foto(s)" style="font-size:12.5px">📷 ${r.fotoCount}</span>`:`<span class="mutedLine" style="font-size:11px">—</span>`;
-    const acoes=`<div style="display:flex;gap:4px;align-items:center">${r.planoId?`<button class="btn small secondary" title="Editar" onclick="formPlano('${r.planoId}')" style="padding:4px 7px;font-size:13px">✏️</button>`:`<button class="btn small" title="Criar plano" onclick="formPlano('','${r.falhaId}')" style="padding:3px 8px;font-size:11px">+ Plano</button>`}${r.planoId&&r.situacao!=='Concluído'?`<button class="btn small" title="Concluir" onclick="concluirPlano('${r.planoId}')" style="padding:4px 7px;font-size:13px">✔</button>`:''}${r.planoId?`<button class="btn small danger" title="Excluir" onclick="del('planos','${r.planoId}')" style="padding:4px 7px;font-size:13px">🗑</button>`:''}</div>`;
+    const evid=r.fotoCount?`📷 ${r.fotoCount}`:'—';
+    const acoes=`<div class="planoAcoes">
+      ${r.planoId?`<button class="iconBtn" title="Editar" onclick="formPlano('${r.planoId}')">✏</button>`:`<button class="btn small" title="Criar plano" onclick="formPlano('','${r.falhaId}')" style="padding:3px 8px;font-size:11px">+ Plano</button>`}
+      ${r.planoId?`<button class="iconBtn" title="Evidências (${r.fotoCount||0})" onclick="abrirEvidencias('${r.planoId}')">📷</button>`:''}
+      ${r.planoId&&r.situacao!=='Concluído'?`<button class="iconBtn" title="Concluir" onclick="concluirPlano('${r.planoId}')">✔</button>`:''}
+      ${r.planoId?`<button class="iconBtn" title="Mais opções" onclick="maisOpcoesPlano('${r.planoId}','${r.falhaId}')">⋮</button>`:''}
+    </div>`;
     return `<tr style="font-size:12.5px">
       <td style="padding:5px 8px;white-space:nowrap">${prioBadge(r.prioridade)}</td>
       <td style="padding:5px 8px;max-width:130px"><div style="font-weight:700;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.local)}">${esc(r.local||'—')}</div></td>
@@ -2848,7 +2961,7 @@ function renderPlano(){
       <td style="padding:5px 8px">${situBadge(r.situacao)}</td>
       <td style="padding:5px 8px;white-space:nowrap;font-size:12px;text-align:center">${dsDateHtml(r.desde)}</td>
       <td style="padding:5px 8px;white-space:nowrap;font-size:12px;text-align:center">${r.concluidoEm?dsDateHtml(r.concluidoEm):'—'}</td>
-      <td style="padding:5px 8px;text-align:center">${evid}</td>
+      <td style="padding:5px 8px;text-align:center;font-size:12px;color:var(--l3a-text-muted)">${evid}</td>
       <td style="padding:5px 8px">${acoes}</td>
     </tr>`;
   }).join('');
@@ -2863,49 +2976,57 @@ function renderPlano(){
     <th style="padding:6px 8px">Situação</th>
     <th style="padding:6px 8px;text-align:center">Abertura</th>
     <th style="padding:6px 8px;text-align:center">Conclusão</th>
-    <th style="padding:6px 8px;text-align:center">Evidências</th>
+    <th style="padding:6px 8px;text-align:center">Evid.</th>
     <th style="padding:6px 8px">Ações</th>
   </tr>`;
 
   const tableHtml=filtrados.length
-    ?`<div class="tableWrap" style="max-height:calc(100vh - 340px);overflow:auto"><table style="min-width:900px;border-collapse:collapse;width:100%"><thead style="position:sticky;top:0;background:var(--l3a-surface,#fff);z-index:1;border-bottom:2px solid var(--l3a-border)">${thead}</thead><tbody>${trs}</tbody></table></div>`
+    ?`<div class="tableWrap planoTableWrap"><table style="min-width:900px;border-collapse:collapse;width:100%"><thead style="position:sticky;top:0;background:var(--l3a-surface,#fff);z-index:1;border-bottom:2px solid var(--l3a-border)">${thead}</thead><tbody>${trs}</tbody></table></div>`
     :'<div class="emptyState">Nenhum lançamento encontrado para os filtros selecionados.</div>';
 
+  const avancadoAberto=fx.avancado;
   document.getElementById('plano').innerHTML=`
-    <div class="card" style="padding:12px 16px">
-      <div class="toolbar" style="gap:8px;flex-wrap:wrap">
-        <div class="field"><label>Busca</label><input id="plBuscaPlano" placeholder="Loja, laço, item..." value="${esc(document.getElementById('plBuscaPlano')?.value||'')}"></div>
-        <div class="field"><label>Categoria</label><select id="plCat">${selectOpts(planoCategorias(),fcat)}</select></div>
-        <div class="field"><label>Prioridade</label><select id="plPrio">${selectOpts(planoPrioridades(),fx.prio)}</select></div>
-        <div class="field"><label>Situação</label><select id="plSit">${selectOpts(['Aberto','Em andamento','Concluído'],fsit)}</select></div>
-        <div class="field"><label>Responsável</label><select id="plResp">${selectOpts(planoResponsaveis(),fx.resp)}</select></div>
-        <div class="field"><label>Painel</label><select id="plPainel">${selectOpts(unique(rows.map(x=>x.painel)),fx.painel)}</select></div>
-        <div class="field"><label>Laço</label><select id="plLaco">${selectOpts(unique(rows.map(x=>x.laco)),fx.laco)}</select></div>
-        <div class="field"><label>Piso</label><select id="plPiso">${selectOpts(unique(rows.map(x=>x.piso)),fx.piso)}</select></div>
-        <div class="field"><label>Loja</label><select id="plLoja">${selectOpts(unique(rows.map(x=>x.local)),fx.loja)}</select></div>
+    <div class="card planoToolbarCard">
+      <div class="planoFiltrosRow">
+        <div class="field grow"><input id="plBuscaPlano" data-filter-input="1" data-filter-group="plano" data-filter-key="q" data-focus-key="planoBusca" placeholder="🔍 Buscar loja, laço, item..." value="${esc(filters.plano?.q||'')}"></div>
+        <select class="planoSelect" onchange="filters.plano={...filters.plano,sit:this.value};render()">${selectOpts(['Aberto','Em andamento','Concluído'],fsit,'Situação')}</select>
+        <select class="planoSelect" onchange="filters.plano={...filters.plano,prio:this.value};render()">${selectOpts(planoPrioridades(),fx.prio,'Prioridade')}</select>
+        <select class="planoSelect" onchange="filters.plano={...filters.plano,cat:this.value};render()">${selectOpts(planoCategorias(),fcat,'Categoria')}</select>
+        <select class="planoSelect" onchange="filters.plano={...filters.plano,resp:this.value};render()">${selectOpts(planoResponsaveis(),fx.resp,'Responsável')}</select>
+        <input class="planoDate" type="date" title="Período inicial" onchange="filters.plano={...filters.plano,ini:this.value};render()" value="${esc(fx.ini)}">
+        <input class="planoDate" type="date" title="Período final" onchange="filters.plano={...filters.plano,fim:this.value};render()" value="${esc(fx.fim)}">
+        <button class="btn secondary small" onclick="togglePlanoFiltrosAvancados()">${avancadoAberto?'▴':'▾'} Mais filtros</button>
+        <details class="pdfMenu">
+          <summary class="btn secondary small">📄 Exportar PDF ▾</summary>
+          <div class="pdfMenuList">
+            <button onclick="this.closest('details').removeAttribute('open');gerarPdfPlanoAcao('pendencias')">Relatório Executivo</button>
+            <button onclick="this.closest('details').removeAttribute('open');gerarPdfPlanoDetalhado('pendencias')">Relatório Técnico</button>
+            <button onclick="this.closest('details').removeAttribute('open');gerarPdfPlanoAcao('concluidos')">Histórico Concluído</button>
+          </div>
+        </details>
       </div>
-      <div class="toolbar" style="gap:8px;flex-wrap:wrap;margin-top:8px">
-        <div class="field"><label>Período Inicial</label><input id="plIni" type="date" value="${esc(fx.ini)}"></div>
-        <div class="field"><label>Período Final</label><input id="plFim" type="date" value="${esc(fx.fim)}"></div>
-        <div class="field"><label>Status Técnico</label><select id="plStatusTec">${selectOpts(STATUS_TECNICO_OPTIONS,fx.statusTec)}</select></div>
-        <div style="display:flex;gap:6px;align-items:flex-end">
-          <button class="btn" onclick="renderPlano()">Filtrar</button>
-          <button class="btn secondary" onclick="gerarPdfPlanoAcao('pendencias')" title="PDF só com Situação Aberto/Em andamento, respeitando os filtros da tela">PDF Pendências</button>
-          <button class="btn secondary" onclick="gerarPdfPlanoAcao('concluidos')" title="PDF só com Situação Concluído, respeitando os filtros da tela">PDF Concluídos</button>
-          <button class="btn secondary" onclick="gerarPdfPlanoDetalhado('pendencias')" title="PDF detalhado (com fotos) só com pendências">PDF Detalhado — Pendências</button>
-          <button class="btn secondary" onclick="gerarPdfPlanoDetalhado('concluidos')" title="PDF detalhado (com fotos) só com concluídos">PDF Detalhado — Concluídos</button>
-          <button class="btn secondary" onclick="auditarPlanosManual()" title="Confere se toda falha tem exatamente 1 Plano de Ação vinculado e corrige automaticamente o que faltar">Auditar Falhas × Plano</button>
-        </div>
+      <div class="planoFiltrosAvancados" style="display:${avancadoAberto?'flex':'none'}">
+        <select class="planoSelect" onchange="filters.plano={...filters.plano,painel:this.value};render()">${selectOpts(unique(rows.map(x=>x.painel)),fx.painel,'Painel')}</select>
+        <select class="planoSelect" onchange="filters.plano={...filters.plano,laco:this.value};render()">${selectOpts(unique(rows.map(x=>x.laco)),fx.laco,'Laço')}</select>
+        <select class="planoSelect" onchange="filters.plano={...filters.plano,loja:this.value};render()">${selectOpts(unique(rows.map(x=>x.local)),fx.loja,'Loja')}</select>
+        <select class="planoSelect" onchange="filters.plano={...filters.plano,piso:this.value};render()">${selectOpts(unique(rows.map(x=>x.piso)),fx.piso,'Piso')}</select>
+        <select class="planoSelect" onchange="filters.plano={...filters.plano,statusTec:this.value};render()">${selectOpts(STATUS_TECNICO_OPTIONS,fx.statusTec,'Status Técnico')}</select>
+        <button class="btn secondary small" onclick="auditarPlanosManual()" title="Confere se toda falha tem exatamente 1 Plano de Ação vinculado e corrige automaticamente o que faltar">Auditar Falhas × Plano</button>
       </div>
     </div>
-    <div class="chartPanel" style="padding:10px 16px"><h4 style="margin:0 0 6px">Itens por categoria</h4><p class="mutedLine" style="margin:0 0 8px;font-size:12px">Clique para filtrar</p>${catChartHtml}</div>
-    <div class="card" style="padding:0;overflow:hidden">
-      <div style="padding:10px 16px 6px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--l3a-border)">
+    <div class="dsKpiStrip planoKpiStrip">
+      ${dsKpi('Pendentes',kpiPendentes,fsit==='Aberto'?'warn':'',"setPlanoCardFiltro('pendentes')")}
+      ${dsKpi('Em andamento',kpiAndamento,fsit==='Em andamento'?'info':'',"setPlanoCardFiltro('andamento')")}
+      ${dsKpi('Concluídos',kpiConcluidos,fsit==='Concluído'?'ok':'',"setPlanoCardFiltro('concluidos')")}
+      ${dsKpi('Críticos',kpiCriticos,fx.prio==='Crítica'?'bad':'',"setPlanoCardFiltro('criticos')")}
+    </div>
+    <div class="card planoTableCard">
+      <div class="planoTableHead">
         <h3 class="sectionTitle" style="margin:0">Lançamentos${fcat?` — ${esc(fcat)}`:''} <span style="font-weight:400;font-size:13px;color:var(--l3a-text-muted)">${filtrados.length} registro(s)</span></h3>
       </div>
       ${tableHtml}
     </div>`;
-  ['plBuscaPlano','plCat','plPrio','plSit','plResp','plPainel','plLaco','plPiso','plLoja','plIni','plFim','plStatusTec'].forEach(id=>{let el=document.getElementById(id); if(el)el.onchange=renderPlano});
+  attachSearchInputs();
 }
 
 function itemEnderecoOrdenavel(itemId){
@@ -2936,6 +3057,18 @@ function planoRowsParaPdf(modo){
   return {rows,fx};
 }
 function gerarPdfPlanoAcao(modo){
+  // CAUSA RAIZ do "PDF não funciona" (achada só agora, testando com jsdom): o render() em uso hoje
+  // (RENDER_POR_TELA, definido mais abaixo no arquivo) só desenha a TELA ATIVA — diferente de versões
+  // antigas do render() que existem mais acima no arquivo (código morto, nunca executa, pois a última
+  // declaração de uma function sempre vale em JS) e desenhavam todas as telas a cada render. Por isso
+  // a <div id="reportOut"> (que só é criada dentro de renderRelatorios()) nunca existia quando o
+  // usuário gerava o PDF a partir da tela Plano de Ação — e `document.getElementById('reportOut')`
+  // vinha null, silenciosamente não fazendo nada (ou lançando erro sem mensagem visível ao usuário).
+  // Correção: garante que a tela de Relatórios (que contém #reportOut) esteja desenhada no DOM antes
+  // de gravar o conteúdo do PDF nela — sem depender de o usuário estar naquela aba. Ela só fica
+  // VISÍVEL de fato durante a impressão, via a regra @media print (.view:not(.printTarget){display:
+  // none!important}), então isso não afeta a tela que o usuário está vendo.
+  if(!document.getElementById('reportOut'))renderRelatorios();
   modo=modo==='concluidos'?'concluidos':'pendencias';
   const {rows,fx}=planoRowsParaPdf(modo);
   const incluiConcluido=modo==='concluidos';
@@ -2951,6 +3084,8 @@ function gerarPdfPlanoAcao(modo){
   setTimeout(()=>window.print(),250);
 }
 function gerarPdfPlanoDetalhado(modo){
+  // Mesma causa raiz e correção do comentário em gerarPdfPlanoAcao logo acima.
+  if(!document.getElementById('reportOut'))renderRelatorios();
   modo=modo==='concluidos'?'concluidos':'pendencias';
   const {rows,fx}=planoRowsParaPdf(modo);
 
