@@ -933,6 +933,11 @@ async function senhaConfere(senhaDigitada,senhaArmazenada){
 const id=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
 const n=s=>String(s??'').trim(); const up=s=>n(s).toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
 const STATUS_SISTEMA_OPTIONS=['Em operação','Laço aberto','Módulo aberto','Módulo em curto','Incêndio disparado','Desativação','Em teste','__renomear__'];
+// Filtro "Status Técnico" do Plano de Ação (item 2/4 do pedido do usuário, 2026-07). É deliberadamente
+// um array separado do STATUS_SISTEMA_OPTIONS (que também alimenta o cadastro de falha e inclui a
+// opção especial "__renomear__") para não misturar Status Técnico (equipamento) com Situação do Plano
+// (execução do plano de ação) nem contaminar o formulário de cadastro com esta lista de filtro.
+const STATUS_TECNICO_OPTIONS=['Em operação','Em teste','Módulo aberto','Módulo em curto','Laço aberto','Incêndio disparado','Desativação'];
 const DIRECIONAMENTO_TECNICO={
   'Em operação':'Confirmar o funcionamento do dispositivo por meio de teste funcional, verificar o histórico de eventos na central e registrar se a ocorrência permanece ativa ou corresponde a uma condição intermitente.',
   'Laço aberto':'Localizar o ponto de interrupção do laço, verificando continuidade da fiação, conexões, emendas e dispositivos até restabelecer a comunicação com a central.',
@@ -1991,7 +1996,13 @@ function saveFalha(i){
   let loc=localById(localId); if(loc){loc.status=checked.value;loc.ultimaAlteracao=isoNow()}
   let rec=i?db.falhas.find(x=>x.id===i):{id:id()};
   Object.assign(rec,{data:isoNow(),painelId:item.painelId,lacoId:item.lacoId,piso:item.piso,tipo:isFlm?'Módulo':item.tipo,itemId:sel,itemNome:(isFlm?`Módulo ${item.endereco||item.modelo}${porta?' • Porta '+porta.numero:''}`:item.endereco||item.modelo),localId,status:checked.value,statusAnterior,responsavel:n(document.getElementById('mResp')?.value),origem:document.getElementById('mOrigem')?.value,motivo:n(document.getElementById('mMotivo')?.value),obs:n(document.getElementById('mObs')?.value),resolvidaEm:up(checked.value).includes('OPER')?isoNow():''});
-  if(!i){db.falhas.push(rec); if(isFalhaStatus(rec.status)&&!db.planos.find(p=>p.falhaId===rec.id)){db.planos.push({id:id(),falhaId:rec.id,criadoEm:isoNow(),categoria:'Manutenção corretiva',prioridade:'Média',responsavel:'L3A Engenharia',situacao:'Aberto',painel:paiName(rec.painelId),laco:lacName(rec.lacoId),piso:rec.piso,local:locName(rec.localId),item:rec.itemNome,statusFalha:rec.status,justificativa:rec.motivo||rec.obs||'',providencia:'',necessitaCompra:false});}} closeModal(); save()
+  if(!i){db.falhas.push(rec);
+    // REGRA (item 1 do pedido do usuário, 2026-07): toda NOVA falha deve gerar automaticamente um
+    // Plano de Ação com Situação = Aberto, independentemente do Status Técnico selecionado (antes só
+    // criava plano se isFalhaStatus(rec.status) fosse verdadeiro, então "Em teste"/"Desativação"/
+    // "Em operação" nunca geravam plano). Nada mais do fluxo de cadastro de falha foi alterado.
+    if(!db.planos.find(p=>p.falhaId===rec.id)){db.planos.push({id:id(),falhaId:rec.id,criadoEm:isoNow(),categoria:'Manutenção corretiva',prioridade:'Média',responsavel:'L3A Engenharia',situacao:'Aberto',painel:paiName(rec.painelId),laco:lacName(rec.lacoId),piso:rec.piso,local:locName(rec.localId),item:rec.itemNome,statusFalha:rec.status,justificativa:rec.motivo||rec.obs||'',providencia:'',necessitaCompra:false});}
+  } closeModal(); save()
 }
 
 function normalizeFotoUrl(u){
@@ -2197,7 +2208,14 @@ function savePlano(i,falhaId=''){
   Object.assign(o,{falhaId:falhaId||o.falhaId,categoria:val('mCategoria')||o.categoria,prioridade:prioridadeNova,responsavel:val('mRespPlano')||o.responsavel,situacao:val('mSituacao')||o.situacao,prazo:val('mPrazo'),necessitaCompra:val('mCompra')==='Sim',material:n(val('mMaterial')),justificativa:f.obs||f.motivo||o.justificativa||'',direcionamento:o.direcionamento||getDirecionamento(f.status||o.statusFalha),providencia:n(val('mProv')),painel:inf.painel||o.painel,laco:inf.laco||o.laco,piso:inf.piso||o.piso,local:inf.local||o.local,item:inf.itemNome||o.item,statusFalha:f.status||o.statusFalha,atualizadoEm:isoNow()});
   if(o.situacao==='Concluído'&&!o.concluidoEm)o.concluidoEm=isoNow(); if(!i)db.planos.push(o); closeModal(); save()
 }
-function concluirPlano(i){let o=db.planos.find(x=>x.id===i); if(!o)return; o.situacao='Concluído'; o.concluidoEm=isoNow(); let f=db.falhas.find(x=>x.id===o.falhaId); if(f){let itemId=f.itemId||'';let isFlm=String(itemId).startsWith('flm:');let item=isFlm?flmById(String(itemId).slice(4)):db.equipamentos.find(e=>e.id===itemId);let loc=localById(f.localId||'');let statusAnterior=(item&&item.status)||f.status||'Falha'; if(item){item.status='Em operação';item.ultimaAlteracao=isoNow()} if(loc){loc.status='Em operação';loc.ultimaAlteracao=isoNow()} if(item||loc){db.falhas.push({id:id(),data:isoNow(),painelId:(item&&item.painelId)||f.painelId,lacoId:(item&&item.lacoId)||f.lacoId,piso:(item&&item.piso)||f.piso,tipo:isFlm?'Módulo':((item&&item.tipo)||f.tipo),itemId:f.itemId,itemNome:f.itemNome,localId:f.localId,status:'Em operação',statusAnterior,responsavel:o.responsavel,origem:'Plano de Ação',motivo:'Plano de ação concluído',obs:o.providencia,resolvidaEm:isoNow()});alert('Plano concluído. Status do equipamento e da loja atualizado para Em operação.')}else{alert('Plano concluído.')}} save()}
+function concluirPlano(i){let o=db.planos.find(x=>x.id===i); if(!o)return; o.situacao='Concluído'; o.concluidoEm=isoNow(); let f=db.falhas.find(x=>x.id===o.falhaId); if(f){
+    // CORREÇÃO (item 5/6 do pedido do usuário, 2026-07): antes só a falha SINTÉTICA "Em operação"
+    // criada abaixo recebia resolvidaEm — a falha original permanecia com resolvidaEm vazio e por
+    // isso continuava aparecendo como "Em aberto" na aba Falhas mesmo com o plano concluído. Agora a
+    // falha original também é marcada como resolvida, então ela some da aba Falhas Ativas assim que
+    // o Plano de Ação é concluído, sem precisar recarregar a página (render() já roda via save()).
+    f.resolvidaEm=f.resolvidaEm||isoNow();
+    let itemId=f.itemId||'';let isFlm=String(itemId).startsWith('flm:');let item=isFlm?flmById(String(itemId).slice(4)):db.equipamentos.find(e=>e.id===itemId);let loc=localById(f.localId||'');let statusAnterior=(item&&item.status)||f.status||'Falha'; if(item){item.status='Em operação';item.ultimaAlteracao=isoNow()} if(loc){loc.status='Em operação';loc.ultimaAlteracao=isoNow()} if(item||loc){db.falhas.push({id:id(),data:isoNow(),painelId:(item&&item.painelId)||f.painelId,lacoId:(item&&item.lacoId)||f.lacoId,piso:(item&&item.piso)||f.piso,tipo:isFlm?'Módulo':((item&&item.tipo)||f.tipo),itemId:f.itemId,itemNome:f.itemNome,localId:f.localId,status:'Em operação',statusAnterior,responsavel:o.responsavel,origem:'Plano de Ação',motivo:'Plano de ação concluído',obs:o.providencia,resolvidaEm:isoNow()});alert('Plano concluído. Status do equipamento e da loja atualizado para Em operação.')}else{alert('Plano concluído.')}} save()}
 
 function openEquip(i){let e=db.equipamentos.find(x=>x.id===i);let hist=db.falhas.filter(f=>f.itemId===i||f.localId===e.localId).sort((a,b)=>b.data.localeCompare(a.data));openModal(`<h2>${esc(e.tipo)} ${esc(e.endereco)}</h2><p><b>Loja:</b> ${esc(locName(e.localId))} • <b>Painel:</b> ${esc(paiName(e.painelId))} • <b>Laço:</b> ${esc(lacName(e.lacoId))}</p><h3>Histórico</h3><div class="timeline">${hist.map(h=>`<div class="tl"><b>${esc(h.status)}</b><br><small>${esc(h.data)} • ${esc(h.origem||'')}</small><p>${esc(h.motivo||h.obs||'Sem observação')}</p></div>`).join('')||'<p class="msg warn">Sem histórico.</p>'}</div>`)}
 function openLocal(i){let l=db.locais.find(x=>x.id===i);let hist=db.falhas.filter(f=>f.localId===i||f.itemId===i).sort((a,b)=>b.data.localeCompare(a.data));openModal(`<h2>${esc(l.nome)}</h2><p><b>Tipo:</b> ${esc(l.tipo)} • <b>Painel:</b> ${esc(paiName(l.painelId))} • <b>Laço:</b> ${esc(lacName(l.lacoId))} • <b>Piso:</b> ${esc(l.piso)}</p><h3>Histórico da loja/área</h3><div class="timeline">${hist.map(h=>`<div class="tl"><b>${esc(h.status)}</b><br><small>${esc(h.data)} • ${esc(h.itemNome||'')}</small><p>${esc(h.motivo||h.obs||'Sem observação')}</p></div>`).join('')||'<p class="msg warn">Sem histórico.</p>'}</div>`)}
@@ -2616,32 +2634,76 @@ function dsDateHtml(raw){if(!raw)return '<span style="color:var(--l3a-text-muted
 function dsPortasHtml(flmId){const ps=db.portas.filter(p=>p.flmId===flmId);if(!ps.length)return '<span style="color:var(--l3a-text-muted);font-size:11px">Sem portas</span>';return `<div class="dsPortas">${ps.map(p=>{const ok=!isFalhaStatus(p.status);const nome=locName(p.localId)||'Sem vínculo';return `<div class="dsPortaRow"><span class="dsPortaDot ${ok?'':'fail'}"></span><span class="dsPortaLabel">P${p.numero}</span><span class="dsPortaNome" title="${esc(nome)}">${esc(nome)}</span></div>`}).join('')}</div>`}
 function dsKpi(label,value,cls='',click=''){return `<div class="dsKpiCard ${cls}" ${click?`onclick="${click}"`:''}><div class="dsKpiLabel">${esc(label)}</div><div class="dsKpiValue">${esc(String(value))}</div></div>`}
 function dsKpiStrip(items){return `<div class="dsKpiStrip">${items.map(([l,v,c,k])=>dsKpi(l,v,c,k)).join('')}</div>`}
-function renderPlano(){
+function buildPlanoRowsBase(){
+  // Monta a base de linhas (Plano + Falha sem plano) sem aplicar nenhum filtro. Extraído para ser
+  // reaproveitado tanto pela tela (renderPlano) quanto pela geração dos PDFs, garantindo que os dois
+  // usem exatamente a mesma lógica (item 4/6 do pedido do usuário, 2026-07).
   let planos=db.planos||[];
-  let q=(document.getElementById('plBuscaPlano')?.value||'').toUpperCase();
-  let fcat=document.getElementById('plCat')?.value||'',fprio=document.getElementById('plPrio')?.value||'',fsit=document.getElementById('plSit')?.value||'',fresp=document.getElementById('plResp')?.value||'',fpiso=document.getElementById('plPiso')?.value||'',ini=document.getElementById('plIni')?.value||'',fim=document.getElementById('plFim')?.value||'';
   let falhas=falhasAtivasParaPlano();
   let rows=[];
   planos.forEach(p=>{
     let f=db.falhas.find(x=>x.id===p.falhaId)||{};
     let inf=f.id?itemInfoFromFalha(f):{};
     let fotos=normalizeFotos(p.fotos||[]);
-    rows.push({origemLinha:'Plano',falhaId:p.falhaId||'',planoId:p.id,prioridade:p.prioridade||'Média',painel:inf.painel||p.painel||'',laco:inf.laco||p.laco||'',piso:inf.piso||p.piso||'',local:inf.local||p.local||'',itemNome:inf.itemNome||p.item||'',statusFalha:f.status||p.statusFalha||'',categoria:p.categoria||'',responsavel:p.responsavel||'',desde:f.data||p.criadoEm||'',criadoEm:p.criadoEm||'',concluidoEm:p.concluidoEm||'',situacao:p.situacao||'Aberto',direcionamento:p.direcionamento||getDirecionamento(f.status||p.statusFalha),fotos,fotoCount:fotos.length});
+    rows.push({origemLinha:'Plano',falhaId:p.falhaId||'',planoId:p.id,itemId:f.itemId||'',prioridade:p.prioridade||'Média',painel:inf.painel||p.painel||'',laco:inf.laco||p.laco||'',piso:inf.piso||p.piso||'',local:inf.local||p.local||'',itemNome:inf.itemNome||p.item||'',statusFalha:f.status||p.statusFalha||'',categoria:p.categoria||'',responsavel:p.responsavel||'',desde:f.data||p.criadoEm||'',criadoEm:p.criadoEm||'',concluidoEm:p.concluidoEm||'',situacao:p.situacao||'Aberto',direcionamento:p.direcionamento||getDirecionamento(f.status||p.statusFalha),fotos,fotoCount:fotos.length,plano:p,falha:f});
   });
   falhas.forEach(f=>{
     if(planoForFalha(f.id))return;
     let inf=itemInfoFromFalha(f);
-    rows.push({origemLinha:'Falha sem plano',falhaId:f.id,planoId:'',prioridade:'Média',painel:inf.painel||'',laco:inf.laco||'',piso:inf.piso||'',local:inf.local||'',itemNome:inf.itemNome||'',statusFalha:f.status||'',categoria:'',responsavel:'',desde:f.data||'',criadoEm:'',concluidoEm:'',situacao:'Sem plano',direcionamento:getDirecionamento(f.status),fotos:[],fotoCount:0});
+    rows.push({origemLinha:'Falha sem plano',falhaId:f.id,planoId:'',itemId:f.itemId||'',prioridade:'Média',painel:inf.painel||'',laco:inf.laco||'',piso:inf.piso||'',local:inf.local||'',itemNome:inf.itemNome||'',statusFalha:f.status||'',categoria:'',responsavel:'',desde:f.data||'',criadoEm:'',concluidoEm:'',situacao:'Sem plano',direcionamento:getDirecionamento(f.status),fotos:[],fotoCount:0,plano:null,falha:f});
   });
-  function inPeriodo(x){if(!ini&&!fim)return true;let datas=[x.desde,x.criadoEm,x.concluidoEm].filter(Boolean).map(String);return datas.some(d=>(!ini||d>=ini)&&(!fim||d<=fim+'T23:59'))}
-  function situacaoPeso(s){return {'Sem plano':0,'Aberto':1,'Em andamento':2,'Concluído':3}[s]??9}
-  let rowsPreCat=rows.filter(x=>(!q||JSON.stringify(x).toUpperCase().includes(q))&&(!fprio||x.prioridade===fprio)&&(!fsit||x.situacao===fsit)&&(!fresp||x.responsavel===fresp)&&(!fpiso||x.piso===fpiso)&&inPeriodo(x));
+  return rows;
+}
+function planoFiltrosAtuais(){
+  // Lê os filtros atualmente aplicados na tela do Plano de Ação. Usado tanto pelo renderPlano quanto
+  // pelos geradores de PDF, para que o PDF sempre respeite exatamente o que está filtrado na tela
+  // (item 3 e 6 do pedido do usuário, 2026-07).
+  return {
+    q:(document.getElementById('plBuscaPlano')?.value||'').toUpperCase(),
+    cat:document.getElementById('plCat')?.value||'',
+    prio:document.getElementById('plPrio')?.value||'',
+    sit:document.getElementById('plSit')?.value||'',
+    resp:document.getElementById('plResp')?.value||'',
+    painel:document.getElementById('plPainel')?.value||'',
+    laco:document.getElementById('plLaco')?.value||'',
+    piso:document.getElementById('plPiso')?.value||'',
+    loja:document.getElementById('plLoja')?.value||'',
+    ini:document.getElementById('plIni')?.value||'',
+    fim:document.getElementById('plFim')?.value||'',
+    statusTec:document.getElementById('plStatusTec')?.value||''
+  };
+}
+function inPeriodoPlano(x,ini,fim){if(!ini&&!fim)return true;let datas=[x.desde,x.criadoEm,x.concluidoEm].filter(Boolean).map(String);return datas.some(d=>(!ini||d>=ini)&&(!fim||d<=fim+'T23:59'))}
+function situacaoPesoPlano(s){return {'Sem plano':0,'Aberto':1,'Em andamento':2,'Concluído':3}[s]??9}
+function planoRowsFiltrados(fx,{ignorarSituacao=false,ignorarCategoria=false}={}){
+  // Aplica os filtros (exceto os overrides explícitos acima, usados pelo gráfico "Itens por
+  // categoria" e pelos PDFs, que precisam de variações do mesmo filtro base) sobre a base de linhas.
+  let rows=buildPlanoRowsBase();
+  return rows.filter(x=>
+    (!fx.q||JSON.stringify(x).toUpperCase().includes(fx.q))&&
+    (ignorarCategoria||!fx.cat||(x.categoria||'Sem categoria')===fx.cat)&&
+    (!fx.prio||x.prioridade===fx.prio)&&
+    (ignorarSituacao||!fx.sit||x.situacao===fx.sit)&&
+    (!fx.resp||x.responsavel===fx.resp)&&
+    (!fx.painel||x.painel===fx.painel)&&
+    (!fx.laco||x.laco===fx.laco)&&
+    (!fx.piso||x.piso===fx.piso)&&
+    (!fx.loja||x.local===fx.loja)&&
+    (!fx.statusTec||normalizeStatus(x.statusFalha)===fx.statusTec)&&
+    inPeriodoPlano(x,fx.ini,fx.fim)
+  );
+}
+function renderPlano(){
+  let fx=planoFiltrosAtuais();
+  let fcat=fx.cat,fsit=fx.sit;
+  let rows=buildPlanoRowsBase();
+  let rowsPreCat=planoRowsFiltrados(fx,{ignorarCategoria:true});
   let catMap={};rowsPreCat.forEach(x=>{const c=x.categoria||'Sem categoria';catMap[c]=(catMap[c]||0)+1});
   let catRows=Object.entries(catMap).map(([label,value])=>({label,value})).sort((a,b)=>b.value-a.value);
   let maxCat=Math.max(1,...catRows.map(r=>r.value));
   let catChartHtml=catRows.length?`<div class="chartBars">${catRows.map(r=>`<div class="chartLine clickable ${fcat===r.label?'selected':''}" onclick="setPlanoCategoriaFiltro('${esc(r.label)}')"><b>${esc(r.label)}</b><div class="chartTrack"><i style="width:${Math.max(2,pct(r.value,maxCat))}%"></i></div><strong>${r.value}</strong></div>`).join('')}</div>`:'<div class="emptyState">Sem itens.</div>';
   let filtrados=rowsPreCat.filter(x=>!fcat||(x.categoria||'Sem categoria')===fcat)
-    .sort((a,b)=>situacaoPeso(a.situacao)-situacaoPeso(b.situacao)||prioridadePeso(a.prioridade)-prioridadePeso(b.prioridade)||String(a.desde||a.criadoEm).localeCompare(String(b.desde||b.criadoEm)));
+    .sort((a,b)=>situacaoPesoPlano(a.situacao)-situacaoPesoPlano(b.situacao)||prioridadePeso(a.prioridade)-prioridadePeso(b.prioridade)||String(a.desde||a.criadoEm).localeCompare(String(b.desde||b.criadoEm)));
 
   // Build compact table rows
   const situBadge=s=>{const cls=s==='Concluído'?'ok':s==='Em andamento'?'info':s==='Sem plano'||s==='Cancelado'?'warn':'';return `<span class="pill ${cls}" style="font-size:11px">${esc(s)}</span>`};
@@ -2689,17 +2751,24 @@ function renderPlano(){
       <div class="toolbar" style="gap:8px;flex-wrap:wrap">
         <div class="field"><label>Busca</label><input id="plBuscaPlano" placeholder="Loja, laço, item..." value="${esc(document.getElementById('plBuscaPlano')?.value||'')}"></div>
         <div class="field"><label>Categoria</label><select id="plCat">${selectOpts(planoCategorias(),fcat)}</select></div>
-        <div class="field"><label>Prioridade</label><select id="plPrio">${selectOpts(planoPrioridades(),fprio)}</select></div>
-        <div class="field"><label>Situação</label><select id="plSit">${selectOpts(['Sem plano','Aberto','Em andamento','Concluído','Cancelado'],fsit)}</select></div>
-        <div class="field"><label>Responsável</label><select id="plResp">${selectOpts(planoResponsaveis(),fresp)}</select></div>
-        <div class="field"><label>Piso</label><select id="plPiso">${selectOpts(unique(rows.map(x=>x.piso)),fpiso)}</select></div>
-        <div class="field"><label>Inicial</label><input id="plIni" type="date" value="${esc(ini)}"></div>
-        <div class="field"><label>Final</label><input id="plFim" type="date" value="${esc(fim)}"></div>
-        <div class="field"><label>PDF</label><select id="pdfSituacao"><option value="Aberto">Só Abertos</option><option value="Concluído">Só Concluídos</option><option value="Ambos">Ambos</option></select></div>
+        <div class="field"><label>Prioridade</label><select id="plPrio">${selectOpts(planoPrioridades(),fx.prio)}</select></div>
+        <div class="field"><label>Situação</label><select id="plSit">${selectOpts(['Aberto','Em andamento','Concluído'],fsit)}</select></div>
+        <div class="field"><label>Responsável</label><select id="plResp">${selectOpts(planoResponsaveis(),fx.resp)}</select></div>
+        <div class="field"><label>Painel</label><select id="plPainel">${selectOpts(unique(rows.map(x=>x.painel)),fx.painel)}</select></div>
+        <div class="field"><label>Laço</label><select id="plLaco">${selectOpts(unique(rows.map(x=>x.laco)),fx.laco)}</select></div>
+        <div class="field"><label>Piso</label><select id="plPiso">${selectOpts(unique(rows.map(x=>x.piso)),fx.piso)}</select></div>
+        <div class="field"><label>Loja</label><select id="plLoja">${selectOpts(unique(rows.map(x=>x.local)),fx.loja)}</select></div>
+      </div>
+      <div class="toolbar" style="gap:8px;flex-wrap:wrap;margin-top:8px">
+        <div class="field"><label>Período Inicial</label><input id="plIni" type="date" value="${esc(fx.ini)}"></div>
+        <div class="field"><label>Período Final</label><input id="plFim" type="date" value="${esc(fx.fim)}"></div>
+        <div class="field"><label>Status Técnico</label><select id="plStatusTec">${selectOpts(STATUS_TECNICO_OPTIONS,fx.statusTec)}</select></div>
         <div style="display:flex;gap:6px;align-items:flex-end">
           <button class="btn" onclick="renderPlano()">Filtrar</button>
-          <button class="btn secondary" onclick="gerarPdfPlanoAcao()" title="PDF roteiro de campo">PDF Roteiro</button>
-          <button class="btn secondary" onclick="gerarPdfPlanoDetalhado()" title="PDF detalhado com fotos">PDF Detalhado</button>
+          <button class="btn secondary" onclick="gerarPdfPlanoAcao('pendencias')" title="PDF só com Situação Aberto/Em andamento, respeitando os filtros da tela">PDF Pendências</button>
+          <button class="btn secondary" onclick="gerarPdfPlanoAcao('concluidos')" title="PDF só com Situação Concluído, respeitando os filtros da tela">PDF Concluídos</button>
+          <button class="btn secondary" onclick="gerarPdfPlanoDetalhado('pendencias')" title="PDF detalhado (com fotos) só com pendências">PDF Detalhado — Pendências</button>
+          <button class="btn secondary" onclick="gerarPdfPlanoDetalhado('concluidos')" title="PDF detalhado (com fotos) só com concluídos">PDF Detalhado — Concluídos</button>
         </div>
       </div>
     </div>
@@ -2710,7 +2779,7 @@ function renderPlano(){
       </div>
       ${tableHtml}
     </div>`;
-  ['plBuscaPlano','plCat','plPrio','plSit','plResp','plPiso','plIni','plFim'].forEach(id=>{let el=document.getElementById(id); if(el)el.onchange=renderPlano});
+  ['plBuscaPlano','plCat','plPrio','plSit','plResp','plPainel','plLaco','plPiso','plLoja','plIni','plFim','plStatusTec'].forEach(id=>{let el=document.getElementById(id); if(el)el.onchange=renderPlano});
 }
 
 function itemEnderecoOrdenavel(itemId){
@@ -2727,96 +2796,66 @@ function itemEnderecoOrdenavel(itemId){
   const num=parseFloat(String(raw||'').replace(',','.'));
   return isNaN(num)?9999:num;
 }
-function gerarPdfPlanoAcao(){
-  const situacaoPdf=document.getElementById('pdfSituacao')?.value||'Aberto';
-  const ini=document.getElementById('plIni')?.value||'';
-  const fim=document.getElementById('plFim')?.value||'';
-  const iniT=ini?new Date(ini+'T00:00:00').getTime():null;
-  const fimT=fim?new Date(fim+'T23:59:59').getTime():null;
-  const dentroPeriodo=(dataStr)=>{ if(!iniT&&!fimT)return true; if(!dataStr)return false; const t=new Date(dataStr).getTime(); if(isNaN(t))return true; if(iniT&&t<iniT)return false; if(fimT&&t>fimT)return false; return true; };
-  let planos=db.planos||[];
-  let falhas=falhasAtivasParaPlano();
-  let rows=[];
-  planos.forEach(p=>{
-    const concluido=p.situacao==='Concluído';
-    if(situacaoPdf==='Aberto'&&concluido)return;
-    if(situacaoPdf==='Concluído'&&!concluido)return;
-    const dataRef=concluido?(p.concluidoEm||p.atualizadoEm||p.criadoEm):p.criadoEm;
-    if(!dentroPeriodo(dataRef))return;
-    let f=db.falhas.find(x=>x.id===p.falhaId)||{};
-    let inf=f.id?itemInfoFromFalha(f):{};
-    rows.push({prioridade:p.prioridade||'Média',painel:inf.painel||p.painel||'',laco:inf.laco||p.laco||'',piso:inf.piso||p.piso||'',local:inf.local||p.local||'',itemNome:inf.itemNome||p.item||'',categoria:p.categoria||'',responsavel:p.responsavel||'',situacao:p.situacao||'Aberto',concluidoEm:p.concluidoEm?fmtDateSimple(p.concluidoEm):'',endereco:itemEnderecoOrdenavel(f.itemId||'')});
-  });
-  if(situacaoPdf!=='Concluído'){
-    falhas.forEach(f=>{
-      if(planoForFalha(f.id))return;
-      if(!dentroPeriodo(f.data))return;
-      let inf=itemInfoFromFalha(f);
-      rows.push({prioridade:'Média',painel:inf.painel||'',laco:inf.laco||'',piso:inf.piso||'',local:inf.local||'',itemNome:inf.itemNome||'',categoria:'',responsavel:'',situacao:'Sem plano',concluidoEm:'',endereco:itemEnderecoOrdenavel(f.itemId||'')});
-    });
-  }
+function planoRowsParaPdf(modo){
+  // Reaproveita a MESMA base e os MESMOS filtros da tela (planoFiltrosAtuais + planoRowsFiltrados),
+  // aplicando por cima apenas a restrição de Situação do modo do PDF. Isso corrige o item 3/6 do
+  // pedido do usuário: antes o PDF usava sua própria lógica de filtragem (só respeitava Período e um
+  // dropdown "pdfSituacao" isolado) e ignorava Categoria/Prioridade/Responsável/Piso/Busca/etc. que
+  // estivessem aplicados na tela.
+  const fx=planoFiltrosAtuais();
+  let rows=planoRowsFiltrados(fx,{ignorarSituacao:true});
+  rows=rows.filter(r=>modo==='concluidos'?r.situacao==='Concluído':r.situacao!=='Concluído');
+  rows=rows.map(r=>({...r,endereco:itemEnderecoOrdenavel(r.itemId||''),concluidoEmFmt:r.concluidoEm?fmtDateSimple(r.concluidoEm):''}));
   rows.sort((a,b)=>pisoSortKey(a.piso)-pisoSortKey(b.piso)||String(a.laco).localeCompare(String(b.laco),'pt-BR',{numeric:true})||a.endereco-b.endereco);
-
-  const incluiConcluido=situacaoPdf!=='Aberto';
+  return {rows,fx};
+}
+function gerarPdfPlanoAcao(modo){
+  modo=modo==='concluidos'?'concluidos':'pendencias';
+  const {rows,fx}=planoRowsParaPdf(modo);
+  const incluiConcluido=modo==='concluidos';
   const cols=[['Prioridade','prioridade'],['Loja / Área','local'],['Item','itemNome'],['Categoria','categoria'],['Responsável','responsavel'],['Situação','situacao',r=>`<span class="pill ${r.situacao==='Sem plano'?'warn':r.situacao==='Concluído'?'ok':''}">${esc(r.situacao)}</span>`]];
-  if(incluiConcluido)cols.push(['Concluído em','concluidoEm']);
+  if(incluiConcluido)cols.push(['Concluído em','concluidoEmFmt']);
   const grupos={};
   rows.forEach(r=>{const k=(r.piso||'Sem piso')+' | '+(r.laco||'Sem laço');grupos[k]=grupos[k]||{piso:r.piso||'Sem piso',laco:r.laco||'Sem laço',itens:[]};grupos[k].itens.push(r)});
   const blocos=Object.values(grupos).map(g=>`<div class="reportBlock"><h3>${esc(g.piso)} — ${esc(g.laco)}</h3>${table(g.itens,cols)}</div>`).join('');
 
-  const rotulo=situacaoPdf==='Aberto'?'Itens em aberto':situacaoPdf==='Concluído'?'Itens concluídos':'Itens abertos e concluídos';
-  const periodoTxt=(ini||fim)?` • Período: ${ini?fmtDateSimple(ini):'início'} a ${fim?fmtDateSimple(fim):'hoje'}`:'';
+  const rotulo=modo==='concluidos'?'Itens concluídos':'Itens pendentes (Aberto / Em andamento)';
+  const periodoTxt=(fx.ini||fx.fim)?` • Período: ${fx.ini?fmtDateSimple(fx.ini):'início'} a ${fx.fim?fmtDateSimple(fx.fim):'hoje'}`:'';
   document.getElementById('reportOut').innerHTML=`<div class="card"><div class="reportCover"><h2>Plano de Ação — Roteiro de Campo</h2><p>L3A Engenharia • ${esc(rotulo)} organizados por Piso, Laço e Endereço crescente${periodoTxt}</p><div class="reportMeta"><span>Total de itens: ${rows.length}</span><span>Gerado em: ${now()}</span></div></div>${blocos||'<div class="emptyState">Nenhum item encontrado para os filtros escolhidos.</div>'}<div class="reportFooter"><span>L3A Engenharia</span><span>Documento técnico gerado pelo SDAI Bosch Manager</span></div></div>`;
   setTimeout(()=>window.print(),250);
 }
-function gerarPdfPlanoDetalhado(){
-  const situacaoPdf=document.getElementById('pdfSituacao')?.value||'Aberto';
-  const ini=document.getElementById('plIni')?.value||'';
-  const fim=document.getElementById('plFim')?.value||'';
-  const iniT=ini?new Date(ini+'T00:00:00').getTime():null;
-  const fimT=fim?new Date(fim+'T23:59:59').getTime():null;
-  const dentroPeriodo=(dataStr)=>{ if(!iniT&&!fimT)return true; if(!dataStr)return false; const t=new Date(dataStr).getTime(); if(isNaN(t))return true; if(iniT&&t<iniT)return false; if(fimT&&t>fimT)return false; return true; };
-  let planos=db.planos||[];
-  let itens=[];
-  planos.forEach(p=>{
-    const concluido=p.situacao==='Concluído';
-    if(situacaoPdf==='Aberto'&&concluido)return;
-    if(situacaoPdf==='Concluído'&&!concluido)return;
-    const dataRef=concluido?(p.concluidoEm||p.atualizadoEm||p.criadoEm):p.criadoEm;
-    if(!dentroPeriodo(dataRef))return;
-    let f=db.falhas.find(x=>x.id===p.falhaId)||{};
-    let inf=f.id?itemInfoFromFalha(f):{};
-    itens.push({p,f,inf,endereco:itemEnderecoOrdenavel(f.itemId||'')});
-  });
-  itens.sort((a,b)=>pisoSortKey(a.inf.piso||a.p.piso)-pisoSortKey(b.inf.piso||b.p.piso)||String(a.inf.laco||a.p.laco).localeCompare(String(b.inf.laco||b.p.laco),'pt-BR',{numeric:true})||a.endereco-b.endereco);
+function gerarPdfPlanoDetalhado(modo){
+  modo=modo==='concluidos'?'concluidos':'pendencias';
+  const {rows,fx}=planoRowsParaPdf(modo);
 
-  const blocos=itens.map(({p,f,inf})=>{
-    const fotos=(p.fotos&&normalizeFotos(p.fotos).length)?`<div class="detFotos">${normalizeFotos(p.fotos).map(u=>`<img src="${esc(normalizeFotoUrl(u))}" alt="Foto do serviço">`).join('')}</div>`:'<p class="mutedLine">Sem fotos anexadas.</p>';
+  const blocos=rows.map(r=>{
+    const p=r.plano||{},f=r.falha||{};
+    const fotos=(r.fotos&&r.fotos.length)?`<div class="detFotos">${r.fotos.map(u=>`<img src="${esc(normalizeFotoUrl(u))}" alt="Foto do serviço">`).join('')}</div>`:'<p class="mutedLine">Sem fotos anexadas.</p>';
     return `<div class="detCard">
-      <div class="detHead"><h4>${esc(inf.itemNome||p.item||'Item')}</h4><span class="pill ${p.situacao==='Concluído'?'ok':''}">${esc(p.situacao||'Aberto')}</span></div>
+      <div class="detHead"><h4>${esc(r.itemNome||'Item')}</h4><span class="pill ${r.situacao==='Concluído'?'ok':''}">${esc(r.situacao||'Aberto')}</span></div>
       <div class="detMeta">
-        <span><b>Painel:</b> ${esc(inf.painel||p.painel||'—')}</span>
-        <span><b>Laço:</b> ${esc(inf.laco||p.laco||'—')}</span>
-        <span><b>Piso:</b> ${esc(inf.piso||p.piso||'—')}</span>
-        <span><b>Loja/Área:</b> ${esc(inf.local||p.local||'—')}</span>
-        <span><b>Categoria:</b> ${esc(p.categoria||'—')}</span>
-        <span><b>Prioridade:</b> ${esc(p.prioridade||'—')}</span>
-        <span><b>Responsável:</b> ${esc(p.responsavel||'—')}</span>
-        <span><b>Status da falha:</b> ${esc(p.statusFalha||f.status||'—')}</span>
-        <span><b>Aberto em:</b> ${esc(fmtDateSimple(p.criadoEm)||'—')}</span>
-        <span><b>Concluído em:</b> ${esc(fmtDateSimple(p.concluidoEm)||'—')}</span>
+        <span><b>Painel:</b> ${esc(r.painel||'—')}</span>
+        <span><b>Laço:</b> ${esc(r.laco||'—')}</span>
+        <span><b>Piso:</b> ${esc(r.piso||'—')}</span>
+        <span><b>Loja/Área:</b> ${esc(r.local||'—')}</span>
+        <span><b>Categoria:</b> ${esc(r.categoria||'—')}</span>
+        <span><b>Prioridade:</b> ${esc(r.prioridade||'—')}</span>
+        <span><b>Responsável:</b> ${esc(r.responsavel||'—')}</span>
+        <span><b>Status técnico:</b> ${esc(normalizeStatus(r.statusFalha)||'—')}</span>
+        <span><b>Aberto em:</b> ${esc(fmtDateSimple(r.criadoEm||r.desde)||'—')}</span>
+        <span><b>Concluído em:</b> ${esc(fmtDateSimple(r.concluidoEm)||'—')}</span>
         <span><b>Necessita compra:</b> ${p.necessitaCompra?'Sim':'Não'}</span>
       </div>
       <div class="detTexto"><b>Diagnóstico da falha:</b> ${esc(f.obs||f.motivo||'—')}</div>
-      <div class="detTexto"><b>Direcionamento técnico:</b> ${esc(p.direcionamento||getDirecionamento(p.statusFalha)||'—')}</div>
+      <div class="detTexto"><b>Direcionamento técnico:</b> ${esc(r.direcionamento||'—')}</div>
       <div class="detTexto"><b>Execução realizada:</b> ${esc(p.providencia||'—')}</div>
       ${fotos}
     </div>`;
   }).join('');
 
-  const rotulo=situacaoPdf==='Aberto'?'Itens em aberto':situacaoPdf==='Concluído'?'Itens concluídos':'Itens abertos e concluídos';
-  const periodoTxt=(ini||fim)?` • Período: ${ini?fmtDateSimple(ini):'início'} a ${fim?fmtDateSimple(fim):'hoje'}`:'';
-  document.getElementById('reportOut').innerHTML=`<div class="card"><div class="reportCover"><h2>Plano de Ação — Relatório Detalhado</h2><p>L3A Engenharia • ${esc(rotulo)}, com detalhes completos do atendimento${periodoTxt}</p><div class="reportMeta"><span>Total de itens: ${itens.length}</span><span>Gerado em: ${now()}</span></div></div>${blocos||'<div class="emptyState">Nenhum item encontrado para os filtros escolhidos.</div>'}<div class="reportFooter"><span>L3A Engenharia</span><span>Documento técnico gerado pelo SDAI Bosch Manager</span></div></div>`;
+  const rotulo=modo==='concluidos'?'Itens concluídos':'Itens pendentes (Aberto / Em andamento)';
+  const periodoTxt=(fx.ini||fx.fim)?` • Período: ${fx.ini?fmtDateSimple(fx.ini):'início'} a ${fx.fim?fmtDateSimple(fx.fim):'hoje'}`:'';
+  document.getElementById('reportOut').innerHTML=`<div class="card"><div class="reportCover"><h2>Plano de Ação — Relatório Detalhado</h2><p>L3A Engenharia • ${esc(rotulo)}, com detalhes completos do atendimento${periodoTxt}</p><div class="reportMeta"><span>Total de itens: ${rows.length}</span><span>Gerado em: ${now()}</span></div></div>${blocos||'<div class="emptyState">Nenhum item encontrado para os filtros escolhidos.</div>'}<div class="reportFooter"><span>L3A Engenharia</span><span>Documento técnico gerado pelo SDAI Bosch Manager</span></div></div>`;
   setTimeout(()=>window.print(),400);
 }
 /* =========================================================================
