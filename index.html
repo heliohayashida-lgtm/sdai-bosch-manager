@@ -990,7 +990,124 @@ function handleStatusSelectChange(sel,onConfirm){
   }
 }
 function normalizeStatus(st){const raw=n(st); const x=up(raw); if(!x||x==='ATIVO'||x==='OK'||x==='NORMAL'||x.includes('OPERACAO')||x.includes('FUNCION'))return 'Em operação'; if(x.includes('INCEND')||x.includes('DISPAR')||x.includes('ALARME'))return 'Incêndio disparado'; if((x.includes('MODULO')||x.includes('MÓDULO'))&&x.includes('CURTO'))return 'Módulo em curto'; if((x.includes('MODULO')||x.includes('MÓDULO'))&&x.includes('ABERT'))return 'Módulo aberto'; if(x.includes('CURTO'))return 'Módulo em curto'; if((x.includes('LACO')||x.includes('LAÇO'))&&x.includes('ABERT'))return 'Laço aberto'; if(x.includes('ABERT'))return 'Laço aberto'; if(x.includes('LOGISTA')||x.includes('SISTEMA')||x.includes('FALHA'))return 'Laço aberto'; if(x.includes('DESATIV')||x==='INATIVO')return 'Desativação'; if(x.includes('TESTE'))return 'Em teste'; return raw||'Em operação'}
-function normalizeAllStatuses(base){['equipamentos','flms','locais','falhas'].forEach(k=>(base[k]||[]).forEach(o=>{if(o.status)o.status=normalizeStatus(o.status)}));return base}
+function normalizeAllStatuses(base){['equipamentos','flms','locais','falhas'].forEach(k=>(base[k]||[]).forEach(o=>{if(o.status)o.status=normalizeStatus(o.status)}));sincronizarPlanosFalhas(base);return base}
+
+/* =========================================================================
+   AUDITORIA E SINCRONIZAÇÃO ESTRUTURAL: Falhas ⇄ Plano de Ação (2026-07)
+   -------------------------------------------------------------------------
+   CAUSA RAIZ investigada (caso real: falha "MCDONALD'S", Status Técnico "Em
+   teste", Situação "Em aberto", visível em Falhas mas ausente no Plano de
+   Ação): o sistema tinha TRÊS pontos de criação de falha em db.falhas, com
+   regras de criação de Plano de Ação DIFERENTES entre si:
+     1) saveFalha()        (cadastro manual, tela "+ Registrar" de Falhas)
+        — antes só criava Plano quando isFalhaStatus(status) era verdadeiro,
+          e essa função (ver comentário em isFalhaStatus) NÃO considera "Em
+          teste" como falha — logo um registro manual "Em teste" NUNCA virava
+          Plano. Já corrigido nesta sessão (agora sempre cria).
+     2) quickStatusChange() (edição rápida de status em Módulos/Equipamentos)
+        — sempre criava Plano para qualquer status != "Em operação",
+          incluindo "Em teste". É por isso que Giraffas/SushiBox (lançados
+          por essa via) aparecem normalmente no Plano, enquanto MCDONALD'S
+          (lançado pela via 1) não aparecia.
+     3) importFile()       (falha automática de "Desativação" quando um
+          equipamento some da planilha importada) — nunca criava Plano.
+          Corrigido nesta sessão (ver comentário junto ao trecho).
+   Ou seja, a inconsistência NÃO é um bug de UI nem está ligada ao valor
+   "Em teste" em si — é a falta de uma garantia estrutural única de que toda
+   falha em db.falhas possua um Plano correspondente em db.planos. As 3 vias
+   de criação foram corrigidas, mas isso não repara bases JÁ salvas (local,
+   Google Sheets, backups) que acumularam falhas órfãs enquanto a via 1/3
+   estavam com o bug.
+   CORREÇÃO ESTRUTURAL: sincronizarPlanosFalhas() é chamada de dentro de
+   normalizeAllStatuses(), que é o único ponto por onde QUALQUER carga de
+   base passa antes de virar o `db` ativo — load() local (boot), pull do
+   Google Sheets e restauração de backup (ver todas as chamadas de
+   normalizeAllStatuses no arquivo). Isso garante que a auditoria rode
+   automaticamente sempre que o sistema abre ou troca de base, sem exigir
+   ação manual e sem depender de qual tela o usuário abrir primeiro.
+   Não altera arquitetura, não remove dados, não modifica o formato do
+   banco — só garante 1 falha ⇄ 1 plano.
+   ========================================================================= */
+function sincronizarPlanosFalhas(base){
+  base.falhas=base.falhas||[]; base.planos=base.planos||[];
+  const relatorio={
+    totalFalhas:base.falhas.length,
+    totalPlanosAntes:base.planos.length,
+    falhasSemPlano:0,
+    planosCriados:0,
+    duplicidadesRemovidas:0,
+    totalPlanosDepois:0,
+    executadoEm:isoNow()
+  };
+
+  // Lookups feitos diretamente sobre `base` (e não via paiName/lacName/locName, que leem o `db`
+  // global) porque esta rotina roda inclusive ANTES do `db` global existir/ser reatribuído — ver
+  // `let db=load()` e o pull do Google, onde normalizeAllStatuses(base) processa o objeto recebido
+  // antes dele virar `db`.
+  const painelNomeBase=pid=>(base.paineis||[]).find(p=>p.id===pid)?.nome||'';
+  const lacoNomeBase=lid=>(base.lacos||[]).find(l=>l.id===lid)?.nome||'';
+  const localNomeBase=lid=>(base.locais||[]).find(l=>l.id===lid)?.nome||'';
+
+  // 1) Nunca 2 planos para a mesma falha. Agrupa por falhaId; onde houver mais de um, preserva o
+  //    plano mais avançado (Concluído > Em andamento > Aberto) e, em empate, o mais antigo —
+  //    preservando integralmente os dados de progresso já registrados (providência, fotos, datas).
+  //    Nenhum dado de um plano "vencedor" é descartado; só o(s) duplicado(s) redundante(s) somem.
+  const porFalha={};
+  base.planos.forEach(p=>{if(p&&p.falhaId)(porFalha[p.falhaId]=porFalha[p.falhaId]||[]).push(p)});
+  const pesoSituacaoDup=s=>({'Concluído':3,'Em andamento':2,'Aberto':1}[s]||0);
+  const idsRemover=new Set();
+  Object.values(porFalha).forEach(lista=>{
+    if(lista.length<=1)return;
+    lista.sort((a,b)=>pesoSituacaoDup(b.situacao)-pesoSituacaoDup(a.situacao)||String(a.criadoEm||'').localeCompare(String(b.criadoEm||'')));
+    lista.slice(1).forEach(p=>idsRemover.add(p.id));
+  });
+  if(idsRemover.size){base.planos=base.planos.filter(p=>!idsRemover.has(p.id)); relatorio.duplicidadesRemovidas=idsRemover.size}
+
+  // 2) Toda falha com id válido precisa ter exatamente 1 plano vinculado (falhaId). Cria
+  //    automaticamente o que faltar — Situação sempre "Aberto" na criação — preservando todos os
+  //    dados já existentes da falha (nada em db.falhas é alterado). Confere antes de criar, então
+  //    rodar esta rotina várias vezes seguidas NUNCA duplica.
+  const comPlano=new Set(base.planos.map(p=>p&&p.falhaId).filter(Boolean));
+  base.falhas.forEach(f=>{
+    if(!f||!f.id)return;
+    if(comPlano.has(f.id))return;
+    base.planos.push({
+      id:id(),falhaId:f.id,criadoEm:f.data||isoNow(),
+      categoria:'Manutenção corretiva',prioridade:'Média',responsavel:'L3A Engenharia',situacao:'Aberto',
+      painel:painelNomeBase(f.painelId),laco:lacoNomeBase(f.lacoId),piso:f.piso,local:localNomeBase(f.localId),
+      item:f.itemNome,statusFalha:f.status,justificativa:f.motivo||f.obs||'',providencia:'',necessitaCompra:false,
+      origemSincronizacao:true
+    });
+    comPlano.add(f.id);
+    relatorio.falhasSemPlano++; relatorio.planosCriados++;
+  });
+
+  relatorio.totalPlanosDepois=base.planos.length;
+  base._ultimaAuditoriaPlanos=relatorio;
+  window._ultimaAuditoriaPlanos=relatorio;
+  if(relatorio.falhasSemPlano||relatorio.duplicidadesRemovidas){
+    console.warn('[SDAI] Sincronização Falhas↔Plano de Ação:',relatorio);
+  }
+  return relatorio;
+}
+function auditarPlanosManual(){
+  // Reexecução manual, sob demanda (botão "Auditar Falhas × Plano" no Plano de Ação), da MESMA
+  // rotina que já roda sozinha no boot/pull/restore. Útil para conferir o estado a qualquer momento
+  // sem precisar recarregar a página, e para validar que 1 falha ⇄ 1 plano depois de importações.
+  const rel=sincronizarPlanosFalhas(db);
+  if(rel.planosCriados>0||rel.duplicidadesRemovidas>0){markDirty('auditoria manual Falhas↔Plano de Ação')}
+  alert(
+    'Auditoria Falhas × Plano de Ação\n\n'+
+    `Falhas cadastradas: ${rel.totalFalhas}\n`+
+    `Planos cadastrados (antes): ${rel.totalPlanosAntes}\n`+
+    `Falhas que estavam sem plano: ${rel.falhasSemPlano}\n`+
+    `Planos criados automaticamente: ${rel.planosCriados}\n`+
+    `Duplicidades removidas (2+ planos p/ mesma falha): ${rel.duplicidadesRemovidas}\n`+
+    `Planos cadastrados (depois): ${rel.totalPlanosDepois}\n\n`+
+    (rel.planosCriados||rel.duplicidadesRemovidas?'Correções aplicadas e salvas.':'Nenhuma inconsistência encontrada — 1 falha ⇄ 1 plano em toda a base.')
+  );
+  render();
+}
 function fmtDateSimple(raw){if(!raw)return ''; let d=new Date(raw); if(isNaN(d.getTime()))return String(raw); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`}
 function now(){return new Date().toLocaleString('pt-BR')}
 function isoNow(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+'T'+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')}
@@ -1681,11 +1798,19 @@ async function importFile(){try{let rows=await readRows(); let mode=document.get
         db.equipamentos.forEach(e=>{
           if(paineisTocados.has(e.painelId)&&!equipIdsTocados.has(e.id)&&!up(e.status||'').includes('DESATIV')){
             const statusAnterior=e.status; e.status='Desativação'; e.ultimaAlteracao=isoNow();
-            db.falhas.push({id:id(),data:isoNow(),painelId:e.painelId,lacoId:e.lacoId,piso:e.piso,tipo:e.tipo,itemId:e.id,itemNome:(e.tipo||'')+' '+(e.endereco||e.modelo||''),localId:e.localId,status:'Desativação',statusAnterior,responsavel:'',origem:'Importação',motivo:'Não encontrado na última importação técnica — pode ter sido removido fisicamente na central',obs:''});
+            const recDesat={id:id(),data:isoNow(),painelId:e.painelId,lacoId:e.lacoId,piso:e.piso,tipo:e.tipo,itemId:e.id,itemNome:(e.tipo||'')+' '+(e.endereco||e.modelo||''),localId:e.localId,status:'Desativação',statusAnterior,responsavel:'',origem:'Importação',motivo:'Não encontrado na última importação técnica — pode ter sido removido fisicamente na central',obs:''};
+            db.falhas.push(recDesat);
             stats.desativadosNaoEncontrados++;
             // Evita "arquivo morto": se havia Plano de Ação aberto ligado a este
             // equipamento, cancela automaticamente em vez de deixar preso pra sempre.
             (db.planos||[]).forEach(pl=>{const fl=db.falhas.find(x=>x.id===pl.falhaId); if(fl&&fl.itemId===e.id&&pl.situacao!=='Concluído'&&pl.situacao!=='Cancelado'){pl.situacao='Cancelado'; pl.providencia=(pl.providencia?pl.providencia+' | ':'')+'Cancelado automaticamente: equipamento não encontrado na última importação técnica.'; pl.atualizadoEm=isoNow()}});
+            // CORREÇÃO (auditoria falhas↔planos, 2026-07): este era o único ponto de criação de falha
+            // no sistema que nunca gerava Plano de Ação (nem antes nem depois da correção do item 1
+            // anterior, que só tratou o cadastro manual em saveFalha). Uma falha de "Desativação"
+            // gerada pela importação ficava sem plano vinculado — mesma causa-raiz do caso reportado
+            // (falha existe em db.falhas, sem registro correspondente em db.planos). Mantém 1 falha ⇄
+            // 1 plano também nesta via.
+            if(!db.planos.find(p=>p.falhaId===recDesat.id)){db.planos.push({id:id(),falhaId:recDesat.id,criadoEm:isoNow(),categoria:'Manutenção corretiva',prioridade:'Média',responsavel:'L3A Engenharia',situacao:'Aberto',painel:paiName(recDesat.painelId),laco:lacName(recDesat.lacoId),piso:recDesat.piso,local:locName(recDesat.localId),item:recDesat.itemNome,statusFalha:recDesat.status,justificativa:recDesat.motivo,providencia:'',necessitaCompra:false});}
           }
         });
         db.flms.forEach(f=>{
@@ -2769,6 +2894,7 @@ function renderPlano(){
           <button class="btn secondary" onclick="gerarPdfPlanoAcao('concluidos')" title="PDF só com Situação Concluído, respeitando os filtros da tela">PDF Concluídos</button>
           <button class="btn secondary" onclick="gerarPdfPlanoDetalhado('pendencias')" title="PDF detalhado (com fotos) só com pendências">PDF Detalhado — Pendências</button>
           <button class="btn secondary" onclick="gerarPdfPlanoDetalhado('concluidos')" title="PDF detalhado (com fotos) só com concluídos">PDF Detalhado — Concluídos</button>
+          <button class="btn secondary" onclick="auditarPlanosManual()" title="Confere se toda falha tem exatamente 1 Plano de Ação vinculado e corrige automaticamente o que faltar">Auditar Falhas × Plano</button>
         </div>
       </div>
     </div>
@@ -3628,6 +3754,15 @@ function openLocal(i){
 function bootSDAIManager(){
   try{
     ensureLucSchema();
+    // A auditoria Falhas↔Plano de Ação já rodou dentro de load() (via normalizeAllStatuses, chamada
+    // ANTES deste boot — ver `let db=load()`), então o `db` aqui embaixo já está corrigido. Só falta
+    // persistir a correção localmente (se algo foi criado/removido) e avisar o usuário, senão a
+    // rotina rodaria de novo a cada F5 sem nunca ficar "resolvido" para valer no navegador dele.
+    const rel=db._ultimaAuditoriaPlanos;
+    if(rel&&(rel.planosCriados>0||rel.duplicidadesRemovidas>0)){
+      markDirty('sincronização automática Falhas↔Plano de Ação na abertura');
+      console.warn('[SDAI] Auditoria Falhas↔Plano de Ação corrigiu inconsistências no carregamento:',rel);
+    }
     render();
     setTimeout(verificarBaseAoAbrir,50);
   }catch(e){
