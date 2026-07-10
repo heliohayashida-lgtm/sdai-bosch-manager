@@ -1392,7 +1392,8 @@ function renderFalhas(){
   // qualquer coisa, porque o nome ainda não existia no objeto no momento em que o filtro rodava.
   // Agora resolve painel/laço/loja PRIMEIRO e só então filtra — a busca passa a considerar também
   // o nome da loja, não só os campos internos do lançamento.
-  let rows=db.falhas
+  const situacaoFiltro=f.situacao||'Em aberto';
+  let baseRows=db.falhas
    .map(x=>({...x,painel:paiName(x.painelId),laco:lacName(x.lacoId),loja:locName(x.localId)}))
    .filter(x=>
     (!f.status||normalizeStatus(x.status)===f.status)&&
@@ -1401,10 +1402,12 @@ function renderFalhas(){
    )
    .sort((a,b)=>String(b.data).localeCompare(String(a.data)));
 
-  const totalFalhas=rows.length;
-  const abertas=rows.filter(r=>!r.resolvidaEm).length;
-  const criticas=rows.filter(r=>isFalhaStatus(r.status)&&!r.resolvidaEm).length;
-  const hoje=rows.filter(r=>r.data&&r.data.startsWith(new Date().toISOString().slice(0,10))).length;
+  let rows=baseRows.filter(x=>situacaoFiltro==='Todos'||(situacaoFiltro==='Resolvida'?!!x.resolvidaEm:!x.resolvidaEm));
+
+  const totalFalhas=baseRows.length;
+  const abertas=baseRows.filter(r=>!r.resolvidaEm).length;
+  const criticas=baseRows.filter(r=>isFalhaStatus(r.status)&&!r.resolvidaEm).length;
+  const hoje=baseRows.filter(r=>r.data&&r.data.startsWith(new Date().toISOString().slice(0,10))).length;
 
   const trs=rows.map(r=>{
     const loc=dsLocHtml({painel:r.painel,piso:r.piso,laco:r.laco,tipo:r.tipo,endereco:r.itemNome});
@@ -1433,9 +1436,11 @@ function renderFalhas(){
     <div class="dsFilters">
       <div class="field"><label>Tipo</label><select onchange="filters.falhas={...filters.falhas,tipo:this.value};render()">${selectOpts(unique(db.falhas.map(x=>x.tipo)),f.tipo)}</select></div>
       <div class="field"><label>Status</label><select onchange="filters.falhas={...filters.falhas,status:this.value};render()">${selectOpts(unique(db.falhas.map(x=>normalizeStatus(x.status))),f.status)}</select></div>
+      <div class="field"><label>Situação</label><select onchange="filters.falhas={...filters.falhas,situacao:this.value};render()">${['Em aberto','Resolvida','Todos'].map(v=>`<option value="${v}" ${v===situacaoFiltro?'selected':''}>${v}</option>`).join('')}</select></div>
       <div class="field"><label>Busca</label><input value="${esc(f.q)}" data-filter-input="1" data-filter-group="falhas" data-filter-key="q" data-focus-key="falhasBusca" placeholder="Loja, item, status..."></div>
       <div class="dsFilterActions"><button class="dsIco prim" onclick="formFalha()">+ Registrar</button></div>
     </div>
+    ${situacaoFiltro==='Em aberto'&&(totalFalhas-abertas)>0?`<div class="emptyState" style="padding:10px 14px;font-size:12.5px;text-align:left">${totalFalhas-abertas} falha(s) já resolvida(s) (plano de ação concluído) estão ocultas. Use o filtro "Situação" para ver o histórico.</div>`:''}
     <div class="dsTableWrap">
       <table class="dsTable">
         <thead><tr>
