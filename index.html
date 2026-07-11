@@ -1147,6 +1147,14 @@ function fmtDataHora(raw){
   const hh=String(d.getHours()).padStart(2,'0'),mi=String(d.getMinutes()).padStart(2,'0');
   return `<div class="dataHoraCell"><b>${dd}/${mm}/${yy}</b><span>${hh}:${mi}</span></div>`;
 }
+// formatarDataHoraBR(): formatacao central texto puro DD/MM/AAAA HH:mm em pt-BR, usada em todo o
+// historico da loja/falha/plano/teste para nunca exibir ISO cru (com T/Z/milissegundos) na tela.
+function formatarDataHoraBR(valor){
+  if(!valor)return '\u2014';
+  const data=new Date(valor);
+  if(isNaN(data.getTime()))return '\u2014';
+  return data.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+}
 function esc(s){return n(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 function escAttrRaw(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function normalizarBusca(s){return up(s)}
@@ -1451,11 +1459,88 @@ function dataEventoPorTipo(tipoEvento,obj){
     default: return obj.data||obj.criadoEm||'';
   }
 }
+// textoConclusaoPlano(): texto fixo de conclusão do Plano de Ação, gerado dinamicamente conforme
+// o resultado real salvo (Conforme/Não Conforme) — nunca inventa dado, usa os campos reais do
+// plano/falha (p.statusFalha ou f.status como status técnico original quando Não Conforme).
+function textoConclusaoPlano(plano,falha){
+  const p=plano||{}; const f=falha||{};
+  if(p.resultado==='Conforme'){
+    return {
+      conclusao:'Atendimento concluído. Falha resolvida e sistema restabelecido para Em operação.',
+      statusTecnicoFinal:'Em operação', situacaoFalha:'Resolvida', situacaoPlano:'Concluído'
+    };
+  }
+  if(p.resultado==='Não Conforme'){
+    return {
+      conclusao:'Atendimento realizado. A falha permanece tecnicamente ativa e foi encaminhada para Notificar lojista.',
+      statusTecnicoFinal:f.status||p.statusFalha||'Não informado', situacaoFalha:'Ativa',
+      situacaoPlano:'Concluído', encaminhamento:'Notificar lojista'
+    };
+  }
+  return {conclusao:'',statusTecnicoFinal:'',situacaoFalha:'',situacaoPlano:p.situacao||'Não informado'};
+}
+// textoConclusaoTeste(): texto fixo de conclusão do teste/inspeção conforme resultado real salvo.
+function textoConclusaoTeste(insp){
+  const i=insp||{};
+  if(i.resultado==='Conforme')return 'Teste realizado com resultado Conforme. Loja/área mantida em operação.';
+  if(i.resultado==='Ajustado')return 'Teste realizado com ajuste executado. Sistema mantido em operação.';
+  if(i.resultado==='Não Conforme')return 'Teste realizado com resultado Não Conforme. Falha e Plano de Ação gerados automaticamente.';
+  return 'Não informado';
+}
+// obterAnexosEvento(): consolida anexos de todos os campos compatíveis já usados no sistema
+// (fotos/videos/documentos de teste; atendimentoFotos/atendimentoVideos/atendimentoDocumentos de
+// plano) num único array padronizado, deduplicando por nome+dataUrl e inferindo tipo (foto/vídeo/
+// documento) pelo campo `tipo` (mime) salvo por readFilesAsDataUrls() ou, na ausência dele, pela
+// extensão do nome do arquivo. Nunca quebra em registros antigos sem esses campos.
+function obterAnexosEvento(origemTipo,origem,vinculo){
+  const o=origem||{};
+  const grupos=[];
+  if(origemTipo==='teste'){
+    grupos.push(['foto',o.fotos],['video',o.videos],['documento',o.documentos]);
+  } else if(origemTipo==='plano'){
+    grupos.push(['foto',o.atendimentoFotos],['video',o.atendimentoVideos],['documento',o.atendimentoDocumentos]);
+  } else {
+    grupos.push(['foto',o.fotos],['video',o.videos],['documento',o.documentos],
+      ['foto',o.evidencias],['documento',o.anexos],['documento',o.arquivos]);
+  }
+  const inferirTipoPorNome=(nome)=>{
+    const ext=String(nome||'').toLowerCase().split('.').pop();
+    if(['jpg','jpeg','png','gif','webp','bmp'].includes(ext))return 'foto';
+    if(['mp4','mov','avi','webm','mkv'].includes(ext))return 'video';
+    return 'documento';
+  };
+  const vistos=new Set();
+  const out=[];
+  grupos.forEach(([tipoPadrao,lista])=>{
+    (lista||[]).forEach(a=>{
+      if(!a)return;
+      let tipo=tipoPadrao;
+      if(a.tipo&&a.tipo.startsWith('image/'))tipo='foto';
+      else if(a.tipo&&a.tipo.startsWith('video/'))tipo='video';
+      else if(!a.tipo||!a.tipo.startsWith('image/')&&!a.tipo.startsWith('video/')){
+        if(tipoPadrao==='documento'||!a.tipo)tipo=inferirTipoPorNome(a.name);
+      }
+      const chave=(a.name||'')+'|'+(a.dataUrl||a.url||'')+'|'+(a.data||'');
+      if(vistos.has(chave))return;
+      vistos.add(chave);
+      out.push({
+        nome:a.name||'Não informado',tipo,url:a.dataUrl||a.url||'',
+        data:a.data||(vinculo&&vinculo.data)||'',responsavel:(vinculo&&vinculo.responsavel)||'',
+        tamanho:a.size||a.tamanho||'',origem:origemTipo,
+        planoId:(vinculo&&vinculo.planoId)||'',falhaId:(vinculo&&vinculo.falhaId)||'',
+        testeId:(vinculo&&vinculo.testeId)||'',localId:(vinculo&&vinculo.localId)||''
+      });
+    });
+  });
+  return out;
+}
 // obterHistoricoLojaNoPeriodo(): junta, para UMA loja/área, todos os eventos reais (testes,
 // falhas abertas/resolvidas, planos abertos/concluídos) cuja data real caia dentro do intervalo
-// [dataInicial,dataFinal] (qualquer um dos dois pode ser vazio = sem limite naquele lado).
+// [dataInicial,dataFinal] (qualquer um dos dois pode ser vazio = sem limite naquele lado; "Até" é
+// tratado por comparação de data — YYYY-MM-DD — portanto já cobre o dia inteiro até 23:59:59.999).
 // Nunca duplica o mesmo evento vindo de fontes diferentes: cada evento é gerado uma única vez a
-// partir da sua fonte de origem (inspeção, falha ou plano).
+// partir da sua fonte de origem (inspeção, falha ou plano), e uma chave tipoEvento+origemId+data é
+// usada para eliminar qualquer duplicidade remanescente, mantendo a ocorrência mais completa.
 function obterHistoricoLojaNoPeriodo(localId,dataInicial,dataFinal){
   const l=db.locais.find(x=>x.id===localId);
   const de=(dataInicial||'').slice(0,10), ate=(dataFinal||'').slice(0,10);
@@ -1470,43 +1555,65 @@ function obterHistoricoLojaNoPeriodo(localId,dataInicial,dataFinal){
   ((l&&l.inspecoes)||[]).forEach(insp=>{
     const d=dataEventoPorTipo('teste',insp);
     if(inRange(d)){
-      eventos.push({id:'teste:'+insp.id,data:d,tipoEvento:'Teste',titulo:`Teste — ${insp.resultado||''}`,descricao:insp.observacoes||'',status:insp.resultado||'',responsavel:insp.responsavel||'',fotos:(insp.fotos||[]).length,origem:'Inspeção',origemId:insp.id});
+      const anexos=obterAnexosEvento('teste',insp,{data:d,responsavel:insp.responsavel,testeId:insp.id,localId});
+      eventos.push({id:'teste:'+insp.id,data:d,tipoEvento:'Teste',titulo:`Teste — ${insp.resultado||'Não informado'}`,
+        descricao:insp.observacoes||'',status:insp.resultado||'Não informado',responsavel:insp.responsavel||'Não informado',
+        fotos:anexos.length,anexos,origem:'Inspeção',origemId:insp.id,
+        conclusao:textoConclusaoTeste(insp),falhaGeradaId:insp.falhaGeradaId||'',
+        planoGeradoId:insp.falhaGeradaId?((db.planos||[]).find(p=>p.falhaId===insp.falhaGeradaId)||{}).id||'':''});
     }
   });
   const falhasLoja=(db.falhas||[]).filter(f=>f.localId===localId);
   falhasLoja.forEach(f=>{
     const dAb=dataEventoPorTipo('falhaAbertura',f);
     if(inRange(dAb)){
-      eventos.push({id:'falhaAb:'+f.id,data:dAb,tipoEvento:'Falha aberta',titulo:`Falha — ${f.status||''}`,descricao:f.motivo||f.obs||'',status:f.status||'',responsavel:f.responsavel||'',fotos:0,origem:f.origem||'Falha',origemId:f.id});
+      eventos.push({id:'falhaAb:'+f.id,data:dAb,tipoEvento:'Falha aberta',titulo:`Falha — ${f.status||'Não informado'}`,descricao:f.motivo||f.obs||'',status:f.status||'Não informado',responsavel:f.responsavel||'Não informado',fotos:0,anexos:[],origem:f.origem||'Falha',origemId:f.id});
     }
     const dRes=dataEventoPorTipo('falhaResolucao',f);
     if(dRes&&inRange(dRes)){
-      eventos.push({id:'falhaRes:'+f.id,data:dRes,tipoEvento:'Falha resolvida',titulo:'Falha resolvida',descricao:f.motivo||f.obs||'',status:'Resolvida',responsavel:f.responsavel||'',fotos:0,origem:f.origem||'Falha',origemId:f.id});
+      eventos.push({id:'falhaRes:'+f.id,data:dRes,tipoEvento:'Falha resolvida',titulo:'Falha resolvida',descricao:f.motivo||f.obs||'',status:'Resolvida',responsavel:f.responsavel||'Não informado',fotos:0,anexos:[],origem:f.origem||'Falha',origemId:f.id});
     }
   });
   const planosLoja=(db.planos||[]).filter(p=>falhasLoja.some(f=>f.id===p.falhaId));
   planosLoja.forEach(p=>{
+    const falhaDoPlano=falhasLoja.find(f=>f.id===p.falhaId);
     const dAb=dataEventoPorTipo('planoAbertura',p);
     if(inRange(dAb)){
-      eventos.push({id:'planoAb:'+p.id,data:dAb,tipoEvento:'Plano aberto',titulo:`Plano de Ação — ${p.categoria||''}`,descricao:p.justificativa||'',status:p.situacao||'',responsavel:p.responsavel||'',fotos:0,origem:'Plano de Ação',origemId:p.id});
+      eventos.push({id:'planoAb:'+p.id,data:dAb,tipoEvento:'Plano aberto',titulo:`Plano de Ação — ${p.categoria||'Não informado'}`,descricao:p.justificativa||'',status:p.situacao||'Não informado',responsavel:p.responsavel||'Não informado',fotos:0,anexos:[],origem:'Plano de Ação',origemId:p.id});
     }
     if(p.situacao==='Concluído'){
       const dCo=dataEventoPorTipo('planoConclusao',p);
       if(dCo&&inRange(dCo)){
-        eventos.push({id:'planoCo:'+p.id,data:dCo,tipoEvento:'Plano concluído',titulo:'Plano de Ação concluído'+(p.resultado?` — ${p.resultado}`:'')+(p.encaminhamento?` (${p.encaminhamento})`:''),descricao:p.providencia||'',status:'Concluído',responsavel:p.responsavel||'',fotos:(p.atendimentoFotos&&p.atendimentoFotos.length)||0,origem:'Plano de Ação',origemId:p.id});
+        const anexos=obterAnexosEvento('plano',p,{data:dCo,responsavel:p.responsavel,planoId:p.id,falhaId:p.falhaId,localId});
+        const conc=textoConclusaoPlano(p,falhaDoPlano);
+        eventos.push({id:'planoCo:'+p.id,data:dCo,tipoEvento:'Plano concluído',
+          titulo:'Plano de Ação concluído'+(p.resultado?` — ${p.resultado}`:'')+(p.encaminhamento?` (${p.encaminhamento})`:''),
+          descricao:p.providencia||'',status:'Concluído',responsavel:p.responsavel||'Não informado',
+          fotos:anexos.length,anexos,origem:'Plano de Ação',origemId:p.id,
+          plano:p,falha:falhaDoPlano,conclusaoPlano:conc,
+          dataAbertura:p.criadoEm||'',dataConclusao:p.concluidoEm||'',resultado:p.resultado||'Não informado',
+          statusTecnicoInicial:p.statusFalha||'Não informado',categoria:p.categoria||'Não informado',
+          execucaoRealizada:p.providencia||'',encaminhamentoFinal:p.encaminhamento||conc.encaminhamento||'Não informado'});
       }
     }
   });
-  eventos.sort((a,b)=>String(a.data||'').localeCompare(String(b.data||'')));
+  const porChave=new Map();
+  eventos.forEach(ev=>{
+    const chave=ev.tipoEvento+'|'+ev.origemId+'|'+String(ev.data||'').slice(0,16);
+    const atual=porChave.get(chave);
+    if(!atual||Object.keys(ev).length>Object.keys(atual).length)porChave.set(chave,ev);
+  });
+  const eventosUnicos=Array.from(porChave.values());
+  eventosUnicos.sort((a,b)=>String(a.data||'').localeCompare(String(b.data||'')));
   const totais={
-    testes:eventos.filter(e=>e.tipoEvento==='Teste').length,
-    falhasAbertas:eventos.filter(e=>e.tipoEvento==='Falha aberta').length,
-    falhasResolvidas:eventos.filter(e=>e.tipoEvento==='Falha resolvida').length,
-    planosAbertos:eventos.filter(e=>e.tipoEvento==='Plano aberto').length,
-    planosConcluidos:eventos.filter(e=>e.tipoEvento==='Plano concluído').length,
-    evidencias:eventos.reduce((s,e)=>s+(e.fotos||0),0)
+    testes:eventosUnicos.filter(e=>e.tipoEvento==='Teste').length,
+    falhasAbertas:eventosUnicos.filter(e=>e.tipoEvento==='Falha aberta').length,
+    falhasResolvidas:eventosUnicos.filter(e=>e.tipoEvento==='Falha resolvida').length,
+    planosAbertos:eventosUnicos.filter(e=>e.tipoEvento==='Plano aberto').length,
+    planosConcluidos:eventosUnicos.filter(e=>e.tipoEvento==='Plano concluído').length,
+    evidencias:eventosUnicos.reduce((s,e)=>s+(e.fotos||0),0)
   };
-  return {localId,eventos,totais};
+  return {localId,eventos:eventosUnicos,totais};
 }
 function localPossuiFalhaAberta(l){
   if(isFalhaStatus(l.status))return true;
@@ -4296,6 +4403,64 @@ function readFilesAsDataUrls(fileList){
   }))).then(list=>list.filter(Boolean));
 }
 function ultimaInspecaoLocalOrdenada(l){return (l.inspecoes||[]).slice().sort((a,b)=>String(b.data||'').localeCompare(String(a.data||'')))}
+// ---- Galeria/lightbox de fotos do histórico da loja ----
+let _galeriaFotos=[]; let _galeriaIdx=0;
+function abrirGaleriaFoto(idxJson,fotosJson){
+  try{_galeriaFotos=JSON.parse(fotosJson);}catch(e){_galeriaFotos=[];}
+  _galeriaIdx=Number(idxJson)||0;
+  _renderGaleriaFoto();
+}
+function _renderGaleriaFoto(){
+  const foto=_galeriaFotos[_galeriaIdx]; if(!foto)return;
+  const overlay=document.getElementById('galeriaFotoOverlay');
+  const html=`<div id="galeriaFotoOverlay" style="position:fixed;inset:0;background:rgba(15,20,30,.86);z-index:9999;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this)fecharGaleriaFoto()">
+    <div style="position:relative;max-width:92vw;max-height:88vh;text-align:center">
+      <img src="${escAttrRaw(foto.url)}" style="max-width:92vw;max-height:80vh;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.5)">
+      <p style="color:#fff;margin-top:8px;font-size:13px">${esc(foto.nome||'')} ${_galeriaFotos.length>1?`(${_galeriaIdx+1}/${_galeriaFotos.length})`:''}</p>
+      ${_galeriaFotos.length>1?`<button class="btn small secondary" style="position:absolute;left:-46px;top:45%" onclick="event.stopPropagation();galeriaFotoNav(-1)">‹</button><button class="btn small secondary" style="position:absolute;right:-46px;top:45%" onclick="event.stopPropagation();galeriaFotoNav(1)">›</button>`:''}
+      <button class="btn small" style="position:absolute;top:-40px;right:0" onclick="fecharGaleriaFoto()">Fechar ✕</button>
+    </div>
+  </div>`;
+  if(overlay)overlay.outerHTML=html; else document.body.insertAdjacentHTML('beforeend',html);
+}
+function galeriaFotoNav(dir){
+  if(!_galeriaFotos.length)return;
+  _galeriaIdx=(_galeriaIdx+dir+_galeriaFotos.length)%_galeriaFotos.length;
+  _renderGaleriaFoto();
+}
+function fecharGaleriaFoto(){
+  const overlay=document.getElementById('galeriaFotoOverlay');
+  if(overlay)overlay.remove();
+  _galeriaFotos=[]; _galeriaIdx=0;
+}
+// eventoAnexosHtml(): renderiza a galeria compacta de anexos de um evento do histórico (fotos em
+// miniatura com lightbox, vídeos com player/link, documentos com abrir/baixar). Reaproveita as
+// classes visuais já existentes (pill, msg) para manter o padrão visual do restante do sistema.
+function eventoAnexosHtml(anexos){
+  if(!anexos||!anexos.length)return '<p class="mutedLine">Nenhuma evidência anexada.</p>';
+  const fotos=anexos.filter(a=>a.tipo==='foto');
+  const videos=anexos.filter(a=>a.tipo==='video');
+  const docs=anexos.filter(a=>a.tipo==='documento');
+  const fotosJson=escAttrRaw(JSON.stringify(fotos));
+  let out='';
+  if(fotos.length){
+    out+=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">${fotos.map((f,idx)=>
+      `<img src="${escAttrRaw(f.url)}" title="${esc(f.nome)}" onclick='abrirGaleriaFoto(${idx},${fotosJson})' style="width:110px;height:110px;object-fit:cover;border-radius:10px;border:1px solid var(--l3a-border);cursor:pointer">`
+    ).join('')}</div>`;
+  }
+  if(videos.length){
+    out+=videos.map(v=>{
+      const player=v.url&&v.url.startsWith('data:')?`<video controls src="${escAttrRaw(v.url)}" style="max-width:220px;border-radius:8px;display:block;margin-top:4px"></video>`:(v.url?`<a href="${escAttrRaw(v.url)}" target="_blank" class="pill info">Abrir vídeo</a>`:'');
+      return `<div style="margin-bottom:8px"><span class="pill neutral">🎬 ${esc(v.nome||'Não informado')}</span> <small class="note">${esc(formatarDataHoraBR(v.data))} • ${esc(v.responsavel||'Não informado')}</small>${player}</div>`;
+    }).join('');
+  }
+  if(docs.length){
+    out+=`<div style="display:flex;gap:6px;flex-wrap:wrap">${docs.map(d=>
+      `<span class="pill neutral">📄 ${esc(d.nome||'Não informado')}${d.tamanho?' — '+esc(String(d.tamanho)):''}</span> <a href="${escAttrRaw(d.url)}" target="_blank" class="pill info">Abrir</a> <a href="${escAttrRaw(d.url)}" download="${escAttrRaw(d.nome||'documento')}" class="pill info">Baixar</a>`
+    ).join(' ')}</div>`;
+  }
+  return out||'<p class="mutedLine">Nenhuma evidência anexada.</p>';
+}
 function inspAnexosHtml(lista,label){
   if(!lista||!lista.length)return '';
   const thumbs=lista.map(a=>{
@@ -4382,30 +4547,56 @@ function localModalSetTab(tab){_localModalState.tab=tab; if(tab!=='historico')_l
 function localModalDadosHtml(l){
   return `<p><b>LUC:</b> ${lucDisplayLocal(l)} • <b>Chave lógica:</b> ${esc(lucChaveLogicaLocal(l))} • <b>Tipo:</b> ${esc(l.tipo)} • <b>Painel:</b> ${esc(paiName(l.painelId))} • <b>Laço:</b> ${esc(lacName(l.lacoId))} • <b>Piso:</b> ${esc(l.piso)}</p>${l.nomeOriginalCadastro?`<p class="note"><b>Nome antigo:</b> ${esc(l.nomeOriginalCadastro)}</p>`:''}<p><b>Status atual:</b> ${dsBadgeHtml(l.status)}</p><div class="toolbar"><button class="btn small" onclick="formInspecao('${l.id}')">Executar Teste</button><button class="btn small secondary" onclick="formLocal('${l.id}')">Editar cadastro</button></div>`;
 }
+// eventoHistoricoBlocoHtml(): renderiza UM evento do histórico da loja como bloco expansível
+// (Resumo sempre visível → <details> abre Detalhes + Evidências), com todos os campos pedidos
+// para eventos de Plano de Ação concluído, e um resumo enxuto para os demais tipos de evento.
+// Datas sempre passam por formatarDataHoraBR() — nunca ISO cru na tela.
+function eventoHistoricoBlocoHtml(l,ev){
+  const dataFmt=formatarDataHoraBR(ev.data);
+  const resumoTopo=`<div class="tl"><b>${esc(ev.tipoEvento)}</b> • <small>${esc(dataFmt)} • ${esc(ev.responsavel||'Não informado')}</small><p>${esc(ev.titulo||'')}${ev.status?' — '+esc(ev.status):''}</p>`;
+  if(ev.tipoEvento==='Plano concluído'){
+    const c=ev.conclusaoPlano||{};
+    const detalhes=`<div style="margin-top:8px;font-size:13px;line-height:1.7">
+      <p><b>Data de abertura:</b> ${esc(formatarDataHoraBR(ev.dataAbertura))}</p>
+      <p><b>Data de conclusão:</b> ${esc(formatarDataHoraBR(ev.dataConclusao))}</p>
+      <p><b>Responsável:</b> ${esc(ev.responsavel||'Não informado')}</p>
+      <p><b>Situação:</b> ${esc(c.situacaoPlano||'Não informado')}</p>
+      <p><b>Status técnico inicial:</b> ${esc(ev.statusTecnicoInicial||'Não informado')}</p>
+      <p><b>Resultado do atendimento:</b> ${esc(ev.resultado||'Não informado')}</p>
+      <p><b>Status técnico final:</b> ${esc(c.statusTecnicoFinal||'Não informado')}</p>
+      <p><b>Encaminhamento final:</b> ${esc(ev.encaminhamentoFinal||'Não informado')}</p>
+      <p><b>Categoria:</b> ${esc(ev.categoria||'Não informado')}</p>
+      <p><b>Execução realizada:</b> ${esc(ev.execucaoRealizada||'Não informado')}</p>
+      <p><b>Observação técnica final:</b> ${esc(ev.descricao||'Não informado')}</p>
+      <p><b>Providência:</b> ${esc((ev.plano&&ev.plano.providencia)||'Não informado')}</p>
+      <p><b>Conclusão:</b> ${esc(c.conclusao||'Não informado')}</p>
+    </div>`;
+    return resumoTopo+`<details style="margin-top:6px"><summary style="cursor:pointer;font-weight:700;font-size:12.5px;color:var(--l3a-text-soft)">Detalhes e evidências</summary>${detalhes}<div style="margin-top:8px"><small class="note">Evidências (${ev.fotos||0})</small><div style="margin-top:6px">${eventoAnexosHtml(ev.anexos)}</div></div></details></div>`;
+  }
+  const linkDetalhe=ev.origem==='Inspeção'?`<button class="btn small secondary" style="margin-top:6px" onclick="verInspecao('${l.id}','${ev.origemId}')">Ver detalhes do teste</button>`:'';
+  const anexosBloco=(ev.anexos&&ev.anexos.length)?`<details style="margin-top:6px"><summary style="cursor:pointer;font-weight:700;font-size:12.5px;color:var(--l3a-text-soft)">Evidências (${ev.fotos||0})</summary><div style="margin-top:6px">${eventoAnexosHtml(ev.anexos)}</div></details>`:'';
+  const conclusaoTeste=ev.tipoEvento==='Teste'&&ev.conclusao?`<p class="note" style="margin-top:4px">${esc(ev.conclusao)}</p>`:'';
+  const vinculos=ev.tipoEvento==='Teste'&&ev.falhaGeradaId?`<p class="msg warn" style="margin-top:6px">Falha gerada${ev.planoGeradoId?' e Plano de Ação gerado':''} por esta inspeção (não conformidade).</p>`:'';
+  return resumoTopo+(ev.descricao?`<p>${esc(ev.descricao)}</p>`:'')+conclusaoTeste+vinculos+linkDetalhe+anexosBloco+'</div>';
+}
 function localModalHistoricoHtml(l){
   // Quando _localHistoricoPeriodo está definido (ver verHistoricoPeriodo/openLocal), a aba
   // Histórico reaproveita obterHistoricoLojaNoPeriodo() para mostrar só os eventos do intervalo
-  // escolhido na tabela de Lojas/Áreas; sem período, mantém o comportamento original (tudo).
+  // escolhido na tabela de Lojas/Áreas; sem período, também usa obterHistoricoLojaNoPeriodo() sem
+  // limites de data, garantindo que TODOS os eventos (testes, falhas, planos) e seus campos
+  // completos (datas, responsável, situação, resultado, conclusão, anexos) passem pelo mesmo
+  // pipeline enriquecido — sem duplicidade e sem "undefined" em registros antigos.
   const periodoAtivo=_localHistoricoPeriodo&&(_localHistoricoPeriodo.de||_localHistoricoPeriodo.ate);
   const filtroHtml=`<div class="dsFilters" style="margin-bottom:10px">
     <div class="field"><label>De</label><input type="date" value="${esc((_localHistoricoPeriodo&&_localHistoricoPeriodo.de)||'')}" onchange="_localHistoricoPeriodo={de:this.value,ate:(_localHistoricoPeriodo&&_localHistoricoPeriodo.ate)||''};openLocal('${l.id}',_localHistoricoPeriodo)"></div>
     <div class="field"><label>Até</label><input type="date" value="${esc((_localHistoricoPeriodo&&_localHistoricoPeriodo.ate)||'')}" onchange="_localHistoricoPeriodo={de:(_localHistoricoPeriodo&&_localHistoricoPeriodo.de)||'',ate:this.value};openLocal('${l.id}',_localHistoricoPeriodo)"></div>
     ${periodoAtivo?`<div class="dsFilterActions"><button class="btn small secondary" onclick="_localHistoricoPeriodo=null;openLocal('${l.id}')">Limpar período</button></div>`:''}
   </div>`;
-  if(periodoAtivo){
-    const hist=obterHistoricoLojaNoPeriodo(l.id,_localHistoricoPeriodo.de,_localHistoricoPeriodo.ate);
-    if(!hist.eventos.length)return filtroHtml+'<p class="msg warn">Sem eventos registrados no período selecionado.</p>';
-    return filtroHtml+`<div class="timeline">${hist.eventos.slice().reverse().map(ev=>`<div class="tl"><b>${esc(ev.tipoEvento)}</b> • <small>${esc(ev.data||'')} • ${esc(ev.responsavel||'—')}</small><p>${esc(ev.titulo)}${ev.descricao?' — '+esc(ev.descricao):''}</p>${ev.origem==='Inspeção'?`<button class="btn small secondary" onclick="verInspecao('${l.id}','${ev.origemId}')">Ver detalhes</button>`:''}</div>`).join('')}</div>`;
-  }
-  const insp=(l.inspecoes||[]).map(x=>({tipo:'Inspeção/Teste',data:x.data,responsavel:x.responsavel,
-    resumo:`Resultado: ${x.resultado}${x.observacoes?' — '+x.observacoes:''}`,ref:x.id}));
-  const falhas=(db.falhas||[]).filter(f=>f.localId===l.id).map(f=>({tipo:'Falha',data:f.data,responsavel:f.responsavel,
-    resumo:`${f.status}${f.motivo?' — '+f.motivo:''}`,ref:f.id}));
-  const planos=(db.planos||[]).filter(p=>falhas.some(f=>f.ref===p.falhaId)).map(p=>({tipo:'Plano de Ação',data:p.criadoEm,
-    responsavel:p.responsavel,resumo:`${p.situacao} — ${p.categoria||''}`,ref:p.id}));
-  const eventos=insp.concat(falhas,planos).sort((a,b)=>String(b.data||'').localeCompare(String(a.data||'')));
-  if(!eventos.length)return filtroHtml+'<p class="msg warn">Sem eventos registrados.</p>';
-  return filtroHtml+`<div class="timeline">${eventos.map(ev=>`<div class="tl"><b>${esc(ev.tipo)}</b> • <small>${esc(ev.data||'')} • ${esc(ev.responsavel||'—')}</small><p>${esc(ev.resumo)}</p>${ev.tipo==='Inspeção/Teste'?`<button class="btn small secondary" onclick="verInspecao('${l.id}','${ev.ref}')">Ver detalhes</button>`:''}</div>`).join('')}</div>`;
+  const de=periodoAtivo?_localHistoricoPeriodo.de:'';
+  const ate=periodoAtivo?_localHistoricoPeriodo.ate:'';
+  const hist=obterHistoricoLojaNoPeriodo(l.id,de,ate);
+  if(!hist.eventos.length)return filtroHtml+`<p class="msg warn">Sem eventos registrados${periodoAtivo?' no período selecionado':''}.</p>`;
+  return filtroHtml+`<div class="timeline">${hist.eventos.slice().reverse().map(ev=>eventoHistoricoBlocoHtml(l,ev)).join('')}</div>`;
 }
 function openLocal(i,periodo){
   ensureLucSchema();
