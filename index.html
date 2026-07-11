@@ -1,5 +1,6 @@
 <!doctype html>
-<!-- build: 2026-07-11 v6.54 - CORREÇÃO PONTUAL (2 itens pedidos explicitamente, nada mais tocado em Testes/Falha/Plano além do necessário): (1) TESTE_TIPOS: lista técnica antiga (Acionamento/Supervisão/Comunicação com a central/Sirene-sinalização/Detector/Acionador manual/Módulo/Porta/Teste geral da loja/Outro) substituída pelas 5 opções operacionais corretas — FTR/Brigada/ENSEG/L3A/Lojista — identificando quem realizou/acompanhou o teste, não mais um tipo técnico de acionamento; label do campo trocado para "Responsável / origem do teste". Testes antigos com valores da lista anterior continuam sendo lidos/exibidos normalmente em "Testes recentes" (tipoTeste nunca é migrado nem apagado); só testes NOVOS usam a lista nova. (2) CAUSA RAIZ da Falha aberta pela Loja vir vazia: formFalha('', localId) só usava o localId para preencher o select de Loja — nunca resolvia o item técnico (módulo/porta) real da loja, então nenhum Painel/Laço/Piso/Item era carregado, e o técnico tinha que selecionar tudo de novo manualmente, exatamente como reportado. CORRIGIDO com a nova função resolverItemTecnicoDaLoja(local), que usa SOMENTE os vínculos reais gravados no cadastro (local.portaId/local.flmId, com fallback por db.portas.localId e db.equipamentos.localId quando o local não tiver o vínculo direto gravado) — nunca o texto visual da tabela nem dedução pelo nome. formFalha() agora chama essa função quando aberta a partir de Lojas/Áreas (falha nova) e usa o item resolvido para acionar o MESMO mecanismo de auto-preenchimento que a busca manual já usava (falhaSelectItem()) — preenchendo Painel/Laço/Piso/Loja/Item técnico automaticamente, sem criar módulo/porta/loja novos e sem duplicar nada. Quando a loja não tem nenhum vínculo técnico gravado (nem porta, nem módulo, nem equipamento), o formulário avisa isso explicitamente em vez de inventar um vínculo, e mantém a seleção manual disponível. (3) FALHA_CONDICOES: reduzida às 5 condições técnicas reais pedidas (Laço aberto/Módulo aberto/Módulo em curto/Incêndio disparado/Desativação) — "Em teste", "Renomear"/"Outro" e qualquer status personalizado saíram da lista de NOVA falha; a seleção continua sendo radio-button único (já era desde a Fase 3). Falha antiga com status "Em teste" ou personalizado continua abrindo normalmente na edição (o valor antigo é reintroduzido como opção extra só naquele registro, nunca oferecido para falha nova) — nenhum dado de registro antigo foi alterado ou apagado. Revisão de ortografia pedida ("Módulo em curdo"→"Módulo em curto", "indencdio disparado"→"Incêndio disparado"): não encontrada nenhuma ocorrência desses erros em nenhum ponto do código (STATUS_TECNICO_VALIDOS e FALHA_CONDICOES já usavam a grafia correta) — nada precisou ser corrigido nesse ponto. Funções alteradas: TESTE_TIPOS (lista), formFalha() (nova resolução de item via resolverItemTecnicoDaLoja()), FALHA_CONDICOES (lista). Nenhuma mudança em saveFalha()/saveTeste()/criarTeste()/sincronizarPlanosFalhas()/Plano de Ação/Code.gs/sincronização/importação. node --check validado sem erros. -->
+<!-- build: 2026-07-11 v6.55 - MULTIPLICIDADE DE PONTOS TÉCNICOS NA MESMA LOJA. AUDITORIA PRÉVIA (mapeamento pedido antes de alterar): (1) db.locais JÁ carrega painelId/lacoId/piso/flmId/portaId/sistema por registro — a mesma loja comercial com SDAI e CO2 já existe hoje como DOIS registros distintos em db.locais (dois localIds), cada um com seu próprio painel/laço/módulo/porta/sistema; não há um único registro "loja" guarda-chuva. (2) localIds diferentes por porta: SIM, já existem — ensureLocal() casa por portaId quando presente (`const match = portaId ? (x=>x.portaId===portaId) : (x=>up(x.nome)===up(nome))`), então nome igual + porta diferente já resultava em dois localIds mesmo antes desta correção. (3) Fluxo que consolida por nome: só o branch de EQUIPAMENTO sem módulo/porta associado em importFile() (equipamento solto, sem FLM) busca o local existente por nome (`db.locais.find(x=>up(x.nome)===up(loja))`) — inevitável porque um equipamento sem FLM não tem porta própria para casar; não afeta pontos que têm módulo/porta (a maioria). lucLocaisIrmaos()/lucSincronizarIrmaos() já existiam e JÁ sincronizavam somente metadados comerciais (nomeOficial/luc/lucAssociado/baseLojaId/statusAssociacao) — nunca status técnico/testes/falhas/planos; auditoria confirmou zero necessidade de mudança nessas duas funções. (4) Nenhuma função encontrada causando perda de distinção técnica entre pontos — Testes (db.testes, filtrado por localId) e Falhas (db.falhas, filtrado por localId/itemId) já eram por ponto, nunca por nome de loja. MUDANÇAS DESTA VERSÃO (aditivas, sobre uma base que já era estruturalmente correta): (1) Nova função chavePontoTecnico(ponto) — identidade estável do ponto técnico (cliente+sistema+painel+laço+módulo+porta+equipamento), disponível para uso futuro em auditorias/relatórios. (2) Nova função pontosTecnicosDaLoja(local) — retorna todos os pontos técnicos (db.locais) que compartilham o mesmo nome comercial/LUC, para exibição/agrupamento (não altera nem funde histórico). (3) renderLocais(): KPI "Lojas / Áreas" desdobrado em dois cards — "Lojas comerciais" (contagem distinta por nomeOficial||nome) e "Pontos técnicos" (contagem de registros/linhas, 1 por localId) — nunca mais uma única contagem ambígua; badge de Sistema (SDAI/CO2) visível em cada linha da tabela; novo filtro por Sistema. Os botões de ação (Executar teste/Registrar falha/Histórico/Editar/Excluir) já operavam sobre r.id — o localId exato daquela linha/ponto — logo já eram inerentemente ponto-específicos; não foi necessário criar um seletor de ponto adicional, pois cada linha da tabela já É um ponto técnico distinto (auditado e confirmado, não presumido). (4) formTeste(): resumo do ponto (Sistema/Painel/Laço/Piso/Loja) destacado no topo do modal com aviso explícito de que a mesma loja pode ter outros pontos independentes. (5) formFalha(): resumo do local (resumoLocal) agora prefixado com [SDAI]/[CO2] quando o item resolvido tem sistema definido — reforça visualmente qual ponto está sendo aberto. (6) renderFalhas(): badge de Sistema por linha, filtro por Sistema, campo incluído na busca textual (permite localizar "SERRA CO2" isolando só o ponto CO2). (7) renderPlano(): campo `sistema` incluído em buildPlanoRowsBase()/planoRowsFiltrados() (herdado do local da falha vinculada) e novo filtro Sistema em "Mais filtros" — mesmo padrão de Lojas/Falhas; diagnóstico do formPlano() ganhou linha "Sistema" explícita (Plano herda o mesmo ponto técnico da Falha de origem, nunca um genérico). (8) openLocal(): cabeçalho ganhou badge de Sistema; quando a loja tem outros pontos técnicos (pontosTecnicosDaLoja), lista-os como chips clicáveis "ver histórico daquele ponto" — deixando explícito que são pontos SEPARADOS (Testes/Falhas continuam filtrados só por localId===este ponto, nunca por nome). (9) importFile(): confirmado (sem alteração necessária) que sistemaResolvido = laço.sistema||sistemaAutoDetect() já é calculado e passado a ensureLocal() em toda importação de loja vinculada a módulo/porta — SDAI e CO2 nunca são consolidados no mesmo localId nessa via. NÃO ALTERADO: ensureLocal() (dedup por portaId já correto), lucLocaisIrmaos()/lucSincronizarIrmaos() (já só sincronizavam metadado comercial), criarTeste()/saveTeste()/saveFalha()/registrarExecucaoPlano()/concluirPlanoFormal() (lógica de gravação inalterada — todas já gravam por localId/itemId específico), Code.gs, login/permissões/sincronização. Testado: node --check sem erros nos scripts extraídos; simulação mental dos 10 cenários pedidos (loja com 1 ponto abre direto; loja com 2 pontos = 2 linhas distintas, cada botão já abre o ponto certo; teste em ponto SDAI não altera ponto CO2 — são localIds diferentes; falha em CO2 não afeta SDAI pelo mesmo motivo; histórico de openLocal já separado por localId; dashboard mostra Lojas comerciais ≠ Pontos técnicos; import não consolida SDAI/CO2 pois portaId difere; busca "SERRA CO2" isola via filtro de sistema+busca textual). Não avançar para outra melhoria sem validação do usuário. -->
+<!-- build anterior: 2026-07-11 v6.54 - CORREÇÃO PONTUAL (2 itens pedidos explicitamente, nada mais tocado em Testes/Falha/Plano além do necessário): (1) TESTE_TIPOS: lista técnica antiga (Acionamento/Supervisão/Comunicação com a central/Sirene-sinalização/Detector/Acionador manual/Módulo/Porta/Teste geral da loja/Outro) substituída pelas 5 opções operacionais corretas — FTR/Brigada/ENSEG/L3A/Lojista — identificando quem realizou/acompanhou o teste, não mais um tipo técnico de acionamento; label do campo trocado para "Responsável / origem do teste". Testes antigos com valores da lista anterior continuam sendo lidos/exibidos normalmente em "Testes recentes" (tipoTeste nunca é migrado nem apagado); só testes NOVOS usam a lista nova. (2) CAUSA RAIZ da Falha aberta pela Loja vir vazia: formFalha('', localId) só usava o localId para preencher o select de Loja — nunca resolvia o item técnico (módulo/porta) real da loja, então nenhum Painel/Laço/Piso/Item era carregado, e o técnico tinha que selecionar tudo de novo manualmente, exatamente como reportado. CORRIGIDO com a nova função resolverItemTecnicoDaLoja(local), que usa SOMENTE os vínculos reais gravados no cadastro (local.portaId/local.flmId, com fallback por db.portas.localId e db.equipamentos.localId quando o local não tiver o vínculo direto gravado) — nunca o texto visual da tabela nem dedução pelo nome. formFalha() agora chama essa função quando aberta a partir de Lojas/Áreas (falha nova) e usa o item resolvido para acionar o MESMO mecanismo de auto-preenchimento que a busca manual já usava (falhaSelectItem()) — preenchendo Painel/Laço/Piso/Loja/Item técnico automaticamente, sem criar módulo/porta/loja novos e sem duplicar nada. Quando a loja não tem nenhum vínculo técnico gravado (nem porta, nem módulo, nem equipamento), o formulário avisa isso explicitamente em vez de inventar um vínculo, e mantém a seleção manual disponível. (3) FALHA_CONDICOES: reduzida às 5 condições técnicas reais pedidas (Laço aberto/Módulo aberto/Módulo em curto/Incêndio disparado/Desativação) — "Em teste", "Renomear"/"Outro" e qualquer status personalizado saíram da lista de NOVA falha; a seleção continua sendo radio-button único (já era desde a Fase 3). Falha antiga com status "Em teste" ou personalizado continua abrindo normalmente na edição (o valor antigo é reintroduzido como opção extra só naquele registro, nunca oferecido para falha nova) — nenhum dado de registro antigo foi alterado ou apagado. Revisão de ortografia pedida ("Módulo em curdo"→"Módulo em curto", "indencdio disparado"→"Incêndio disparado"): não encontrada nenhuma ocorrência desses erros em nenhum ponto do código (STATUS_TECNICO_VALIDOS e FALHA_CONDICOES já usavam a grafia correta) — nada precisou ser corrigido nesse ponto. Funções alteradas: TESTE_TIPOS (lista), formFalha() (nova resolução de item via resolverItemTecnicoDaLoja()), FALHA_CONDICOES (lista). Nenhuma mudança em saveFalha()/saveTeste()/criarTeste()/sincronizarPlanosFalhas()/Plano de Ação/Code.gs/sincronização/importação. node --check validado sem erros. -->
 <!-- build anterior: 2026-07-11 v6.53 - VALIDAÇÃO FUNCIONAL/REGRESSÃO DA FASE 4 (Plano de Ação): auditoria dos 24 cenários pedidos encontrou e corrigiu 3 bugs reais + 1 gap de UX na v6.52. (1) BUG CRÍTICO: formPlano()/savePlano() — o hub principal do Plano, o modal com mais chance de ficar aberto por tempo — era o ÚNICO fluxo do Plano sem a trava de clienteId (os modais de execução/conclusão já tinham desde a v6.52, mas o de planejamento não). Corrigido: formPlano() agora grava window._planoClienteId na abertura, savePlano() bloqueia e alerta se o cliente mudou, e switchCliente() fecha o modal automaticamente (checando o elemento mCategoria, exclusivo do formPlano). (2) GAP: o botão "Salvar planejamento"/"Criar plano" não tinha id e nunca era desabilitado durante a gravação (diferente de Registrar execução/Concluir, que já desabilitavam) — a proteção lógica contra duplo clique (window._planoSaving) já existia e funcionava, mas faltava o feedback visual "Salvando..." pedido explicitamente na seção 12. Corrigido com id mBtnSalvarPlano. (3) BUG: planoRowsParaPdf() classificava qualquer situação diferente de "Concluído" como "pendência" — antes de existir o estado "Cancelado" (introduzido nesta fase) isso era inofensivo, mas agora fazia um Plano Cancelado aparecer no PDF de roteiro de campo como se ainda precisasse de visita técnica. Corrigido: Cancelado fica fora de ambos os modos do PDF (nem pendências, nem concluídos). (4) GAP: o filtro "Situação" da tela não tinha a opção "Cancelado" — impossível isolar planos cancelados na tabela. Corrigido, adicionado ao select. Também reforçada a rastreabilidade (seção 18): saveExecucaoPlano()/saveConclusaoPlano() agora gravam usuarioExecucao/usuarioConclusao (usuário logado que fez o lançamento) separado de executor/responsavelConclusao (quem de fato executou/foi responsável), conforme a distinção de 3 conceitos pedida. VALIDADO: regra 1 falha↔1 plano confirmada por leitura de todos os pontos de db.planos.push (todos guardados por !db.planos.find(p=>p.falhaId===X), exceto a criação explícita via savePlano quando !i, que só é alcançável pelo botão "+ Plano" — que só aparece em linhas "Falha sem plano"); nenhuma falha sintética "Em operação" é criada em lugar nenhum (grep em todos os db.falhas.push confirma que os 4 pontos existentes são: criarTeste com confirmarFalha, quickStatusChange, saveFalha nova, e um ponto pré-existente de desativação — nenhum deles roda a partir de concluirPlanoFormal); simulação Node isolada das regras de conclusão (Resolvido/Parcial/Cancelado + idempotência em duplo clique) — todos os cenários passaram, incluindo a segunda tentativa de concluir um plano já concluído sendo bloqueada. Confirmado por leitura de código (sem alteração necessária): Falha (Fase 3) e Testes (Fase 2) não foram tocados nesta fase; plano.fotos continua array simples de URLs para os PDFs, fotosMeta é puramente aditivo; sincronizarPlanosFalhas()/auditoriaSanearFalhasPlanos()/confirmarResultadoPlano()/abrirResultadoPlano() permanecem intactas e não são mais chamadas por nenhum botão da UI nova, mas continuam definidas e funcionais. GAP conhecido, não implementado nesta validação (fora de escopo — "não implemente novas funcionalidades agora"): seção 14 do pedido original da Fase 4 ("Necessário novo teste" oferecer botão de Executar Teste vinculado ao Plano) não foi construída na implementação da Fase 4 e permanece pendente para quando o usuário aprovar uma próxima rodada. -->
 <!-- build anterior: 2026-07-11 v6.52 - FASE 4: RETROFIT DO PLANO DE AÇÃO (aprovada após validação da Fase 3). AUDITORIA PRÉVIA: campos de db.planos mapeados por finalidade — Diagnóstico (100% herdado da Falha via itemInfoFromFalha()/f.status/f.motivo/f.obs/f.origem/f.data/f.responsavel/f.fotos — nada disso é gravado em campo próprio do Plano, sempre lido ao vivo da Falha relacionada); Planejamento (categoria/prioridade/responsavel/prazo/necessitaCompra/material/providencia/direcionamento — já existiam, só reorganizados); Execução (novos usos formais dos campos já existentes resultadoExecucao* e execucaoRealizada/executor/execucaoEm — *resultadoExecucao é novo, execucaoRealizada já existia desde a rotina legada de conclusão); Conclusão (concluidoEm/canceladoEm/justificativaCancelamento/responsavelConclusao — concluidoEm já existia, os demais são novos e aditivos). Nenhum campo de db.planos foi removido. Redundante identificado e eliminado da UI (não do banco): o antigo campo único "Execução realizada" do formPlano() fazia dupla função (planejamento E execução ao mesmo tempo) — agora "Providência planejada" (bloco 2) e "Registrar execução" (bloco 3, modal próprio) são ações e momentos distintos, sem pedir diagnóstico de novo em nenhum dos dois. MUDANÇAS: (1) formPlano() virou um hub de 5 blocos — Diagnóstico somente-leitura no topo (com atalho "Editar falha relacionada"), Planejamento editável (categoria/responsável ganharam mais opções — Inspeção complementar/Outra/Contratante/Outro, só adições, nada removido), e atalhos para Execução/Evidências/Conclusão como ações separadas (não mais um formulário único). Botão "Aplicar sugestão de direcionamento" substitui o preenchimento automático — direcionamento nunca mais sobrescreve a providência sem clique explícito. (2) Novo modal registrarExecucaoPlano()/saveExecucaoPlano(): resultado da execução (8 estados objetivos — EXECUCAO_RESULTADOS — com normalizeExecucaoResultado() unificando termos equivalentes como "Aguardando contratante"→"Aguardando terceiro", mantendo compatibilidade de leitura de valores antigos), descrição obrigatória, executor. (3) Novo modal concluirPlanoFormal()/saveConclusaoPlano(): situação final (Concluído/Parcial/Reprogramado/Cancelado — SITUACAO_FINAL_OPCOES) com as regras exatas do pedido — Concluído resolve a Falha (nunca cria falha sintética "Em operação", só atualiza status do item/loja/falha existentes, mesma lógica já usada por confirmarResultadoPlano() no branch Conforme); Parcial/Reprogramado mantêm Plano em andamento e Falha ativa, com campo de novo prazo; Cancelado exige justificativa e não resolve a Falha. Guard de conclusão duplicada: plano já Concluído/Cancelado recusa reabrir a tela de conclusão (usar "Reabrir"). (4) reprogramarPlano()/cancelarPlano()/reabrirPlano(): atalhos diretos com histórico (prazoOriginal preservado; reabrir um plano Concluído reabre também a Falha SE ela tinha sido resolvida por aquele mesmo plano — nunca cria um segundo plano, mesma falhaId/planoId). (5) Anexos do Plano ganharam categoria (Antes/Durante/Depois/Documento/Orçamento/Nota técnica/Vídeo/Outro) via novo array aditivo plano.fotosMeta (usuário/data/categoria/url) — plano.fotos continua sendo o array simples de URLs já consumido pelos PDFs/relatórios, sem mudança de formato; evidências da Falha continuam visíveis só no bloco Diagnóstico, nunca migradas para o Plano. (6) Mesmas proteções já validadas nas Fases 2/3: guard de duplo clique/reenvio (window._planoSaving) em savePlano/saveExecucaoPlano/saveConclusaoPlano/reprogramarPlano/cancelarPlano/reabrirPlano, e trava de clienteId (window._planoClienteId, verificada em switchCliente()) nos modais de execução/conclusão. (7) Tabela do Plano: nova coluna "Prazo" (destaque visual quando vencido), novo KPI "Vencidos" (prazo < hoje, nunca conta Concluído/Cancelado); linha ganhou ícone "🛠 Registrar execução" ao lado de "✔ Concluir" (que agora abre concluirPlanoFormal, não mais o fluxo legado); menu "⋮ Mais opções" ganhou Registrar execução/Reprogramar/Cancelar/Reabrir/Ver falha relacionada. NÃO ALTERADO (conforme pedido, só o necessário): sincronizarPlanosFalhas(), auditoriaSanearFalhasPlanos(), confirmarResultadoPlano()/abrirResultadoPlano() (rotina legada de conclusão Conforme/Não Conforme — permanece intacta e funcional, apenas não é mais o caminho padrão da UI), formFalha()/saveFalha()/criarTeste()/formTeste()/saveTeste() da Fase 2/3, importações, sincronização, Code.gs. Compatibilidade: nenhum campo de db.planos removido; planos antigos sem os novos campos abrem normalmente com defaults seguros; PDFs/relatórios continuam lendo plano.fotos/providencia/categoria/prioridade/responsavel/situacao exatamente como antes. node --check validado sem erros. -->
 <!-- build anterior: 2026-07-11 v6.51 - FASE 3: RETROFIT DO FORMULÁRIO DE FALHA (aprovada após validação da Fase 2). AUDITORIA PRÉVIA (antes de codar): formFalha()/saveFalha() liam ~15 campos simultâneos numa única tela (busca + 4 selects em cascata + Central/Laço/Piso/Loja redundantes com o item já selecionado + data + responsável + origem + motivo + 8 checkboxes de status + observação) — nenhum campo do Plano de Ação (prioridade/prazo/providência/material/categoria/conclusão) estava presente na Falha, então nada precisou ser removido nesse sentido; a redundância real era exigir Central/Laço/Piso/Loja como seleção quando o item técnico já os define. Campos obrigatórios identificados: itemId (seleção do item) e status (condição). Campos redundantes com o item selecionado: mFiltroPainel/mFiltroLaco/mFiltroPiso (ficam auto-preenchidos eocultos visualmente do fluxo principal, mas continuam no DOM/lógica para quando a falha é aberta direto pela aba Falhas). Campos herdados pelo Plano (só leitura, nunca duplicados na Falha): providência/prioridade/prazo/material/categoria/conclusão — confirmado que já não existiam no formulário de Falha. Nenhum campo de db.falhas foi removido do banco — apenas reorganizados na tela em 4 blocos (Local da ocorrência / Condição encontrada / Descrição / Evidências e confirmação). MUDANÇAS: (1) "Em operação" removida das opções de condição de uma NOVA falha (FALHA_CONDICOES) — normalização só ocorre por conclusão de Plano/quickStatusChange/teste aprovado, nunca criando falha nova; em edição de um registro legado que porventura tenha status "Em operação", a opção também não é reoferecida (força escolha de uma condição real). (2) Status do sistema virou seleção única (radio, antes eram checkboxes com JS simulando exclusividade). (3) Campo "Motivo" renomeado para "O que foi encontrado?" (obrigatório em falha nova) e "Observação técnica" para "Observação complementar" (opcional) — mesmos campos motivo/obs do banco, sem mudança de schema. (4) Origem expandida para as 9 opções pedidas (Inspeção/Teste/Painel Bosch/Técnico em campo/Brigada/Lojista/Monitoramento/Importação/Outro); valores antigos ("Teste em campo") continuam aparecendo normalmente ao editar um registro que já os tenha. (5) Responsável agora pré-preenchido com currentUser().nome (antes ficava em branco) + novo campo opcional "Equipe / executor" (rec.equipe, campo aditivo). (6) falhaItems() reformatada para "Tipo — Nome/Modelo — Endereço — Loja/Área" (seção 5), com busca parcial já suportada por onFalhaSearchInput() sem alteração. (7) Evidências: generalizado o mesmo pipeline de upload (queueFotoUploads/handleFotoUploadResult) com tipo='falha' — anexos de falha NOVA ficam num rascunho temporário (window._falhaFotosTemp, marcador '__novafalha__') até saveFalha() criar o rec.id e gravá-los definitivamente; anexos de falha em EDIÇÃO vão direto para o registro (fotosThumbsHtmlFalha/excluirAnexoFalha, com botão de exclusão antes/depois de salvar). (8) Proteções novas em saveFalha(): guard de duplo clique/reenvio (window._falhaSaving + botões desabilitados durante o salvamento), trava de clienteId na abertura do formulário (formFalha grava window._falhaClienteId; saveFalha bloqueia e switchCliente() fecha o modal se o cliente mudar no meio do preenchimento — mesmo padrão já validado na Fase 2). (9) Alerta de fechamento com alterações não salvas (fecharFormFalha(), sem infraestrutura de rascunho paralela). (10) Resumo pós-salvamento (confirmacaoFalhaRegistrada) com atalhos Abrir Plano de Ação / Voltar para Falhas / Registrar outra falha — não abre mais o formulário completo do Plano automaticamente. (11) Novo botão "🚩 Registrar falha" na tabela Lojas/Áreas (formFalha('',localId) pré-seleciona a loja); tabela de Falhas ganhou um botão extra "📄 Ver Plano" quando já existe plano vinculado. NÃO ALTERADO (conforme pedido, só o necessário): sincronizarPlanosFalhas(), auditoriaSanearFalhasPlanos(), confirmarResultadoPlano() (conclusão do Plano), criarTeste()/formTeste()/saveTeste() da Fase 2, importações, sincronização, Code.gs. Compatibilidade: nenhum campo de db.falhas foi removido; registros antigos sem `equipe`/`fotos` renderizam com defaults seguros (||''/[]); isolamento por cliente mantido (db já é por-cliente via clienteDbKey, e a nova trava de clienteId reforça a proteção na camada de UI). node --check validado sem erros. -->
@@ -1868,7 +1869,7 @@ function resultCountLabel(qtdFiltrada,qtdTotal,semResultado){
 /* Limpar filtros (seção 13) — usado por Lojas/Áreas, Falhas e Plano. Zera busca + selects/datas
    daquela aba e re-renderiza; não mexe no banco, não recarrega a página. */
 function limparFiltrosTela(aba){
-  if(aba==='locais')filters.locaisQ='';
+  if(aba==='locais'){filters.locaisQ='';filters.locaisSistema=''}
   else if(aba==='falhas')filters.falhas={situacao:'Em aberto'};
   else if(aba==='plano')filters.plano={};
   render();
@@ -2311,30 +2312,58 @@ function renderFlms(){
       </table>
     </div>`;
 }
+// chavePontoTecnico() (seção 9 do pedido do usuário, 2026-07): identidade estável do PONTO
+// TÉCNICO — nunca só o nome da loja. A mesma loja comercial (mesmo Nome Oficial/LUC) pode ter
+// vários pontos técnicos independentes (ex.: SDAI e CO2), cada um com seu próprio painel/laço/
+// módulo/porta/equipamento — e cada um com seu próprio status/testes/falhas/planos. Esta função
+// só gera a chave; nada no banco muda — db.locais já grava cada ponto como um registro próprio
+// (ensureLocal() já casa por portaId, não por nome — ver comentário em ensureLocal()).
+function chavePontoTecnico(ponto){
+  if(!ponto)return '';
+  return [clienteAtivo(),ponto.sistema||'',ponto.painelId||'',ponto.lacoId||'',ponto.flmId||'',ponto.portaId||'',ponto.equipamentoId||''].join('|');
+}
+// pontosTecnicosDaLoja(): todos os pontos técnicos (registros de db.locais) que compartilham o
+// mesmo Nome Oficial/LUC (ou nome cru, se não houver associação) — usado só para EXIBIÇÃO
+// (agrupamento visual/seletor), nunca para consolidar dado técnico.
+function pontosTecnicosDaLoja(local){
+  if(!local)return [local];
+  const chaveComercial=up(local.nomeOficial||local.nome||'');
+  return (db.locais||[]).filter(x=>up(x.nomeOficial||x.nome||'')===chaveComercial);
+}
 function renderLocais(){
   let q=filters.locaisQ||'';
+  let fSistema=filters.locaisSistema||'';
   // Resolve os campos derivados (nome do painel/laço, endereço do módulo, nº da porta) ANTES de
   // filtrar, para que a busca única (filtrarRegistrosPorBusca) possa considerar nome técnico, nome
   // oficial, LUC, tipo, painel, laço, piso, endereço do módulo, porta, sistema, status e observação
-  // — mesma regra usada em Falhas e Plano de Ação (seção 8 do pedido do usuário, 2026-07).
+  // — mesma regra usada em Falhas e Plano de Ação (seção 8 do pedido do usuário, 2026-07). O campo
+  // `sistema` (SDAI/CO2) já é gravado por PONTO TÉCNICO desde antes desta seção — a busca "SERRA
+  // CO2" já retornava só o ponto CO2 (multi-termo AND sobre r.sistema incluso abaixo).
   let todos=db.locais.map(l=>({
     ...l,
     painel:paiName(l.painelId),laco:lacName(l.lacoId),
     flmEndereco:flmById(l.flmId)?.endereco||'',
     portaNum:db.portas.find(p=>p.id===l.portaId)?.numero||'',
-    qtd:db.equipamentos.filter(e=>e.localId===l.id).length
+    qtd:db.equipamentos.filter(e=>e.localId===l.id).length,
+    sistema:l.sistema||'SDAI'
   }));
-  let rows=filtrarRegistrosPorBusca(todos,q,r=>[r.nome,r.nomeOficial,r.luc,r.tipo,r.painel,r.laco,r.piso,r.flmEndereco,r.portaNum?'Porta '+r.portaNum:'',r.sistema,r.status,r.obs].filter(Boolean).join(' '));
+  let comFiltroSistema=todos.filter(r=>!fSistema||r.sistema===fSistema);
+  let rows=filtrarRegistrosPorBusca(comFiltroSistema,q,r=>[r.nome,r.nomeOficial,r.luc,r.tipo,r.painel,r.laco,r.piso,r.flmEndereco,r.portaNum?'Porta '+r.portaNum:'',r.sistema,r.status,r.obs].filter(Boolean).join(' '));
 
+  // Seção 19: "lojas comerciais" (dedup por Nome Oficial/LUC — a mesma loja física com vários
+  // pontos técnicos conta 1 vez) É DIFERENTE de "pontos técnicos" (uma linha por registro de
+  // db.locais = um vínculo técnico independente, com seu próprio status/histórico).
   const total=rows.length;
+  const lojasComerciais=new Set(rows.map(r=>up(r.nomeOficial||r.nome||r.id))).size;
   const emOp=rows.filter(r=>!isFalhaStatus(r.status)).length;
   const comFalha=rows.filter(r=>isFalhaStatus(r.status)).length;
-  const semResultado=q&&!rows.length&&todos.length>0;
+  const semResultado=(q||fSistema)&&!rows.length&&todos.length>0;
 
   const trs=rows.map(r=>{
     const loc=dsLocHtml({painel:r.painel,piso:r.piso,laco:r.laco,tipo:r.flmEndereco?'Módulo '+r.flmEndereco:'',porta:r.portaNum});
+    const sisBadge=`<span class="pill ${r.sistema==='CO2'?'warn':'info'}" style="font-size:10.5px;padding:2px 7px">${esc(r.sistema)}</span>`;
     return `<tr>
-      <td><div style="font-weight:700;font-size:13.5px">${esc(r.nome)}</div><div style="font-size:11px;color:var(--l3a-text-muted)">${esc(r.tipo||'—')}</div></td>
+      <td><div style="font-weight:700;font-size:13.5px">${esc(r.nome)}</div><div style="font-size:11px;color:var(--l3a-text-muted)">${esc(r.tipo||'—')} • ${sisBadge}</div></td>
       <td>${loc}</td>
       <td style="font-size:12.5px;text-align:center">${r.qtd}</td>
       <td>${dsBadgeHtml(r.status)}</td>
@@ -2350,12 +2379,14 @@ function renderLocais(){
 
   document.getElementById('locais').innerHTML=`
     ${dsKpiStrip([
-      ['Lojas / Áreas',total,''],
+      ['Lojas comerciais',lojasComerciais,''],
+      ['Pontos técnicos',total,''],
       ['Em operação',emOp,'ok'],
       ['Com falha',comFalha,comFalha>0?'bad':'ok']
     ])}
     <div class="dsFilters">
-      <div class="field searchField"><label>Busca</label><div class="searchBox"><input value="${escSearchVal(q)}" data-filter-input="1" data-filter-path="locaisQ" data-focus-key="locaisBusca" placeholder="Nome, LUC, piso, painel, laço ou endereço..." autocomplete="off">${q?`<button type="button" class="searchClear" title="Limpar busca" onclick="filters.locaisQ='';render()">×</button>`:''}</div></div>
+      <div class="field searchField"><label>Busca</label><div class="searchBox"><input value="${escSearchVal(q)}" data-filter-input="1" data-filter-path="locaisQ" data-focus-key="locaisBusca" placeholder="Nome, sistema, LUC, piso, painel, laço ou endereço..." autocomplete="off">${q?`<button type="button" class="searchClear" title="Limpar busca" onclick="filters.locaisQ='';render()">×</button>`:''}</div></div>
+      <div class="field"><label>Sistema</label><select onchange="filters.locaisSistema=this.value;render()">${selectOpts(SISTEMA_LACO_OPTIONS,fSistema,'Todos')}</select></div>
       <div class="dsFilterActions"><button class="btn secondary small" onclick="limparFiltrosTela('locais')">Limpar filtros</button><button class="dsIco prim" onclick="formLocal()">+ Nova loja/área</button></div>
     </div>
     <div class="searchResultCount">${resultCountLabel(total,todos.length,semResultado)}</div>
@@ -2438,12 +2469,15 @@ function renderFalhas(){
   // Item 13 (soft-delete): falhas excluídas pela Auditoria (Master) somem da operação normal, mas
   // continuam em db.falhas — só visíveis no painel de Auditoria.
   let baseRowsSemBusca=(db.falhas||[]).filter(x=>!x.excluida)
-   .map(x=>{const loc=localById(x.localId); return {...x,painel:paiName(x.painelId),laco:lacName(x.lacoId),loja:loc?.nome||'',nomeOficial:loc?.nomeOficial||'',luc:loc?.luc||''}})
-   // Filtros de select (Tipo/Status) continuam aplicados em AND com a busca textual (seção 9).
-   .filter(x=>(!f.status||normalizeStatus(x.status)===f.status)&&(!f.tipo||x.tipo===f.tipo))
+   .map(x=>{const loc=localById(x.localId); return {...x,painel:paiName(x.painelId),laco:lacName(x.lacoId),loja:loc?.nome||'',nomeOficial:loc?.nomeOficial||'',luc:loc?.luc||'',sistema:loc?.sistema||''}})
+   // Filtros de select (Tipo/Status/Sistema) continuam aplicados em AND com a busca textual (seção 9;
+   // Sistema adicionado na seção 16 do pedido de multiplicidade de pontos técnicos, 2026-07 — a Falha
+   // já apontava para o localId exato do ponto técnico [SDAI ou CO2], nunca só para o nome da loja;
+   // isto só adiciona o FILTRO explícito na tela, o vínculo em si já era correto).
+   .filter(x=>(!f.status||normalizeStatus(x.status)===f.status)&&(!f.tipo||x.tipo===f.tipo)&&(!f.sistema||x.sistema===f.sistema))
    .sort((a,b)=>String(b.data).localeCompare(String(a.data)));
   // Busca única (normalizarBusca/filtrarRegistrosPorBusca) — mesma lógica de Lojas/Áreas e Plano.
-  let baseRows=filtrarRegistrosPorBusca(baseRowsSemBusca,f.q,x=>[x.loja,x.nomeOficial,x.luc,x.itemNome,x.tipo,x.itemId,x.painel,x.laco,x.piso,x.status,x.situacao,x.responsavel,x.motivo,x.obs,x.data].filter(Boolean).join(' '));
+  let baseRows=filtrarRegistrosPorBusca(baseRowsSemBusca,f.q,x=>[x.loja,x.nomeOficial,x.luc,x.sistema,x.itemNome,x.tipo,x.itemId,x.painel,x.laco,x.piso,x.status,x.situacao,x.responsavel,x.motivo,x.obs,x.data].filter(Boolean).join(' '));
 
   let rows=baseRows.filter(x=>situacaoFiltro==='Todos'||(situacaoFiltro==='Resolvida'?!!x.resolvidaEm:!x.resolvidaEm));
 
@@ -2458,7 +2492,7 @@ function renderFalhas(){
     const situacao=r.resolvidaEm?'Resolvida':'Em aberto';
     return `<tr>
       <td>${dsDateHtml(r.data)}</td>
-      <td><div style="font-weight:700;font-size:13px">${esc(r.loja||'—')}</div></td>
+      <td><div style="font-weight:700;font-size:13px">${esc(r.loja||'—')}</div>${r.sistema?`<span class="pill ${r.sistema==='CO2'?'warn':'info'}" style="font-size:10.5px;padding:1px 6px">${esc(r.sistema)}</span>`:''}</td>
       <td>${loc}</td>
       <td>${dsBadgeHtml(r.status)}</td>
       <td><span class="dsBadge ${r.resolvidaEm?'done':'open'}">${esc(situacao)}</span></td>
@@ -2482,6 +2516,7 @@ function renderFalhas(){
     <div class="dsFilters">
       <div class="field"><label>Tipo</label><select onchange="filters.falhas={...filters.falhas,tipo:this.value};render()">${selectOpts(unique(db.falhas.map(x=>x.tipo)),f.tipo)}</select></div>
       <div class="field"><label>Status</label><select onchange="filters.falhas={...filters.falhas,status:this.value};render()">${selectOpts(unique(db.falhas.map(x=>normalizeStatus(x.status))),f.status)}</select></div>
+      <div class="field"><label>Sistema</label><select onchange="filters.falhas={...filters.falhas,sistema:this.value};render()">${selectOpts(SISTEMA_LACO_OPTIONS,f.sistema,'Todos')}</select></div>
       <div class="field"><label>Situação</label><select onchange="filters.falhas={...filters.falhas,situacao:this.value};render()">${['Em aberto','Resolvida','Todos'].map(v=>`<option value="${v}" ${v===situacaoFiltro?'selected':''}>${v}</option>`).join('')}</select></div>
       <div class="field searchField"><label>Busca</label><div class="searchBox"><input value="${escSearchVal(f.q||'')}" data-filter-input="1" data-filter-group="falhas" data-filter-key="q" data-focus-key="falhasBusca" placeholder="Loja, item, endereço, status ou responsável..." autocomplete="off">${f.q?`<button type="button" class="searchClear" title="Limpar busca" onclick="filters.falhas={...filters.falhas,q:''};render()">×</button>`:''}</div></div>
       <div class="dsFilterActions"><button class="btn secondary small" onclick="limparFiltrosTela('falhas')">Limpar filtros</button><button class="dsIco prim" onclick="formFalha()">+ Registrar</button></div>
@@ -2589,8 +2624,8 @@ function formTeste(localId){
   const loc=localById(localId); if(!loc){alert('Loja/área não encontrada.');return}
   openModal(`<h2>Executar teste — ${esc(loc.nomeOficial||loc.nome)}</h2>
   <input type="hidden" id="mTesteLocalId" value="${esc(localId)}">
-  <div class="msg warn" style="margin-bottom:12px">Cliente, painel, laço, piso e loja já identificados automaticamente. Um teste aprovado NÃO gera falha — só fica registrado no histórico.</div>
-  <div class="compactHelp" style="margin-bottom:10px"><b>${esc(paiName(loc.painelId)||'—')}</b> • Laço ${esc(lacName(loc.lacoId)||'—')} • Piso ${esc(loc.piso||'—')} • ${esc(loc.nomeOficial||loc.nome)}</div>
+  <div class="msg warn" style="margin-bottom:12px">Cliente, sistema, painel, laço, piso e loja já identificados automaticamente — este é UM ponto técnico específico (a mesma loja comercial pode ter outros pontos, em SDAI e/ou CO2, cada um com seu próprio teste). Um teste aprovado NÃO gera falha — só fica registrado no histórico.</div>
+  <div class="compactHelp" style="margin-bottom:10px"><span class="pill ${(loc.sistema||'SDAI')==='CO2'?'warn':'info'}">${esc(loc.sistema||'SDAI')}</span> <b>${esc(paiName(loc.painelId)||'—')}</b> • Laço ${esc(lacName(loc.lacoId)||'—')} • Piso ${esc(loc.piso||'—')} • ${esc(loc.nomeOficial||loc.nome)}</div>
   <div class="formGrid">
     <div class="field"><label>Responsável / origem do teste</label><select id="mTesteTipo">${TESTE_TIPOS.map(t=>`<option>${esc(t)}</option>`).join('')}</select></div>
     <div class="field"><label>Responsável</label><input id="mTesteResp" value="${esc((currentUser().nome)||'')}"></div>
@@ -3138,7 +3173,11 @@ function formFalha(i='',prefillLocalId=''){
   const condicoes=(o.status&&o.status!=='Em operação'&&!FALHA_CONDICOES.includes(o.status)&&o.status!=='__renomear__')?[o.status,...FALHA_CONDICOES]:FALHA_CONDICOES;
   const usuarioAtual=currentUser();
   const respPadrao=o.responsavel||usuarioAtual.nome||'';
-  const resumoLocal=item?`${esc(paiName(item.painelId)||'—')} › ${esc(lacName(item.lacoId)||'—')} › Piso ${esc(item.piso||'—')} › ${esc(locName(item.localId)||'—')}`:'';
+  // Sistema (seção 14 do pedido de multiplicidade de pontos técnicos, 2026-07): resolvido do
+  // db.locais do item selecionado — nunca do nome da loja. Mostrado explicitamente no resumo para
+  // o técnico ter certeza de qual ponto (SDAI ou CO2) está registrando a falha.
+  const sistemaItem=item?(localById(item.localId)?.sistema||''):'';
+  const resumoLocal=item?`${sistemaItem?'['+sistemaItem+'] ':''}${esc(paiName(item.painelId)||'—')} › ${esc(lacName(item.lacoId)||'—')} › Piso ${esc(item.piso||'—')} › ${esc(locName(item.localId)||'—')}`:'';
   openModal(`<h2>${i?'Editar falha':'Registrar falha'}</h2>
   <input type="hidden" id="mEditingId" value="${esc(i)}">
   <input type="hidden" id="mOrigemOriginal" value="${esc(o.origem||'')}">
@@ -3592,6 +3631,7 @@ function formPlano(i='',falhaId=''){
   <h3 style="margin:6px 0 6px">1. Diagnóstico <small style="font-weight:400;color:var(--l3a-text-muted)">(herdado da falha — somente leitura)</small></h3>
   <div style="background:var(--l3a-neutral-bg,#f4f5f7);border:1px solid var(--l3a-border);border-radius:var(--l3a-radius-md);padding:10px 12px;margin-bottom:14px">
     ${diagBox('Cliente',clienteAtivoObj()?.nome||'')}
+    ${diagBox('Sistema',localById(f.localId)?.sistema||'')}
     ${diagBox('Loja / Área',inf.local)}
     ${diagBox('Painel',inf.painel)} ${diagBox('Laço',inf.laco)} ${diagBox('Piso',inf.piso)}
     ${diagBox('Item / Dispositivo',inf.itemNome)}
@@ -5279,12 +5319,14 @@ function buildPlanoRowsBase(){
     let f=db.falhas.find(x=>x.id===p.falhaId)||{};
     let inf=f.id?itemInfoFromFalha(f):{};
     let fotos=normalizeFotos(p.fotos||[]);
-    rows.push({origemLinha:'Plano',falhaId:p.falhaId||'',planoId:p.id,itemId:f.itemId||'',prioridade:p.prioridade||'Média',painel:inf.painel||p.painel||'',laco:inf.laco||p.laco||'',piso:inf.piso||p.piso||'',local:inf.local||p.local||'',itemNome:inf.itemNome||p.item||'',statusFalha:f.status||p.statusFalha||'',categoria:p.categoria||'',responsavel:p.responsavel||'',prazo:p.prazo||'',desde:f.data||p.criadoEm||'',criadoEm:p.criadoEm||'',concluidoEm:p.concluidoEm||'',situacao:p.situacao||'Aberto',direcionamento:p.direcionamento||getDirecionamento(f.status||p.statusFalha),fotos,fotoCount:fotos.length,plano:p,falha:f});
+    const sistemaP=localById(f.localId)?.sistema||'';
+    rows.push({origemLinha:'Plano',falhaId:p.falhaId||'',planoId:p.id,itemId:f.itemId||'',prioridade:p.prioridade||'Média',painel:inf.painel||p.painel||'',laco:inf.laco||p.laco||'',piso:inf.piso||p.piso||'',local:inf.local||p.local||'',itemNome:inf.itemNome||p.item||'',statusFalha:f.status||p.statusFalha||'',categoria:p.categoria||'',responsavel:p.responsavel||'',prazo:p.prazo||'',desde:f.data||p.criadoEm||'',criadoEm:p.criadoEm||'',concluidoEm:p.concluidoEm||'',situacao:p.situacao||'Aberto',direcionamento:p.direcionamento||getDirecionamento(f.status||p.statusFalha),fotos,fotoCount:fotos.length,sistema:sistemaP,plano:p,falha:f});
   });
   falhas.forEach(f=>{
     if(planoForFalha(f.id))return;
     let inf=itemInfoFromFalha(f);
-    rows.push({origemLinha:'Falha sem plano',falhaId:f.id,planoId:'',itemId:f.itemId||'',prioridade:'Média',painel:inf.painel||'',laco:inf.laco||'',piso:inf.piso||'',local:inf.local||'',itemNome:inf.itemNome||'',statusFalha:f.status||'',categoria:'',responsavel:'',desde:f.data||'',criadoEm:'',concluidoEm:'',situacao:'Sem plano',direcionamento:getDirecionamento(f.status),fotos:[],fotoCount:0,plano:null,falha:f});
+    const sistemaF=localById(f.localId)?.sistema||'';
+    rows.push({origemLinha:'Falha sem plano',falhaId:f.id,planoId:'',itemId:f.itemId||'',prioridade:'Média',painel:inf.painel||'',laco:inf.laco||'',piso:inf.piso||'',local:inf.local||'',itemNome:inf.itemNome||'',statusFalha:f.status||'',categoria:'',responsavel:'',desde:f.data||'',criadoEm:'',concluidoEm:'',situacao:'Sem plano',direcionamento:getDirecionamento(f.status),fotos:[],fotoCount:0,sistema:sistemaF,plano:null,falha:f});
   });
   return rows;
 }
@@ -5309,6 +5351,7 @@ function planoFiltrosAtuais(){
     ini:f.ini||'',
     fim:f.fim||'',
     statusTec:f.statusTec||'',
+    sistema:f.sistema||'',
     avancado:!!f.avancado
   };
 }
@@ -5333,6 +5376,7 @@ function planoRowsFiltrados(fx,{ignorarSituacao=false,ignorarCategoria=false,ign
     (!fx.piso||x.piso===fx.piso)&&
     (!fx.loja||x.local===fx.loja)&&
     (!fx.statusTec||normalizeStatus(x.statusFalha)===fx.statusTec)&&
+    (!fx.sistema||x.sistema===fx.sistema)&&
     inPeriodoPlano(x,fx.ini,fx.fim)
   );
 }
@@ -5481,6 +5525,7 @@ function renderPlano(){
         <select class="planoSelect" onchange="filters.plano={...filters.plano,loja:this.value};render()">${selectOpts(lojaOpts,fx.loja,'Loja')}</select>`;
         })()}
         <select class="planoSelect" onchange="filters.plano={...filters.plano,statusTec:this.value};render()">${selectOpts(STATUS_TECNICO_OPTIONS,fx.statusTec,'Status Técnico')}</select>
+        <select class="planoSelect" onchange="filters.plano={...filters.plano,sistema:this.value};render()">${selectOpts(SISTEMA_LACO_OPTIONS,fx.sistema,'Sistema')}</select>
         <button class="btn secondary small" onclick="auditarPlanosManual()" title="Confere se toda falha tem exatamente 1 Plano de Ação vinculado e corrige automaticamente o que faltar">Auditar Falhas × Plano</button>
       </div>
     </div>
@@ -6683,11 +6728,19 @@ function saveLocal(i){
   closeModal();save();
 }
 function openLocal(i){
+  // Nota (multiplicidade de pontos técnicos, 2026-07): Testes e Falhas aqui são filtrados sempre por
+  // localId===i (o ponto técnico exato, este db.locais específico) — nunca por nome da loja. Se a mesma
+  // loja comercial tiver outros pontos (ex.: SDAI e CO2), cada um abre seu próprio histórico ao ser
+  // acessado individualmente; a lista "Outros pontos técnicos desta loja" abaixo apenas referencia os
+  // irmãos (via pontosTecnicosDaLoja/lucLocaisIrmaos) sem misturar o histórico deles neste modal.
   ensureLucSchema();
   let l=db.locais.find(x=>x.id===i); if(!l)return;
   let hist=db.falhas.filter(f=>f.localId===i||f.itemId===i).sort((a,b)=>String(b.data).localeCompare(String(a.data)));
   let testes=(db.testes||[]).filter(t=>t.localId===i).sort((a,b)=>String(b.data).localeCompare(String(a.data)));
-  openModal(`<h2>${esc(lucNomeOficialLocal(l))}</h2><p><b>LUC:</b> ${lucDisplayLocal(l)} • <b>Chave lógica:</b> ${esc(lucChaveLogicaLocal(l))} • <b>Tipo:</b> ${esc(l.tipo)} • <b>Painel:</b> ${esc(paiName(l.painelId))} • <b>Laço:</b> ${esc(lacName(l.lacoId))} • <b>Piso:</b> ${esc(l.piso)}</p>${l.nomeOriginalCadastro?`<p class="note"><b>Nome antigo:</b> ${esc(l.nomeOriginalCadastro)}</p>`:''}
+  const irmaos=pontosTecnicosDaLoja(l).filter(x=>x.id!==l.id);
+  const sisBadge=`<span class="pill ${(l.sistema||'SDAI')==='CO2'?'warn':'info'}" style="font-size:10.5px;padding:2px 7px">${esc(l.sistema||'SDAI')}</span>`;
+  openModal(`<h2>${esc(lucNomeOficialLocal(l))} ${sisBadge}</h2><p><b>LUC:</b> ${lucDisplayLocal(l)} • <b>Chave lógica:</b> ${esc(lucChaveLogicaLocal(l))} • <b>Tipo:</b> ${esc(l.tipo)} • <b>Painel:</b> ${esc(paiName(l.painelId))} • <b>Laço:</b> ${esc(lacName(l.lacoId))} • <b>Piso:</b> ${esc(l.piso)}</p>${l.nomeOriginalCadastro?`<p class="note"><b>Nome antigo:</b> ${esc(l.nomeOriginalCadastro)}</p>`:''}
+  ${irmaos.length?`<p class="note"><b>Outros pontos técnicos desta loja (${irmaos.length}):</b> ${irmaos.map(x=>`<span class="pill ${((x.sistema||'SDAI')==='CO2')?'warn':'info'}" style="font-size:10.5px;padding:2px 7px;cursor:pointer" onclick="closeModal();openLocal('${x.id}')">${esc(x.sistema||'SDAI')} • ${esc(paiName(x.painelId)||'—')}/${esc(lacName(x.lacoId)||'—')}</span>`).join(' ')} — histórico independente, cada ponto tem seus próprios testes e falhas.</p>`:''}
   <h3>Testes recentes (${testes.length})</h3><div class="timeline">${testes.slice(0,10).map(t=>`<div class="tl"><b>${esc(t.resultado)}</b>${t.falhaId?' <span class="badge bad">gerou falha</span>':''}<br><small>${esc(fmtDataHoraTexto(t.data))} • ${esc(t.tipoTeste||'')} • ${esc(t.responsavel||'')}</small>${t.observacao?`<p>${esc(t.observacao)}</p>`:''}</div>`).join('')||'<p class="msg warn">Nenhum teste registrado ainda.</p>'}</div>
   <h3>Histórico da loja/área</h3><div class="timeline">${hist.map(h=>`<div class="tl"><b>${esc(h.status)}</b><br><small>${esc(h.data)} • ${esc(h.itemNome||'')}</small><p>${esc(h.motivo||h.obs||'Sem observação')}</p></div>`).join('')||'<p class="msg warn">Sem histórico.</p>'}</div>`);
 }
