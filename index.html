@@ -1493,7 +1493,7 @@ function obterHistoricoLojaNoPeriodo(localId,dataInicial,dataFinal){
     if(p.situacao==='Concluído'){
       const dCo=dataEventoPorTipo('planoConclusao',p);
       if(dCo&&inRange(dCo)){
-        eventos.push({id:'planoCo:'+p.id,data:dCo,tipoEvento:'Plano concluído',titulo:'Plano de Ação concluído',descricao:p.providencia||'',status:'Concluído',responsavel:p.responsavel||'',fotos:0,origem:'Plano de Ação',origemId:p.id});
+        eventos.push({id:'planoCo:'+p.id,data:dCo,tipoEvento:'Plano concluído',titulo:'Plano de Ação concluído'+(p.resultado?` — ${p.resultado}`:'')+(p.encaminhamento?` (${p.encaminhamento})`:''),descricao:p.providencia||'',status:'Concluído',responsavel:p.responsavel||'',fotos:(p.atendimentoFotos&&p.atendimentoFotos.length)||0,origem:'Plano de Ação',origemId:p.id});
       }
     }
   });
@@ -2562,6 +2562,7 @@ function formPlano(i='',falhaId=''){
     <div class="field" style="grid-column:1/-1"><label>Material necessário / quantidade</label><input id="mMaterial" value="${esc(o.material)}" placeholder="Ex.: FLM-420/4-CON-S/D - 01 unidade"></div>
     <div class="field" style="grid-column:1/-1"><label>Diagnóstico da falha <small style="font-weight:400;color:var(--l3a-text-muted)">(registrado na aba Falhas)</small></label><div style="background:var(--l3a-neutral-bg,#f4f5f7);border:1px solid var(--l3a-border);border-radius:var(--l3a-radius-md);padding:10px 12px;font-size:13.5px;color:var(--l3a-text);min-height:36px;white-space:pre-wrap">${esc(f.obs||f.motivo||'Nenhuma observação técnica registrada na falha.')}</div></div>
     <div class="field" style="grid-column:1/-1"><label>Direcionamento técnico <small style="font-weight:400;color:var(--l3a-text-muted)">(orientação operacional — gerado automaticamente pelo status da falha)</small></label><div style="background:var(--l3a-neutral-bg,#f4f5f7);border:1px solid var(--l3a-border);border-radius:var(--l3a-radius-md);padding:10px 12px;font-size:13.5px;color:var(--l3a-text);min-height:36px;white-space:pre-wrap">${esc(o.direcionamento||getDirecionamento(f.status||o.statusFalha))}</div></div>
+    ${i?`<div class="field" style="grid-column:1/-1"><label>Atendimento registrado</label><div style="background:var(--l3a-neutral-bg,#f4f5f7);border:1px solid var(--l3a-border);border-radius:var(--l3a-radius-md);padding:10px 12px;font-size:13.5px;color:var(--l3a-text)"><p><b>Resultado:</b> ${esc(o.resultado||'Não informado')} • <b>Encaminhamento:</b> ${esc(o.encaminhamento||'Não informado')} • <b>Atendido em:</b> ${o.atendidoEm?dsDateHtml(o.atendidoEm):'Não informado'}</p>${inspAnexosHtml(o.atendimentoFotos,'Fotos do atendimento')}${inspAnexosHtml(o.atendimentoVideos,'Vídeos do atendimento')}${inspAnexosHtml(o.atendimentoDocumentos,'Documentos do atendimento')}${(!o.atendimentoFotos||!o.atendimentoFotos.length)&&(!o.atendimentoVideos||!o.atendimentoVideos.length)&&(!o.atendimentoDocumentos||!o.atendimentoDocumentos.length)?'<p class="mutedLine">Nenhuma evidência de atendimento anexada.</p>':''}</div></div>`:''}
     <div class="field" style="grid-column:1/-1"><label>Execução realizada <small style="font-weight:400;color:var(--l3a-text-muted)">(registro do técnico em campo)</small></label><textarea id="mProv" placeholder="Ex.: Substituído módulo FLM. Refeito cabeamento. Identificado curto causado por infiltração.">${esc(o.providencia)}</textarea></div>
     ${i?`<div class="field" style="grid-column:1/-1"><label>Fotos do serviço (galeria do dispositivo, sem limite de quantidade)</label><input type="file" id="mFotoInput" accept="image/*" multiple onchange="queueFotoUploads('${i}',this.files);this.value=''"><small id="mFotoStatus" class="note"></small><small id="mFotoConta" class="note"></small><div id="mFotoGrid" style="margin-top:8px">${fotosThumbsHtml(o.fotos,72,i)}</div><br><button type="button" class="btn small secondary" onclick="verDiagnosticoUpload()">Ver diagnóstico do último upload</button><pre id="mFotoDiag" style="white-space:pre-wrap;font-size:11px;margin-top:8px;display:none;background:var(--l3a-neutral-bg,#f4f5f7);padding:10px;border-radius:8px;max-height:200px;overflow:auto"></pre></div>`:`<div class="field" style="grid-column:1/-1"><p class="mutedLine">Salve o plano primeiro para poder anexar fotos.</p></div>`}
   </div><br><button class="btn" onclick="savePlano('${i}','${falhaId||o.falhaId||''}')">Salvar plano</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`)
@@ -2573,6 +2574,85 @@ function savePlano(i,falhaId=''){
   const prioridadeNova=val('mPrioridade')||o.prioridade||'Média';
   Object.assign(o,{falhaId:falhaId||o.falhaId,categoria:val('mCategoria')||o.categoria,prioridade:prioridadeNova,responsavel:val('mRespPlano')||o.responsavel,situacao:val('mSituacao')||o.situacao,prazo:val('mPrazo'),necessitaCompra:val('mCompra')==='Sim',material:n(val('mMaterial')),justificativa:f.obs||f.motivo||o.justificativa||'',direcionamento:o.direcionamento||getDirecionamento(f.status||o.statusFalha),providencia:n(val('mProv')),painel:inf.painel||o.painel,laco:inf.laco||o.laco,piso:inf.piso||o.piso,local:inf.local||o.local,item:inf.itemNome||o.item,statusFalha:f.status||o.statusFalha,atualizadoEm:isoNow()});
   if(o.situacao==='Concluído'&&!o.concluidoEm)o.concluidoEm=isoNow(); if(!i)db.planos.push(o); closeModal(); save()
+}
+function formAtendimentoPlano(planoId){
+  if(!requireAccess('cadastro','Seu perfil não pode registrar atendimentos de plano de ação.'))return;
+  const p=db.planos.find(x=>x.id===planoId); if(!p){alert('Plano não encontrado.');return}
+  const f=db.falhas.find(x=>x.id===p.falhaId)||{};
+  const inf=f.id?itemInfoFromFalha(f):{};
+  const itemEquip=f.itemId&&!String(f.itemId).startsWith('flm:')?db.equipamentos.find(e=>e.id===f.itemId):null;
+  const porta=itemEquip&&itemEquip.portaId?db.portas.find(pt=>pt.id===itemEquip.portaId):null;
+  const statusAtual=normalizeStatus(f.status||p.statusFalha||'');
+  openModal(`<h2>Executar atendimento — Plano de Ação</h2>
+  <p class="msg warn" style="line-height:1.6"><b>Painel:</b> ${esc(inf.painel||'—')} • <b>Laço:</b> ${esc(inf.laco||'—')} • <b>Piso:</b> ${esc(inf.piso||'—')} • <b>Loja:</b> ${esc(inf.local||'—')} • <b>Módulo/Item:</b> ${esc(inf.itemNome||'—')}${porta?` • <b>Porta:</b> ${esc(porta.numero)}`:''} • <b>Status técnico atual:</b> ${esc(statusAtual||'—')}</p>
+  <input type="hidden" id="mAtdPlanoId" value="${esc(planoId)}">
+  <div class="formGrid">
+    <div class="field"><label>Data e hora</label><input id="mAtdData" type="datetime-local" value="${isoNow().slice(0,16)}"></div>
+    <div class="field"><label>Responsável</label><input id="mAtdResp" list="mAtdRespList" value="${esc(p.responsavel||'')}" placeholder="Nome do técnico responsável"><datalist id="mAtdRespList">${locaisResponsaveisDisponiveis().map(r=>`<option value="${esc(r)}">`).join('')}</datalist></div>
+    <div class="field"><label>Resultado</label><select id="mAtdResultado" onchange="atualizarAvisoAtendimento()"><option value="Conforme">Conforme</option><option value="Não Conforme">Não Conforme</option></select></div>
+    <div class="field" style="grid-column:1/-1" id="mAtdAviso"></div>
+    <div class="field" style="grid-column:1/-1"><label>Observações técnicas / execução realizada</label><textarea id="mAtdObs" placeholder="Detalhe o serviço executado">${esc(p.providencia||'')}</textarea></div>
+    <div class="field"><label>Fotos</label><input type="file" id="mAtdFotos" accept="image/*" multiple></div>
+    <div class="field"><label>Vídeos (opcional)</label><input type="file" id="mAtdVideos" accept="video/*" multiple></div>
+    <div class="field"><label>Documentos (opcional)</label><input type="file" id="mAtdDocs" multiple></div>
+  </div><br>
+  <button class="btn" onclick="saveAtendimentoPlano('${planoId}')">Salvar atendimento</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`);
+  atualizarAvisoAtendimento();
+}
+function atualizarAvisoAtendimento(){
+  const sel=document.getElementById('mAtdResultado'); const box=document.getElementById('mAtdAviso'); if(!sel||!box)return;
+  if(sel.value==='Não Conforme'){
+    box.innerHTML='<p class="msg warn">O Plano de Ação será concluído como atendimento executado, porém a falha permanecerá tecnicamente ativa e o encaminhamento será registrado como Notificar lojista.</p>';
+  } else {
+    box.innerHTML='<p class="msg ok">O Plano de Ação será concluído, a falha será resolvida e o status técnico será alterado para Em operação.</p>';
+  }
+}
+async function saveAtendimentoPlano(planoId){
+  const p=db.planos.find(x=>x.id===planoId); if(!p){alert('Plano não encontrado.');return}
+  const f=db.falhas.find(x=>x.id===p.falhaId);
+  const dataVal=document.getElementById('mAtdData').value||isoNow();
+  const responsavel=n(document.getElementById('mAtdResp').value);
+  const resultado=document.getElementById('mAtdResultado').value==='Não Conforme'?'Não Conforme':'Conforme';
+  const observacoes=n(document.getElementById('mAtdObs').value);
+  const [fotos,videos,documentos]=await Promise.all([
+    readFilesAsDataUrls(document.getElementById('mAtdFotos').files),
+    readFilesAsDataUrls(document.getElementById('mAtdVideos').files),
+    readFilesAsDataUrls(document.getElementById('mAtdDocs').files)
+  ]);
+  p.atendimentoFotos=(p.atendimentoFotos||[]).concat(fotos);
+  p.atendimentoVideos=(p.atendimentoVideos||[]).concat(videos);
+  p.atendimentoDocumentos=(p.atendimentoDocumentos||[]).concat(documentos);
+  if(responsavel)p.responsavel=responsavel;
+  if(observacoes)p.providencia=observacoes;
+  p.resultado=resultado;
+  p.situacao='Concluído';
+  p.concluidoEm=dataVal;
+  p.atendidoEm=dataVal;
+
+  const itemId=(f&&f.itemId)||'';
+  const isFlm=String(itemId).startsWith('flm:');
+  const item=isFlm?flmById(String(itemId).slice(4)):db.equipamentos.find(e=>e.id===itemId);
+  const loc=(f&&f.localId)?localById(f.localId):null;
+  const statusAnterior=(item&&item.status)||(f&&f.status)||p.statusFalha||'Falha';
+
+  db.eventosOperacionais=db.eventosOperacionais||[];
+  if(resultado==='Conforme'){
+    p.encaminhamento='';
+    if(f){
+      f.resolvidaEm=dataVal;
+      if(item){item.status='Em operação';item.ultimaAlteracao=isoNow()}
+      if(loc){loc.status='Em operação';loc.ultimaAlteracao=isoNow()}
+    }
+    db.eventosOperacionais.push({id:id(),data:dataVal,tipoEvento:'Atendimento de Plano de Ação — Conforme',falhaId:p.falhaId,planoId:p.id,localId:f?f.localId:'',itemId:f?f.itemId:'',painelId:(item&&item.painelId)||(f&&f.painelId)||'',lacoId:(item&&item.lacoId)||(f&&f.lacoId)||'',statusAnterior,statusFinal:'Em operação',responsavel:p.responsavel,resultado,observacao:observacoes,encaminhamento:''});
+    logLocal('Plano de Ação',p.id,'Atendimento executado — Conforme',`Falha ${f?f.id:''} marcada como resolvida. Status ${statusAnterior} → Em operação.`);
+    alert('Atendimento salvo. Plano concluído, falha resolvida e status técnico atualizado para Em operação.');
+  } else {
+    p.encaminhamento='Notificar lojista';
+    db.eventosOperacionais.push({id:id(),data:dataVal,tipoEvento:'Atendimento de Plano de Ação — Não Conforme',falhaId:p.falhaId,planoId:p.id,localId:f?f.localId:'',itemId:f?f.itemId:'',painelId:(item&&item.painelId)||(f&&f.painelId)||'',lacoId:(item&&item.lacoId)||(f&&f.lacoId)||'',statusAnterior,statusFinal:statusAnterior,responsavel:p.responsavel,resultado,observacao:observacoes,encaminhamento:'Notificar lojista'});
+    logLocal('Plano de Ação',p.id,'Atendimento executado — Não Conforme',`Falha ${f?f.id:''} permanece ativa (${statusAnterior}). Encaminhamento: Notificar lojista.`);
+    alert('Atendimento salvo. Plano concluído como atendimento executado; a falha permanece tecnicamente ativa e foi encaminhada para Notificar lojista.');
+  }
+  closeModal(); save();
 }
 function abrirEvidencias(i){formPlano(i)}
 function maisOpcoesPlano(planoId,falhaId){
@@ -2603,7 +2683,7 @@ function duplicarPlano(planoId){
   alert('Dados do plano copiados (categoria, prioridade, responsável, material). Registre a nova falha em Falhas → "+ Registrar" — o plano gerado automaticamente já virá preenchido com os mesmos dados.');
   formFalha();
 }
-function concluirPlano(i){let o=db.planos.find(x=>x.id===i); if(!o)return; o.situacao='Concluído'; o.concluidoEm=isoNow(); let f=db.falhas.find(x=>x.id===o.falhaId); if(f){
+function concluirPlano(i){let o=db.planos.find(x=>x.id===i); if(!o)return; o.situacao='Concluído'; o.concluidoEm=isoNow(); o.resultado=o.resultado||'Conforme'; let f=db.falhas.find(x=>x.id===o.falhaId); if(f){
     // CORREÇÃO (item 5/6 do pedido do usuário, 2026-07): antes só a falha SINTÉTICA "Em operação"
     // criada abaixo recebia resolvidaEm — a falha original permanecia com resolvidaEm vazio e por
     // isso continuava aparecendo como "Em aberto" na aba Falhas mesmo com o plano concluído. Agora a
@@ -3156,12 +3236,12 @@ function buildPlanoRowsBase(){
     let f=db.falhas.find(x=>x.id===p.falhaId)||{};
     let inf=f.id?itemInfoFromFalha(f):{};
     let fotos=normalizeFotos(p.fotos||[]);
-    rows.push({origemLinha:'Plano',falhaId:p.falhaId||'',planoId:p.id,itemId:f.itemId||'',prioridade:p.prioridade||'Média',painel:inf.painel||p.painel||'',laco:inf.laco||p.laco||'',piso:inf.piso||p.piso||'',local:inf.local||p.local||'',itemNome:inf.itemNome||p.item||'',statusFalha:f.status||p.statusFalha||'',categoria:p.categoria||'',responsavel:p.responsavel||'',desde:f.data||p.criadoEm||'',criadoEm:p.criadoEm||'',concluidoEm:p.concluidoEm||'',situacao:p.situacao||'Aberto',direcionamento:p.direcionamento||getDirecionamento(f.status||p.statusFalha),fotos,fotoCount:fotos.length,plano:p,falha:f});
+    rows.push({origemLinha:'Plano',falhaId:p.falhaId||'',planoId:p.id,itemId:f.itemId||'',prioridade:p.prioridade||'Média',painel:inf.painel||p.painel||'',laco:inf.laco||p.laco||'',piso:inf.piso||p.piso||'',local:inf.local||p.local||'',itemNome:inf.itemNome||p.item||'',statusFalha:f.status||p.statusFalha||'',categoria:p.categoria||'',responsavel:p.responsavel||'',desde:f.data||p.criadoEm||'',criadoEm:p.criadoEm||'',concluidoEm:p.concluidoEm||'',situacao:p.situacao||'Aberto',direcionamento:p.direcionamento||getDirecionamento(f.status||p.statusFalha),resultado:p.resultado||'',encaminhamento:p.encaminhamento||'',fotos,fotoCount:fotos.length,plano:p,falha:f});
   });
   falhas.forEach(f=>{
     if(planoForFalha(f.id))return;
     let inf=itemInfoFromFalha(f);
-    rows.push({origemLinha:'Falha sem plano',falhaId:f.id,planoId:'',itemId:f.itemId||'',prioridade:'Média',painel:inf.painel||'',laco:inf.laco||'',piso:inf.piso||'',local:inf.local||'',itemNome:inf.itemNome||'',statusFalha:f.status||'',categoria:'',responsavel:'',desde:f.data||'',criadoEm:'',concluidoEm:'',situacao:'Sem plano',direcionamento:getDirecionamento(f.status),fotos:[],fotoCount:0,plano:null,falha:f});
+    rows.push({origemLinha:'Falha sem plano',falhaId:f.id,planoId:'',itemId:f.itemId||'',prioridade:'Média',painel:inf.painel||'',laco:inf.laco||'',piso:inf.piso||'',local:inf.local||'',itemNome:inf.itemNome||'',statusFalha:f.status||'',categoria:'',responsavel:'',desde:f.data||'',criadoEm:'',concluidoEm:'',situacao:'Sem plano',direcionamento:getDirecionamento(f.status),resultado:'',encaminhamento:'',fotos:[],fotoCount:0,plano:null,falha:f});
   });
   return rows;
 }
@@ -3186,6 +3266,7 @@ function planoFiltrosAtuais(){
     ini:f.ini||'',
     fim:f.fim||'',
     statusTec:f.statusTec||'',
+    resultado:f.resultado||'',
     avancado:!!f.avancado
   };
 }
@@ -3206,6 +3287,7 @@ function planoRowsFiltrados(fx,{ignorarSituacao=false,ignorarCategoria=false,ign
     (!fx.piso||x.piso===fx.piso)&&
     (!fx.loja||x.local===fx.loja)&&
     (!fx.statusTec||normalizeStatus(x.statusFalha)===fx.statusTec)&&
+    (!fx.resultado||x.resultado===fx.resultado)&&
     inPeriodoPlano(x,fx.ini,fx.fim)
   );
 }
@@ -3238,6 +3320,7 @@ function setPlanoCardFiltro(tipo){
   else if(tipo==='andamento')filters.plano={...cur,sit:cur.sit==='Em andamento'?'':'Em andamento'};
   else if(tipo==='concluidos')filters.plano={...cur,sit:cur.sit==='Concluído'?'':'Concluído'};
   else if(tipo==='criticos')filters.plano={...cur,prio:cur.prio==='Crítica'?'':'Crítica'};
+  else if(tipo==='naoconformes')filters.plano={...cur,resultado:cur.resultado==='Não Conforme'?'':'Não Conforme'};
   render();
 }
 function renderPlano(){
@@ -3253,19 +3336,23 @@ function renderPlano(){
   const kpiAndamento=rowsParaCards.filter(x=>x.situacao==='Em andamento').length;
   const kpiConcluidos=rowsParaCards.filter(x=>x.situacao==='Concluído').length;
   const kpiCriticos=rowsParaCards.filter(x=>x.prioridade==='Crítica'&&x.situacao!=='Concluído').length;
+  const kpiNaoConformes=rowsParaCards.filter(x=>x.resultado==='Não Conforme').length;
 
   let filtrados=planoRowsFiltrados(fx)
     .sort((a,b)=>situacaoPesoPlano(a.situacao)-situacaoPesoPlano(b.situacao)||prioridadePeso(a.prioridade)-prioridadePeso(b.prioridade)||String(a.desde||a.criadoEm).localeCompare(String(b.desde||b.criadoEm)));
 
   const situBadge=s=>{const cls=s==='Concluído'?'ok':s==='Em andamento'?'info':s==='Sem plano'||s==='Cancelado'?'warn':'';return `<span class="pill ${cls}" style="font-size:11px">${esc(s)}</span>`};
   const prioBadge=p=>{const cls=p==='Crítica'||p==='Alta'||p==='Urgente'?'bad':p==='Média'?'warn':'';return `<span class="pill ${cls}" style="font-size:10px;padding:2px 7px">${esc(p)}</span>`};
+  const resultBadge=r=>r.resultado?`<span class="pill ${r.resultado==='Conforme'?'ok':'bad'}" style="font-size:11px">${esc(r.resultado)}</span>`:'<span class="mutedLine">Não informado</span>';
+  const encamBadge=r=>r.encaminhamento?`<span class="pill warn" style="font-size:11px">${esc(r.encaminhamento)}</span>`:'<span class="mutedLine">—</span>';
   const trs=filtrados.map(r=>{
     const locHtml=`<div style="line-height:1.3"><span style="font-size:11px;font-weight:700;color:var(--l3a-text-muted)">P${esc(r.piso?.replace(/\D/g,''))??''} • ${esc(r.laco||'—')}</span><br><span style="font-size:12px;font-weight:600">${esc(r.itemNome||'—')}</span></div>`;
-    const dirPreview=r.direcionamento?`<span title="${esc(r.direcionamento)}" style="font-size:12px;color:var(--l3a-text-soft);cursor:help">${esc(r.direcionamento.slice(0,48))}${r.direcionamento.length>48?'…':''}</span>`:'<span class="mutedLine">—</span>';
     const evid=r.fotoCount?`📷 ${r.fotoCount}`:'—';
     const acoes=`<div class="planoAcoes">
-      ${r.planoId?`<button class="iconBtn" title="Editar" onclick="formPlano('${r.planoId}')">✏</button>`:`<button class="btn small" title="Criar plano" onclick="formPlano('','${r.falhaId}')" style="padding:3px 8px;font-size:11px">+ Plano</button>`}
+      ${r.planoId?`<button class="btn small" title="Executar atendimento" onclick="formAtendimentoPlano('${r.planoId}')" style="padding:3px 8px;font-size:11px">📝 Atender</button>`:`<button class="btn small" title="Criar plano" onclick="formPlano('','${r.falhaId}')" style="padding:3px 8px;font-size:11px">+ Plano</button>`}
+      ${r.planoId?`<button class="iconBtn" title="Ver histórico" onclick="historicoPlano('${r.falhaId}')">🕘</button>`:''}
       ${r.planoId?`<button class="iconBtn" title="Evidências (${r.fotoCount||0})" onclick="abrirEvidencias('${r.planoId}')">📷</button>`:''}
+      ${r.planoId?`<button class="iconBtn" title="Editar" onclick="formPlano('${r.planoId}')">✏</button>`:''}
       ${r.planoId&&r.situacao!=='Concluído'?`<button class="iconBtn" title="Concluir" onclick="concluirPlano('${r.planoId}')">✔</button>`:''}
       ${r.planoId?`<button class="iconBtn" title="Mais opções" onclick="maisOpcoesPlano('${r.planoId}','${r.falhaId}')">⋮</button>`:''}
     </div>`;
@@ -3274,10 +3361,10 @@ function renderPlano(){
       <td style="padding:5px 8px;max-width:130px"><div style="font-weight:700;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.local)}">${esc(r.local||'—')}</div></td>
       <td style="padding:5px 8px">${locHtml}</td>
       <td style="padding:5px 8px;white-space:nowrap"><span class="pill ${statusClass(r.statusFalha)}" style="font-size:11px">${esc(normalizeStatus(r.statusFalha)||'—')}</span></td>
-      <td style="padding:5px 8px;max-width:180px">${dirPreview}</td>
+      <td style="padding:5px 8px;white-space:nowrap">${resultBadge(r)}</td>
+      <td style="padding:5px 8px;white-space:nowrap">${encamBadge(r)}</td>
       <td style="padding:5px 8px;white-space:nowrap;font-size:12px">${esc(r.responsavel||'—')}</td>
       <td style="padding:5px 8px">${situBadge(r.situacao)}</td>
-      <td style="padding:5px 8px;white-space:nowrap;font-size:12px;text-align:center">${dsDateHtml(r.desde)}</td>
       <td style="padding:5px 8px;white-space:nowrap;font-size:12px;text-align:center">${r.concluidoEm?dsDateHtml(r.concluidoEm):'—'}</td>
       <td style="padding:5px 8px;text-align:center;font-size:12px;color:var(--l3a-text-muted)">${evid}</td>
       <td style="padding:5px 8px">${acoes}</td>
@@ -3288,12 +3375,12 @@ function renderPlano(){
     <th style="padding:6px 8px;white-space:nowrap">Prioridade</th>
     <th style="padding:6px 8px">Loja / Área</th>
     <th style="padding:6px 8px">Localização</th>
-    <th style="padding:6px 8px;white-space:nowrap">Status da Falha</th>
-    <th style="padding:6px 8px">Direcionamento Técnico</th>
+    <th style="padding:6px 8px;white-space:nowrap">Status técnico</th>
+    <th style="padding:6px 8px;white-space:nowrap">Resultado</th>
+    <th style="padding:6px 8px;white-space:nowrap">Encaminhamento</th>
     <th style="padding:6px 8px">Responsável</th>
     <th style="padding:6px 8px">Situação</th>
-    <th style="padding:6px 8px;text-align:center">Abertura</th>
-    <th style="padding:6px 8px;text-align:center">Conclusão</th>
+    <th style="padding:6px 8px;text-align:center">Data de atendimento</th>
     <th style="padding:6px 8px;text-align:center">Evid.</th>
     <th style="padding:6px 8px">Ações</th>
   </tr>`;
@@ -3311,8 +3398,6 @@ function renderPlano(){
         <select class="planoSelect" onchange="filters.plano={...filters.plano,prio:this.value};render()">${selectOpts(planoPrioridades(),fx.prio,'Prioridade')}</select>
         <select class="planoSelect" onchange="filters.plano={...filters.plano,cat:this.value};render()">${selectOpts(planoCategorias(),fcat,'Categoria')}</select>
         <select class="planoSelect" onchange="filters.plano={...filters.plano,resp:this.value};render()">${selectOpts(planoResponsaveis(),fx.resp,'Responsável')}</select>
-        <input class="planoDate" type="date" title="Período inicial" onchange="filters.plano={...filters.plano,ini:this.value};render()" value="${esc(fx.ini)}">
-        <input class="planoDate" type="date" title="Período final" onchange="filters.plano={...filters.plano,fim:this.value};render()" value="${esc(fx.fim)}">
         <button class="btn secondary small" onclick="togglePlanoFiltrosAvancados()">${avancadoAberto?'▴':'▾'} Mais filtros</button>
         <details class="pdfMenu">
           <summary class="btn secondary small">📄 Exportar PDF ▾</summary>
@@ -3329,6 +3414,9 @@ function renderPlano(){
         <select class="planoSelect" onchange="filters.plano={...filters.plano,loja:this.value};render()">${selectOpts(unique(rows.map(x=>x.local)),fx.loja,'Loja')}</select>
         <select class="planoSelect" onchange="filters.plano={...filters.plano,piso:this.value};render()">${selectOpts(unique(rows.map(x=>x.piso)),fx.piso,'Piso')}</select>
         <select class="planoSelect" onchange="filters.plano={...filters.plano,statusTec:this.value};render()">${selectOpts(STATUS_TECNICO_OPTIONS,fx.statusTec,'Status Técnico')}</select>
+        <input class="planoDate" type="date" title="Período inicial" onchange="filters.plano={...filters.plano,ini:this.value};render()" value="${esc(fx.ini)}">
+        <input class="planoDate" type="date" title="Período final" onchange="filters.plano={...filters.plano,fim:this.value};render()" value="${esc(fx.fim)}">
+        <select class="planoSelect" onchange="filters.plano={...filters.plano,resultado:this.value};render()">${selectOpts(['Conforme','Não Conforme'],fx.resultado,'Resultado')}</select>
         <button class="btn secondary small" onclick="auditarPlanosManual()" title="Confere se toda falha tem exatamente 1 Plano de Ação vinculado e corrige automaticamente o que faltar">Auditar Falhas × Plano</button>
       </div>
     </div>
@@ -3337,6 +3425,7 @@ function renderPlano(){
       ${dsKpi('Em andamento',kpiAndamento,fsit==='Em andamento'?'info':'',"setPlanoCardFiltro('andamento')")}
       ${dsKpi('Concluídos',kpiConcluidos,fsit==='Concluído'?'ok':'',"setPlanoCardFiltro('concluidos')")}
       ${dsKpi('Críticos',kpiCriticos,fx.prio==='Crítica'?'bad':'',"setPlanoCardFiltro('criticos')")}
+      ${dsKpi('Não conformes',kpiNaoConformes,fx.resultado==='Não Conforme'?'bad':'',"setPlanoCardFiltro('naoconformes')")}
     </div>
     <div class="card planoTableCard">
       <div class="planoTableHead">
