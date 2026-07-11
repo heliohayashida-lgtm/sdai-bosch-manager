@@ -1148,6 +1148,8 @@ function fmtDataHora(raw){
   return `<div class="dataHoraCell"><b>${dd}/${mm}/${yy}</b><span>${hh}:${mi}</span></div>`;
 }
 function esc(s){return n(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function escAttrRaw(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function normalizarBusca(s){return up(s)}
 function csvEscape(s){s=n(s);return /[;,"\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s}
 function normKey(k){return up(k).replace(/^\uFEFF/,'').replace(/[^A-Z0-9]/g,'')}
 function get(row,names){const keys=Object.keys(row); for(const name of names){const nk=normKey(name); const k=keys.find(x=>normKey(x)===nk); if(k!==undefined)return n(row[k])} return ''}
@@ -1443,7 +1445,15 @@ function locaisResponsaveisDisponiveis(){
   const s2=(db.usuarios||[]).map(u=>u.nome).filter(Boolean);
   return unique(s1.concat(s2));
 }
-function renderLocais(){
+// CORREÇÃO (busca de Lojas/Áreas travando/perdendo foco): renderLocais() foi dividida em duas
+// funções. renderLocais() monta a ESTRUTURA (KPIs, filtros, cabeçalho da tabela e o próprio
+// <input> de busca) uma única vez — ao entrar na aba, ou quando um filtro dropdown muda (o que já
+// dispara um render() completo do sistema). renderLocaisResultado() apenas recalcula a lista
+// filtrada e atualiza o conteúdo dos KPIs e do <tbody> da tabela, sem tocar no <input> nem em
+// nenhuma outra parte da tela — assim o campo de busca nunca é destruído/recriado enquanto o
+// usuário digita, e a digitação nunca dispara o render() do sistema inteiro (menu, dashboard,
+// gráficos, outras abas).
+function locaisRowsFiltradas(){
   let q=filters.locaisQ||'';
   let f=filters.locaisF||{};
   let rows0=db.locais.map(l=>({
@@ -1455,8 +1465,15 @@ function renderLocais(){
     _ultimaInspecao:ultimaInspecaoLoja(l),
     _possuiFalha:localPossuiFalhaAberta(l)
   }));
+  const termo=normalizarBusca(q);
   let rows=rows0.filter(r=>{
-    if(q&&!JSON.stringify(r).toUpperCase().includes(up(q)))return false;
+    if(termo){
+      const texto=normalizarBusca([
+        r.nome,r.nomeOficial,r.luc,r.tipo,r.painel,r.laco,r.piso,
+        r.flmEndereco,r.portaNum,r.status,r.endereco
+      ].filter(v=>v!==undefined&&v!==null).join(' | '));
+      if(!texto.includes(termo))return false;
+    }
     if(f.status&&normalizeStatus(r.status)!==f.status)return false;
     if(f.piso&&(r.piso||'')!==f.piso)return false;
     if(f.painel&&r.painel!==f.painel)return false;
@@ -1469,18 +1486,21 @@ function renderLocais(){
     if(f.dataAte&&(!r._ultimaInspecao||String(r._ultimaInspecao.data||'').slice(0,10)>f.dataAte))return false;
     return true;
   });
-
+  return rows;
+}
+function renderLocaisResultado(){
+  const kpiEl=document.getElementById('locaisKpis');
+  const tbodyEl=document.getElementById('locaisTbody');
+  if(!kpiEl||!tbodyEl)return; // estrutura ainda não montada (aba não está ativa) - renderLocais() cuida disso
+  const rows=locaisRowsFiltradas();
   const total=rows.length;
   const emOp=rows.filter(r=>!isFalhaStatus(r.status)).length;
   const comFalha=rows.filter(r=>isFalhaStatus(r.status)).length;
-
-  const pisosOpts=unique(db.locais.map(l=>l.piso).filter(Boolean));
-  const paineisOpts=unique(db.locais.map(l=>paiName(l.painelId)).filter(Boolean));
-  const lacosOpts=unique(db.locais.map(l=>lacName(l.lacoId)).filter(Boolean));
-  const statusOpts=unique(db.locais.map(l=>normalizeStatus(l.status)).filter(Boolean));
-  const tiposOpts=['Loja','Área Comum','Área Técnica'];
-  const respOpts=locaisResponsaveisDisponiveis();
-
+  kpiEl.innerHTML=dsKpiStrip([
+    ['Lojas / Áreas',total,''],
+    ['Em operação',emOp,'ok'],
+    ['Com falha',comFalha,comFalha>0?'bad':'ok']
+  ]);
   const trs=rows.map(r=>{
     const loc=dsLocHtml({painel:r.painel,piso:r.piso,laco:r.laco,tipo:r.flmEndereco?'Módulo '+r.flmEndereco:'',porta:r.portaNum});
     return `<tr>
@@ -1496,15 +1516,32 @@ function renderLocais(){
       </div></td>
     </tr>`;
   }).join('');
+  tbodyEl.innerHTML=trs||`<tr><td colspan="5"><div class="emptyState">Nenhuma loja/área cadastrada.</div></td></tr>`;
+}
+// atualizarBuscaLocais(): chamada pelo listener 'input' do campo de busca de Lojas/Áreas. Só
+// atualiza o estado do filtro e, após um debounce curto (280ms), recalcula e repinta SOMENTE os
+// KPIs e a tabela da aba (renderLocaisResultado) — nunca chama render() completo, então o menu,
+// o dashboard, os gráficos e as outras abas não são re-renderizados a cada tecla digitada, e o
+// próprio <input> nunca é recriado/perdido durante a digitação.
+function atualizarBuscaLocais(valor){
+  filters.locaisQ=valor;
+  clearTimeout(searchRenderTimer);
+  searchRenderTimer=setTimeout(renderLocaisResultado,280);
+}
+function renderLocais(){
+  let q=filters.locaisQ||'';
+  let f=filters.locaisF||{};
+  const pisosOpts=unique(db.locais.map(l=>l.piso).filter(Boolean));
+  const paineisOpts=unique(db.locais.map(l=>paiName(l.painelId)).filter(Boolean));
+  const lacosOpts=unique(db.locais.map(l=>lacName(l.lacoId)).filter(Boolean));
+  const statusOpts=unique(db.locais.map(l=>normalizeStatus(l.status)).filter(Boolean));
+  const tiposOpts=['Loja','Área Comum','Área Técnica'];
+  const respOpts=locaisResponsaveisDisponiveis();
 
   document.getElementById('locais').innerHTML=`
-    ${dsKpiStrip([
-      ['Lojas / Áreas',total,''],
-      ['Em operação',emOp,'ok'],
-      ['Com falha',comFalha,comFalha>0?'bad':'ok']
-    ])}
+    <div id="locaisKpis"></div>
     <div class="dsFilters">
-      <div class="field"><label>Busca</label><input value="${esc(q)}" data-filter-input="1" data-filter-path="locaisQ" data-focus-key="locaisBusca" placeholder="Loja, piso, painel, laço..."></div>
+      <div class="field"><label>Busca</label><input id="locaisBusca" value="${escAttrRaw(q)}" data-focus-key="locaisBusca" placeholder="Loja, piso, painel, laço..."></div>
       <div class="field"><label>Status</label><select onchange="filters.locaisF={...filters.locaisF,status:this.value};render()">${selectOpts(statusOpts,f.status)}</select></div>
       <div class="field"><label>Piso</label><select onchange="filters.locaisF={...filters.locaisF,piso:this.value};render()">${selectOpts(pisosOpts,f.piso)}</select></div>
       <div class="field"><label>Painel</label><select onchange="filters.locaisF={...filters.locaisF,painel:this.value};render()">${selectOpts(paineisOpts,f.painel)}</select></div>
@@ -1525,9 +1562,18 @@ function renderLocais(){
     <div class="dsTableWrap">
       <table class="dsTable">
         <thead><tr><th>Loja / Área</th><th>Localização</th><th style="text-align:center">Equipamentos</th><th>Status</th><th>Ações</th></tr></thead>
-        <tbody>${trs||`<tr><td colspan="5"><div class="emptyState">Nenhuma loja/área cadastrada.</div></td></tr>`}</tbody>
+        <tbody id="locaisTbody"></tbody>
       </table>
     </div>`;
+  const buscaEl=document.getElementById('locaisBusca');
+  if(buscaEl){
+    buscaEl.addEventListener('input',function(){atualizarBuscaLocais(this.value)});
+    if(lastSearchFocus&&lastSearchFocus.key==='locaisBusca'){
+      const pos=lastSearchFocus;
+      setTimeout(()=>{try{buscaEl.focus();buscaEl.setSelectionRange(pos.start,pos.end)}catch(e){}},0);
+    }
+  }
+  renderLocaisResultado();
 }
 function renderEquipamentos(){
   let f=filters.eq||{};
@@ -1578,7 +1624,7 @@ function renderEquipamentos(){
       <div class="field"><label>Tipo</label><select onchange="filters.eq={...filters.eq,tipo:this.value};render()">${selectOpts(tipos,f.tipo)}</select></div>
       <div class="field"><label>Modelo</label><select onchange="filters.eq={...filters.eq,modelo:this.value};render()">${selectOpts(modelos,f.modelo)}</select></div>
       <div class="field"><label>Status</label><select onchange="filters.eq={...filters.eq,status:this.value};render()">${selectOpts(status,f.status)}</select></div>
-      <div class="field"><label>Busca</label><input value="${esc(f.q)}" data-filter-input="1" data-filter-group="eq" data-filter-key="q" data-focus-key="equipBusca" placeholder="Loja, endereço, modelo..."></div>
+      <div class="field"><label>Busca</label><input value="${escAttrRaw(f.q)}" data-filter-input="1" data-filter-group="eq" data-filter-key="q" data-focus-key="equipBusca" placeholder="Loja, endereço, modelo..."></div>
       <div class="dsFilterActions"><button class="dsIco prim" onclick="formEquip()">+ Novo</button></div>
     </div>
     <p class="mutedLine" style="margin-bottom:8px">Ao mudar o Status pra uma condição de falha, o sistema registra a Falha e abre o formulário de conclusão automaticamente.</p>
@@ -1642,7 +1688,7 @@ function renderFalhas(){
       <div class="field"><label>Tipo</label><select onchange="filters.falhas={...filters.falhas,tipo:this.value};render()">${selectOpts(unique(db.falhas.map(x=>x.tipo)),f.tipo)}</select></div>
       <div class="field"><label>Status</label><select onchange="filters.falhas={...filters.falhas,status:this.value};render()">${selectOpts(unique(db.falhas.map(x=>normalizeStatus(x.status))),f.status)}</select></div>
       <div class="field"><label>Situação</label><select onchange="filters.falhas={...filters.falhas,situacao:this.value};render()">${['Em aberto','Resolvida','Todos'].map(v=>`<option value="${v}" ${v===situacaoFiltro?'selected':''}>${v}</option>`).join('')}</select></div>
-      <div class="field"><label>Busca</label><input value="${esc(f.q)}" data-filter-input="1" data-filter-group="falhas" data-filter-key="q" data-focus-key="falhasBusca" placeholder="Loja, item, status..."></div>
+      <div class="field"><label>Busca</label><input value="${escAttrRaw(f.q)}" data-filter-input="1" data-filter-group="falhas" data-filter-key="q" data-focus-key="falhasBusca" placeholder="Loja, item, status..."></div>
       <div class="dsFilterActions"><button class="dsIco prim" onclick="formFalha()">+ Registrar</button></div>
     </div>
     ${situacaoFiltro==='Em aberto'&&(totalFalhas-abertas)>0?`<div class="emptyState" style="padding:10px 14px;font-size:12.5px;text-align:left">${totalFalhas-abertas} falha(s) já resolvida(s) (plano de ação concluído) estão ocultas. Use o filtro "Situação" para ver o histórico.</div>`:''}
@@ -3043,7 +3089,7 @@ function renderPlano(){
   document.getElementById('plano').innerHTML=`
     <div class="card planoToolbarCard">
       <div class="planoFiltrosRow">
-        <div class="field grow"><input id="plBuscaPlano" data-filter-input="1" data-filter-group="plano" data-filter-key="q" data-focus-key="planoBusca" placeholder="🔍 Buscar loja, laço, item..." value="${esc(filters.plano?.q||'')}"></div>
+        <div class="field grow"><input id="plBuscaPlano" data-filter-input="1" data-filter-group="plano" data-filter-key="q" data-focus-key="planoBusca" placeholder="🔍 Buscar loja, laço, item..." value="${escAttrRaw(filters.plano?.q||'')}"></div>
         <select class="planoSelect" onchange="filters.plano={...filters.plano,sit:this.value};render()">${selectOpts(['Aberto','Em andamento','Concluído'],fsit,'Situação')}</select>
         <select class="planoSelect" onchange="filters.plano={...filters.plano,prio:this.value};render()">${selectOpts(planoPrioridades(),fx.prio,'Prioridade')}</select>
         <select class="planoSelect" onchange="filters.plano={...filters.plano,cat:this.value};render()">${selectOpts(planoCategorias(),fcat,'Categoria')}</select>
