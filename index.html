@@ -1,6 +1,6 @@
 <!doctype html>
-<!-- build: 2026-07-11 v6.38 - Estabilização final para produção: separação operacional/histórico documentada e confirmada sem mistura de fonte (dashStatusBucket = status atual; isFalhaStatus/db.falhas = eventos); falhaDeveTerPlano() centraliza a ÚNICA decisão de criar plano automático nos 4 pontos existentes (import, status-change, nova falha, sincronizarPlanosFalhas) sem alterar o comportamento já pedido; apiPost tenta ler a resposta real do Code.gs (sem no-cors) para exibir em tempo real "Outro usuário alterou esta base" em caso de conflito de revisão, com fallback automático e silencioso para o no-cors antigo se o navegador/deployment bloquear leitura cross-origin (não testado contra deployment real — validar antes de confiar); auditoriaSanearFalhasPlanos agora também detecta (sem remover) planos órfãos; comentário de trade-off do limite de 1000 no histórico. -->
-<!-- build anterior: 2026-07-11 v6.37 - Soft-delete de falha, KPIs de Visão Geral unificados, revision guard no Code.gs, checksum expandido, usuários fora do localStorage por cliente. -->
+<!-- build: 2026-07-11 v6.40 - Compatibilidade com bancos legados: detectarBaseLegada()/detectarBaseLegadaDeArquivo() identificam bases SDAI antigas (localStorage pré-multicliente ou backup JSON) sem clienteId; novo bloco "Migração de banco antigo" em Sistema > Banco de Dados com prévia de conflitos por entidade (painel/laço/FLM/porta/loja/equipamento/falha/plano), backup obrigatório de origem e destino antes de qualquer gravação, e 3 modos (apenas novos / atualizar equivalentes / substituir completo, este último exigindo Master + motivo + dupla confirmação); validarPosMigracao() audita referências órfãs após migrar; SDAI (Dashboard, Painéis, Falhas etc.) agora fica bloqueado por completo enquanto nenhum cliente está selecionado, com aviso claro. Tela de Importação ganhou painel "Modelos de importação" com 5 modelos oficiais para download (Central SDAI, Lojas/LUC, Falhas, Testes, completo do cliente), cada um em XLSX com abas Dados+Instruções, mostrando o cliente/subsistema de destino — sem alterar o assistente de importação já existente. -->
+<!-- build anterior: 2026-07-11 v6.39 - Homologação para produção: restoreBackupFile()/renderBackup/exportJson/exportAllCsv restritos a Master com validação de formato; LockService no Code.gs; avisos de limite de exibição em Auditoria/Logs. -->
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
@@ -1131,7 +1131,7 @@ function loadMenuStateLocal(){try{return Object.assign({openSubsys:'sdai',openGr
 function saveMenuStateLocal(){try{localStorage.setItem(menuStateKey(),JSON.stringify(menuState))}catch(e){}}
 
 /* Módulos habilitados do cliente ativo (SDAI por padrão quando não há cliente). */
-function modulosClienteAtivo(){const c=clienteAtivoObj();return c?(c.modulos&&c.modulos.length?c.modulos:['sdai']):['sdai'];}
+function modulosClienteAtivo(){const c=clienteAtivoObj();return c?(c.modulos&&c.modulos.length?c.modulos:['sdai']):[];}
 /* Uma view é válida para o cliente se:
    - for tela de Sistema (clientes, banco, usuários…) ou Visão Geral → sempre válida;
    - for de um subsistema cujo módulo está habilitado no cliente. */
@@ -1167,7 +1167,7 @@ function buildNavTree(){
   const tree=document.getElementById('navTree'); if(!tree)return;
   menuState=loadMenuStateLocal();
   const c=clienteAtivoObj();
-  const modulos=c?(c.modulos||['sdai']):['sdai'];
+  const modulos=modulosClienteAtivo();
   const loc=viewLocation(currentView);
   if(loc&&menuState.openSubsys!==loc.subsys){menuState.openSubsys=loc.subsys;saveMenuStateLocal();}
   if(loc&&!menuState.openGroups[loc.subsys]){menuState.openGroups[loc.subsys]=loc.group;saveMenuStateLocal();}
@@ -3112,12 +3112,12 @@ function mostrarUndoExclusao(ent,rec){
   };
   _undoTimer=setTimeout(()=>{t.remove();window._undoDel=null},10000);
 }
-async function restoreBackupFile(file){if(!file)return; if(!confirm('Restaurar este backup local e substituir a base atual do navegador?'))return; const txt=await file.text(); try{const parsed=JSON.parse(txt); db=normalizeAllStatuses(Object.assign(emptyDB(),parsed)); persistLocal(); markDirty('backup restaurado'); render(); alert('Backup restaurado localmente. Use Sincronizar agora para enviar ao Google.');}catch(e){alert('Arquivo de backup inválido: '+e.message)}}
-function exportJson(){download(JSON.stringify(db,null,2),'base_sdai_bosch_completa.json','application/json')}
+async function restoreBackupFile(file){if(!file)return; if(!isMaster(currentUserSafe())){alert('Somente o perfil Master pode restaurar um backup.');return} if(!confirm('Restaurar este backup local e substituir a base atual do navegador?'))return; const txt=await file.text(); try{const parsed=JSON.parse(txt); const camposLista=['falhas','planos','equipamentos','flms','locais','paineis','lacos','portas','plantas','historico','testes','cftv','acessoPontos','ambienteEquip']; for(const key of camposLista){ if(parsed&&parsed[key]!==undefined&&parsed[key]!==null&&!Array.isArray(parsed[key])){ alert('Arquivo de backup inválido: campo \''+key+'\' deveria ser uma lista. Restauração cancelada, nenhum dado foi alterado.'); return; } } db=normalizeAllStatuses(Object.assign(emptyDB(),parsed)); persistLocal(); markDirty('backup restaurado'); render(); alert('Backup restaurado localmente. Use Sincronizar agora para enviar ao Google.');}catch(e){alert('Arquivo de backup inválido: '+e.message)}}
+function exportJson(){if(!isMaster(currentUserSafe())){alert('Somente o perfil Master pode exportar a base.');return} download(JSON.stringify(db,null,2),'base_sdai_bosch_completa.json','application/json')}
 function flat(entity){return db[entity].map(o=>Object.fromEntries(Object.entries(o).map(([k,v])=>[k,typeof v==='object'?JSON.stringify(v):v])))}
 function toCsv(rows){if(!rows.length)return '';let keys=Object.keys(rows[0]);return keys.join(';')+'\n'+rows.map(r=>keys.map(k=>csvEscape(r[k])).join(';')).join('\n')}
 function exportEntity(e){download(toCsv(flat(e)),e+'.csv','text/csv;charset=utf-8')}
-function exportAllCsv(){let chunks=[];['paineis','lacos','flms','portas','locais','equipamentos','falhas','planos','inconsistencias'].forEach(e=>{chunks.push('### '+e+' ###\n'+toCsv(flat(e))) }); download(chunks.join('\n\n'),'base_sdai_bosch_completa.csv','text/csv;charset=utf-8')}
+function exportAllCsv(){if(!isMaster(currentUserSafe())){alert('Somente o perfil Master pode exportar a base.');return} let chunks=[];['paineis','lacos','flms','portas','locais','equipamentos','falhas','planos','inconsistencias'].forEach(e=>{chunks.push('### '+e+' ###\n'+toCsv(flat(e))) }); download(chunks.join('\n\n'),'base_sdai_bosch_completa.csv','text/csv;charset=utf-8')}
 function download(content,name,type){let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([content],{type}));a.download=name;a.click()}
 document.getElementById('sideCollapseBtn')?.addEventListener('click',()=>document.querySelector('.app').classList.toggle('sideCollapsed'));
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&document.getElementById('loginScreen')?.classList.contains('show'))login()});
@@ -3246,7 +3246,15 @@ const RENDER_POR_TELA={
   clientes:renderClientes,sistema:renderSistema,usuarios:renderUsuarios,
   configuracoes:renderConfiguracoes,backup:renderBackup,logs:renderLogs,sobre:renderSobre
 };
-function render(){ensureDefaultUsers(); if(!isLoggedIn()){showLogin();return}else{hideLogin()} applyNavPermissions(); document.querySelectorAll('.view').forEach(v=>v.classList.remove('active')); const _sectionId=VIEW_TO_SECTION[currentView]||currentView; document.getElementById(_sectionId)?.classList.add('active'); const t=document.getElementById('pageTitle'); if(t)t.textContent=L3A_VIEWS[currentView]||'Contratos L3A'; (RENDER_POR_TELA[currentView]||renderDashboard)();try{applyBrand()}catch(e){}try{applyRoleUI()}catch(e){}attachSearchInputs();restoreSearchFocus();updateSyncFooter();try{updateNotifBadge()}catch(e){}try{updateClienteSideSelect()}catch(e){}try{buildNavTree()}catch(e){}try{updateBreadcrumb()}catch(e){}}
+function render(){ensureDefaultUsers(); if(!isLoggedIn()){showLogin();return}else{hideLogin()} applyNavPermissions(); document.querySelectorAll('.view').forEach(v=>v.classList.remove('active')); const _sectionId=VIEW_TO_SECTION[currentView]||currentView; document.getElementById(_sectionId)?.classList.add('active'); const t=document.getElementById('pageTitle'); if(t)t.textContent=L3A_VIEWS[currentView]||'Contratos L3A';
+  const _loc=viewLocation(currentView);
+  if(_loc&&!viewValidaParaCliente(currentView)){
+    const _sec=document.getElementById(VIEW_TO_SECTION[currentView]||currentView);
+    if(_sec)_sec.innerHTML='<div class="premiumPanel"><h3>Selecione um cliente</h3><p>Selecione um cliente para acessar os subsistemas.</p><div class="premiumActions"><button class="btn" onclick="navigate(\'visaoGeral\')">Ir para Visão Geral</button> <button class="btn secondary" onclick="navigate(\'clientes\')">Ir para Clientes</button></div></div>';
+  } else {
+    (RENDER_POR_TELA[currentView]||renderDashboard)();
+  }
+  try{applyBrand()}catch(e){}try{applyRoleUI()}catch(e){}attachSearchInputs();restoreSearchFocus();updateSyncFooter();try{updateNotifBadge()}catch(e){}try{updateClienteSideSelect()}catch(e){}try{buildNavTree()}catch(e){}try{updateBreadcrumb()}catch(e){}}
 
 
 /* ===== Build 6.3 HOTFIX - Sistema não branco + UX premium ===== */
@@ -3327,7 +3335,550 @@ function renderSistema(){
  </div>
  <div class="split2"><div class="premiumPanel"><h3>Autosync</h3><p>Define a gravação automática em segundo plano.</p><div class="formGrid" style="margin-top:14px"><div class="field"><label>Status</label><select onchange="setAutoEnabled(this.value==='Sim')"><option ${c.auto?'selected':''}>Sim</option><option ${!c.auto?'selected':''}>Não</option></select></div><div class="field"><label>Intervalo</label><select onchange="setAutoInterval(this.value)">${[15,30,60,120,300].map(s=>`<option value="${s}" ${Number(c.intervalSec||30)===s?'selected':''}>${s<60?s+' segundos':(s/60)+' minuto(s)'}</option>`).join('')}</select></div></div></div><div class="premiumPanel"><h3>Estrutura</h3><p>Banco separado por abas técnicas.</p><div class="compactHelp" style="margin-top:14px">Painéis, Laços, FLMs, Portas, Lojas/Áreas, Equipamentos, Falhas, Plano de Ação, Histórico, Importações e Usuários.</div></div></div>
  ${isMaster(currentUserSafe())?`<div class="premiumPanel"><h3>Segurança da API</h3><p>O Apps Script só aceita ler/gravar a base com o token correto — protege contra acesso direto por quem descobrir a URL do backend. ${tokenStatusHtml()}</p><div class="formGrid" style="margin-top:14px"><div class="field" style="grid-column:1/-1"><label>Definir / atualizar token (mín. 8 caracteres, use algo aleatório)</label><input id="mNovoToken" type="password" placeholder="Ex.: um trecho longo e aleatório"></div></div><div class="premiumActions"><button class="btn" onclick="definirApiToken()">Salvar token</button> <button class="btn secondary" onclick="revogarApiToken()">Revogar token atual</button></div><p class="mutedLine" style="margin-top:8px">Se você usa o sistema em mais de um navegador/computador, precisa configurar o MESMO token em cada um deles depois de definido.</p></div>`:''}
- <div class="premiumPanel"><h3>Resumo da base</h3><div class="premiumGrid" style="margin-top:14px">${premiumStat('Painéis',db.paineis.length)}${premiumStat('Laços',db.lacos.length)}${premiumStat('FLMs',db.flms.length)}${premiumStat('Equipamentos',db.equipamentos.length)}${premiumStat('Falhas',db.falhas.length)}${premiumStat('Planos',db.planos.length)}${premiumStat('Usuários',(db.usuarios||[]).length)}${premiumStat('Banco',c.configured?'Google':'Local')}</div></div>`;
+ <div class="premiumPanel"><h3>Resumo da base</h3><div class="premiumGrid" style="margin-top:14px">${premiumStat('Painéis',db.paineis.length)}${premiumStat('Laços',db.lacos.length)}${premiumStat('FLMs',db.flms.length)}${premiumStat('Equipamentos',db.equipamentos.length)}${premiumStat('Falhas',db.falhas.length)}${premiumStat('Planos',db.planos.length)}${premiumStat('Usuários',(db.usuarios||[]).length)}${premiumStat('Banco',c.configured?'Google':'Local')}</div></div>
+ <div class="premiumPanel">${renderPainelMigracaoLegado()}</div>`;
+}
+
+/* =========================================================================
+   MIGRAÇÃO DE BASE LEGADA (single-tenant → cliente multi-tenant)
+   ========================================================================= */
+let _baseLegadaCarregadaDeArquivo=null;
+const _MIGRACAO_ENTIDADES=['paineis','lacos','flms','portas','locais','equipamentos','falhas','planos','testes','historico','plantas','baseLojas','conflitosAssociacao'];
+
+function _classificarBaseLegada(dbObj,origem){
+  if(!dbObj||typeof dbObj!=='object')return{encontrada:false};
+  const contagens={};
+  _MIGRACAO_ENTIDADES.forEach(k=>{contagens[k]=Array.isArray(dbObj[k])?dbObj[k].length:0});
+  let anexos=0;
+  ['planos','falhas'].forEach(k=>{(dbObj[k]||[]).forEach(r=>{if(r&&Array.isArray(r.fotos))anexos+=r.fotos.length})});
+  contagens.anexos=anexos;
+  const estruturais=['paineis','lacos','flms','portas','locais','equipamentos'];
+  const totalEstrutural=estruturais.reduce((t,k)=>t+(contagens[k]||0),0);
+  const totalRegistros=['paineis','lacos','flms','portas','locais','equipamentos','falhas','planos','testes','plantas','baseLojas','conflitosAssociacao'].reduce((t,k)=>t+(contagens[k]||0),0);
+  if(totalEstrutural<=0&&totalRegistros<=0)return{encontrada:false};
+  // Verifica se já existe algum cliente cuja base tem assinatura de contagem idêntica
+  let provavelJaMigrada=false;
+  try{
+    const clientes=loadClientes();
+    for(const c of clientes){
+      const cdb=loadClienteDb(c.id);
+      const sameAll=_MIGRACAO_ENTIDADES.every(k=>(Array.isArray(cdb[k])?cdb[k].length:0)===(contagens[k]||0));
+      if(sameAll&&totalRegistros>0){provavelJaMigrada=true;break}
+    }
+  }catch(e){}
+  return{
+    encontrada:true,
+    provavelJaMigrada,
+    origem,
+    versaoDetectada:(dbObj.config&&dbObj.config.appName?dbObj.config.appName:'')+' / '+(dbObj._revision?('rev '+dbObj._revision):'sem controle de revisão'),
+    ultimaAtualizacao:dbObj._updatedAt||null,
+    contagens,
+    totalRegistros,
+    raw:dbObj
+  };
+}
+function detectarBaseLegada(){
+  try{
+    const raw=localStorage.getItem(KEY);
+    if(!raw)return{encontrada:false};
+    const parsed=JSON.parse(raw);
+    return _classificarBaseLegada(parsed,'localStorage legado ('+KEY+')');
+  }catch(e){return{encontrada:false}}
+}
+function detectarBaseLegadaDeArquivo(parsedJson){
+  try{return _classificarBaseLegada(parsedJson,'arquivo de backup JSON');}catch(e){return{encontrada:false}}
+}
+function carregarBaseLegadaDeArquivo(file){
+  if(!file)return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    try{
+      const parsed=JSON.parse(reader.result);
+      const res=detectarBaseLegadaDeArquivo(parsed);
+      if(!res.encontrada){alert('Nenhuma base legada com dados SDAI foi encontrada neste arquivo.');return}
+      _baseLegadaCarregadaDeArquivo=res;
+      renderSistema();
+    }catch(e){alert('Arquivo inválido: '+e.message)}
+  };
+  reader.readAsText(file);
+}
+function renderPainelMigracaoLegado(){
+  const det=detectarBaseLegada();
+  const res=(det.encontrada?det:null)||_baseLegadaCarregadaDeArquivo;
+  if(!res||!res.encontrada){
+    return `<h3>Migração de banco antigo</h3>
+    <p class="mutedLine">Nenhuma base legada detectada no armazenamento local deste navegador.</p>
+    <p class="mutedLine" style="margin-top:10px">Também é possível carregar uma base antiga a partir de um arquivo de backup JSON:</p>
+    <div class="premiumActions"><input type="file" id="migArquivoInput" accept="application/json,.json" onchange="carregarBaseLegadaDeArquivo(this.files[0])"></div>`;
+  }
+  const c=res.contagens;
+  return `<h3>Migração de banco antigo</h3>
+  <p class="mutedLine">Base legada detectada. Origem: ${esc(res.origem)}. Versão: ${esc(res.versaoDetectada)}. Última atualização: ${res.ultimaAtualizacao?esc(res.ultimaAtualizacao):'não disponível'}.</p>
+  ${res.provavelJaMigrada?'<p class="msg warn">Atenção: esta base já pode ter sido migrada anteriormente — verifique antes de migrar novamente.</p>':''}
+  <div class="premiumGrid" style="margin-top:12px">
+    ${premiumStat('Painéis',c.paineis)}${premiumStat('Laços',c.lacos)}${premiumStat('Módulos (FLMs)',c.flms)}${premiumStat('Portas',c.portas)}
+    ${premiumStat('Equipamentos',c.equipamentos)}${premiumStat('Lojas/Áreas',c.locais)}${premiumStat('Falhas',c.falhas)}${premiumStat('Planos',c.planos)}
+    ${premiumStat('Testes',c.testes)}${premiumStat('Históricos',c.historico)}${premiumStat('Plantas',c.plantas)}${premiumStat('Anexos',c.anexos)}
+  </div>
+  <div class="premiumActions" style="margin-top:14px"><button class="btn" onclick="abrirMigracaoModal()">Migrar base antiga para cliente</button></div>`;
+}
+
+function _baseLegadaAtual(){
+  if(_baseLegadaCarregadaDeArquivo&&_baseLegadaCarregadaDeArquivo.encontrada)return _baseLegadaCarregadaDeArquivo;
+  return detectarBaseLegada();
+}
+
+function abrirMigracaoModal(){
+  const det=_baseLegadaAtual();
+  if(!det.encontrada){alert('Nenhuma base legada detectada.');return}
+  const clientes=loadClientes();
+  const html=`<h3 style="margin:0 0 12px">Migrar base antiga</h3>
+  <p class="mutedLine">Origem: ${esc(det.origem)} — ${det.totalRegistros} registro(s) estruturais detectados.</p>
+  <div class="formGrid">
+    <div class="field" style="grid-column:1/-1">
+      <label><input type="radio" name="migDestinoTipo" value="existente" checked onchange="_migToggleDestinoTipo()"> Cliente já existente</label>
+      <label style="margin-left:16px"><input type="radio" name="migDestinoTipo" value="novo" onchange="_migToggleDestinoTipo()"> Criar novo cliente</label>
+    </div>
+  </div>
+  <div id="migBlocoExistente">
+    <div class="field"><label>Cliente</label><select id="migClienteSelect" onchange="migracaoAoTrocarClienteExistente(this.value)">
+      ${clientes.map(c=>`<option value="${c.id}">${esc(c.nome)} (${(c.modulos||[]).join(', ')||'sem módulos'})</option>`).join('')}
+    </select></div>
+    <div id="migClienteExistenteInfo"></div>
+  </div>
+  <div id="migBlocoNovo" style="display:none">${clienteForm({modulos:['sdai']})}</div>
+  <div class="field" style="margin-top:10px">
+    <label>Modo de migração</label>
+    <select id="migModoSelect" onchange="_migToggleMotivo()">
+      <option value="apenas_novos" selected>Migrar somente o que não existe</option>
+      <option value="atualizar_equivalentes">Migrar e atualizar equivalentes</option>
+      <option value="substituir_completo">Substituir completamente (apaga SDAI atual do cliente)</option>
+    </select>
+  </div>
+  <div id="migMotivoBloco" style="display:none">
+    <div class="field"><label>Motivo da substituição completa</label><textarea id="migMotivoTexto" rows="2" style="width:100%"></textarea></div>
+    <p class="msg warn">Este modo exige perfil Master e apagará TODO o SDAI atual do cliente antes de gravar os dados migrados — o backup abaixo é a única forma de reverter.</p>
+  </div>
+  <div style="display:flex;gap:8px;margin-top:18px;justify-content:flex-end">
+    <button class="btn secondary" onclick="closeModal()">Cancelar</button>
+    <button class="btn" onclick="avancarParaPreviaMigracao()">Avançar para prévia</button>
+  </div>`;
+  openModal(html);
+  if(clientes.length)migracaoAoTrocarClienteExistente(clientes[0].id);
+}
+function _migToggleDestinoTipo(){
+  const tipo=(document.querySelector('input[name="migDestinoTipo"]:checked')||{}).value;
+  const be=document.getElementById('migBlocoExistente'), bn=document.getElementById('migBlocoNovo');
+  if(be)be.style.display=(tipo==='existente')?'':'none';
+  if(bn)bn.style.display=(tipo==='novo')?'':'none';
+}
+function _migToggleMotivo(){
+  const modo=(document.getElementById('migModoSelect')||{}).value;
+  const b=document.getElementById('migMotivoBloco');
+  if(b)b.style.display=(modo==='substituir_completo')?'':'none';
+}
+function migracaoAoTrocarClienteExistente(cid){
+  const c=loadClientes().find(x=>x.id===cid);
+  const info=document.getElementById('migClienteExistenteInfo'); if(!info)return;
+  const temSdai=c&&(c.modulos||[]).includes('sdai');
+  info.innerHTML=temSdai?'<p class="mutedLine">Módulo SDAI já habilitado neste cliente.</p>':
+    '<label><input type="checkbox" id="migHabilitarSdai" checked> Habilitar módulo SDAI neste cliente antes de migrar</label>';
+}
+
+function avancarParaPreviaMigracao(){
+  const det=_baseLegadaAtual();
+  if(!det.encontrada){alert('Base legada não encontrada.');return}
+  const tipo=(document.querySelector('input[name="migDestinoTipo"]:checked')||{}).value;
+  const modo=(document.getElementById('migModoSelect')||{}).value;
+  const motivo=(document.getElementById('migMotivoTexto')||{}).value||'';
+  if(modo==='substituir_completo'){
+    if(!isMaster(currentUserSafe())){alert('Somente o perfil Master pode usar o modo de substituição completa.');return}
+    if(!motivo.trim()){alert('Informe o motivo da substituição completa.');return}
+  }
+  let destinoClienteId=null, novoClienteData=null;
+  if(tipo==='existente'){
+    destinoClienteId=(document.getElementById('migClienteSelect')||{}).value;
+    if(!destinoClienteId){alert('Selecione um cliente.');return}
+    const c=loadClientes().find(x=>x.id===destinoClienteId);
+    if(!c){alert('Cliente não encontrado.');return}
+    if(!(c.modulos||[]).includes('sdai')){
+      const habilitar=(document.getElementById('migHabilitarSdai')||{}).checked;
+      if(!habilitar){alert('O módulo SDAI precisa estar habilitado no cliente para migrar.');return}
+      const clientes=loadClientes(); const idx=clientes.findIndex(x=>x.id===destinoClienteId);
+      clientes[idx].modulos=[...new Set([...(clientes[idx].modulos||[]),'sdai'])];
+      saveClientes(clientes);
+    }
+  } else {
+    const nome=(document.getElementById('cliNome')||{}).value;
+    if(!nome||!nome.trim()){alert('Informe o nome do novo cliente.');return}
+    salvarCliente(); // reaproveita fluxo existente (fecha o modal, mas recuperamos o id abaixo)
+    const clientes=loadClientes();
+    const criado=clientes.find(x=>x.nome.trim()===nome.trim());
+    if(!criado){alert('Falha ao criar o novo cliente.');return}
+    destinoClienteId=criado.id;
+    novoClienteData=criado;
+  }
+  montarPreviaMigracao(det.raw,destinoClienteId,novoClienteData,modo,motivo,det);
+}
+
+function _norm(s){return String(s||'').trim().toLowerCase()}
+function detectarConflitosMigracao(origemDb,destinoDb){
+  const resultado={};
+  const mapId={}; // origemId -> destinoId resolvido, por entidade
+  const orfaos=[];
+  const registrar=(ent,novos,jaExistem,conflitos)=>{resultado[ent]={novos,jaExistem,conflitos}};
+
+  // Painel: por nome normalizado
+  const painelMapId={};
+  const painelNovos=[],painelExistem=[],painelConflitos=[];
+  (origemDb.paineis||[]).forEach(p=>{
+    const match=(destinoDb.paineis||[]).find(d=>_norm(d.nome)===_norm(p.nome));
+    if(match){painelExistem.push(p);painelMapId[p.id]=match.id;}
+    else{painelNovos.push(p);painelMapId[p.id]=p.id;}
+  });
+  registrar('paineis',painelNovos,painelExistem,painelConflitos);
+
+  // Laço: (painelId resolvido, nome)
+  const lacoMapId={};
+  const lacoNovos=[],lacoExistem=[],lacoConflitos=[];
+  (origemDb.lacos||[]).forEach(l=>{
+    if(!(origemDb.paineis||[]).some(p=>p.id===l.painelId))orfaos.push('Laço "'+(l.nome||l.id)+'" com painelId órfão na origem');
+    const painelResolvido=painelMapId[l.painelId];
+    const painelFoiReaproveitado=(destinoDb.paineis||[]).some(d=>d.id===painelResolvido);
+    let match=null;
+    if(painelFoiReaproveitado)match=(destinoDb.lacos||[]).find(d=>d.painelId===painelResolvido&&_norm(d.nome)===_norm(l.nome));
+    if(match){lacoExistem.push(l);lacoMapId[l.id]=match.id;}
+    else{lacoNovos.push(l);lacoMapId[l.id]=l.id;}
+  });
+  registrar('lacos',lacoNovos,lacoExistem,lacoConflitos);
+
+  // FLM: (painelId resolvido, endereco)
+  const flmMapId={};
+  const flmNovos=[],flmExistem=[],flmConflitos=[];
+  (origemDb.flms||[]).forEach(f=>{
+    if(!(origemDb.paineis||[]).some(p=>p.id===f.painelId))orfaos.push('FLM "'+(f.endereco||f.id)+'" com painelId órfão na origem');
+    const painelResolvido=painelMapId[f.painelId];
+    const reaproveitado=(destinoDb.paineis||[]).some(d=>d.id===painelResolvido);
+    let match=null;
+    if(reaproveitado)match=(destinoDb.flms||[]).find(d=>d.painelId===painelResolvido&&_norm(d.endereco)===_norm(f.endereco));
+    if(match){flmExistem.push(f);flmMapId[f.id]=match.id;}
+    else{flmNovos.push(f);flmMapId[f.id]=f.id;}
+  });
+  registrar('flms',flmNovos,flmExistem,flmConflitos);
+
+  // Porta: (flmId resolvido, numero)
+  const portaMapId={};
+  const portaNovos=[],portaExistem=[],portaConflitos=[];
+  (origemDb.portas||[]).forEach(pt=>{
+    if(!(origemDb.flms||[]).some(f=>f.id===pt.flmId))orfaos.push('Porta "'+(pt.numero||pt.id)+'" com flmId órfão na origem');
+    const flmResolvido=flmMapId[pt.flmId];
+    const reaproveitado=(destinoDb.flms||[]).some(d=>d.id===flmResolvido);
+    let match=null;
+    if(reaproveitado)match=(destinoDb.portas||[]).find(d=>d.flmId===flmResolvido&&String(d.numero)===String(pt.numero));
+    if(match){portaExistem.push(pt);portaMapId[pt.id]=match.id;}
+    else{portaNovos.push(pt);portaMapId[pt.id]=pt.id;}
+  });
+  registrar('portas',portaNovos,portaExistem,portaConflitos);
+
+  // Loja/Área: (portaId resolvido, enderecoFisico) ou (portaId, nome normalizado); LUC mismatch -> conflito
+  const locaisMapId={};
+  const locaisNovos=[],locaisExistem=[],locaisConflitos=[];
+  (origemDb.locais||[]).forEach(loc=>{
+    const portaResolvida=portaMapId[loc.portaId];
+    const reaproveitado=loc.portaId&&(destinoDb.portas||[]).some(d=>d.id===portaResolvida);
+    let match=null;
+    if(reaproveitado){
+      match=(destinoDb.locais||[]).find(d=>d.portaId===portaResolvida&&(
+        (loc.enderecoFisico&&d.enderecoFisico&&_norm(d.enderecoFisico)===_norm(loc.enderecoFisico))||
+        (!loc.enderecoFisico&&_norm(d.nome)===_norm(loc.nome))
+      ));
+    }
+    if(match){
+      if(loc.luc&&match.luc&&String(loc.luc)!==String(match.luc)){
+        locaisConflitos.push({registro:loc,motivo:`Loja "${loc.nome}": LUC diverge — origem tem LUC ${loc.luc}, destino já tem loja com LUC ${match.luc} no mesmo endereço físico.`});
+      } else {
+        locaisExistem.push(loc);
+      }
+      locaisMapId[loc.id]=match.id;
+    } else {locaisNovos.push(loc);locaisMapId[loc.id]=loc.id;}
+  });
+  registrar('locais',locaisNovos,locaisExistem,locaisConflitos);
+
+  // Equipamento: (painelId, lacoId, endereco, modelo, tipo) resolvidos
+  const equipMapId={};
+  const equipNovos=[],equipExistem=[],equipConflitos=[];
+  (origemDb.equipamentos||[]).forEach(eq=>{
+    const painelR=painelMapId[eq.painelId], lacoR=lacoMapId[eq.lacoId];
+    const reaproveitado=(destinoDb.paineis||[]).some(d=>d.id===painelR)&&(destinoDb.lacos||[]).some(d=>d.id===lacoR);
+    let match=null;
+    if(reaproveitado)match=(destinoDb.equipamentos||[]).find(d=>d.painelId===painelR&&d.lacoId===lacoR&&_norm(d.endereco)===_norm(eq.endereco)&&_norm(d.modelo)===_norm(eq.modelo)&&_norm(d.tipo)===_norm(eq.tipo));
+    if(match){equipExistem.push(eq);equipMapId[eq.id]=match.id;}
+    else{equipNovos.push(eq);equipMapId[eq.id]=eq.id;}
+  });
+  registrar('equipamentos',equipNovos,equipExistem,equipConflitos);
+
+  // Falha: (itemId resolvido, localId resolvido, dataAbertura||data)
+  const falhaMapId={};
+  const falhaNovos=[],falhaExistem=[],falhaConflitos=[];
+  (origemDb.falhas||[]).forEach(fl=>{
+    const itemR=equipMapId[fl.itemId]||flmMapId[fl.itemId]||fl.itemId;
+    const localR=locaisMapId[fl.localId]||fl.localId;
+    const dataFl=fl.dataAbertura||fl.data;
+    const match=(destinoDb.falhas||[]).find(d=>{
+      const dItem=equipMapId[d.itemId]||d.itemId, dLocal=locaisMapId[d.localId]||d.localId, dData=d.dataAbertura||d.data;
+      return d.itemId===itemR&&d.localId===localR&&String(dData)===String(dataFl);
+    });
+    if(match){falhaExistem.push(fl);falhaMapId[fl.id]=match.id;}
+    else{falhaNovos.push(fl);falhaMapId[fl.id]=fl.id;}
+  });
+  registrar('falhas',falhaNovos,falhaExistem,falhaConflitos);
+
+  // Plano: falhaId resolvido
+  const planoMapId={};
+  const planoNovos=[],planoExistem=[],planoConflitos=[];
+  (origemDb.planos||[]).forEach(pl=>{
+    const falhaR=falhaMapId[pl.falhaId]||pl.falhaId;
+    const match=(destinoDb.planos||[]).find(d=>d.falhaId===falhaR);
+    if(match){planoExistem.push(pl);planoMapId[pl.id]=match.id;}
+    else{planoNovos.push(pl);planoMapId[pl.id]=pl.id;}
+  });
+  registrar('planos',planoNovos,planoExistem,planoConflitos);
+
+  return{buckets:resultado,orfaos,maps:{paineis:painelMapId,lacos:lacoMapId,flms:flmMapId,portas:portaMapId,locais:locaisMapId,equipamentos:equipMapId,falhas:falhaMapId,planos:planoMapId}};
+}
+
+let _migPreviaCtx=null;
+function montarPreviaMigracao(origemDb,destinoClienteIdOuNull,novoClienteData,modo,motivo,detCache){
+  const cliente=loadClientes().find(x=>x.id===destinoClienteIdOuNull);
+  const destinoDb=loadClienteDb(destinoClienteIdOuNull);
+  const conflitos=detectarConflitosMigracao(origemDb,destinoDb);
+  _migPreviaCtx={origemDb,destinoClienteId:destinoClienteIdOuNull,modo,motivo,conflitos};
+  const ordem=['paineis','lacos','flms','portas','locais','equipamentos','falhas','planos'];
+  const labels={paineis:'Painéis',lacos:'Laços',flms:'FLMs',portas:'Portas',locais:'Lojas/Áreas',equipamentos:'Equipamentos',falhas:'Falhas',planos:'Planos'};
+  let linhas=ordem.map(k=>{
+    const b=conflitos.buckets[k];
+    return `<tr><td>${labels[k]}</td><td>${b.novos.length}</td><td>${b.jaExistem.length}</td><td>${b.conflitos.length}</td></tr>`;
+  }).join('');
+  const conflitosDetalhe=ordem.flatMap(k=>conflitos.buckets[k].conflitos.map(c=>c.motivo||JSON.stringify(c))).join('<br>')||'Nenhum conflito detectado.';
+  const orfaosDetalhe=conflitos.orfaos.length?conflitos.orfaos.join('<br>'):'Nenhuma relação órfã detectada na origem.';
+  const html=`<h3 style="margin:0 0 12px">Prévia da migração</h3>
+  <p class="mutedLine">Origem: ${esc((_migPreviaCtx.origemDb.config&&_migPreviaCtx.origemDb.config.appName)||'Base antiga')} — Destino: ${esc(cliente?cliente.nome:'')} (Subsistema: SDAI) — Modo: ${esc(modo)}</p>
+  <div class="tableWrap"><table><thead><tr><th>Entidade</th><th>Novos</th><th>Já existem</th><th>Conflitos</th></tr></thead><tbody>${linhas}</tbody></table></div>
+  <h4 style="margin-top:14px">Conflitos detectados</h4>
+  <div style="max-height:160px;overflow:auto;font-size:12px" class="mutedLine">${conflitosDetalhe}</div>
+  <h4 style="margin-top:14px">Relações órfãs na origem (informativo)</h4>
+  <div style="max-height:120px;overflow:auto;font-size:12px" class="mutedLine">${orfaosDetalhe}</div>
+  <div style="display:flex;gap:8px;margin-top:18px;justify-content:flex-end">
+    <button class="btn secondary" onclick="closeModal()">Cancelar</button>
+    <button class="btn" onclick="executarMigracaoLegada(_migPreviaCtx.origemDb,_migPreviaCtx.destinoClienteId,_migPreviaCtx.modo,_migPreviaCtx.motivo)">Confirmar migração</button>
+  </div>`;
+  openModal(html);
+}
+
+function _sanitizaTimestamp(){return isoNow().replace(/[:.]/g,'-')}
+function _campoRico(v){return v!==undefined&&v!==null&&v!==''}
+
+function executarMigracaoLegada(origemDb,destinoClienteId,modo,motivoSubstituicao){
+  if(!_migPreviaCtx){alert('Contexto de migração perdido. Reabra a migração.');return}
+  const conflitos=_migPreviaCtx.conflitos;
+  const cliente=loadClientes().find(x=>x.id===destinoClienteId);
+  if(!cliente){alert('Cliente destino não encontrado.');return}
+
+  // 1) Backup obrigatório
+  let backupOrigemStr,backupDestinoStr;
+  const destinoAntes=loadClienteDb(destinoClienteId);
+  try{
+    backupOrigemStr=JSON.stringify(origemDb,null,2);
+    backupDestinoStr=JSON.stringify(destinoAntes,null,2);
+  }catch(e){alert('Falha ao gerar backup de segurança. Migração abortada — nenhum dado foi alterado. ('+e.message+')');return}
+  const ts=_sanitizaTimestamp();
+  const nomeBackupOrigem='backup_origem_legado_'+ts+'.json';
+  const nomeBackupDestino='backup_destino_'+(cliente.nome||'cliente').replace(/[^a-z0-9]+/gi,'_')+'_'+ts+'.json';
+  download(backupOrigemStr,nomeBackupOrigem,'application/json');
+  download(backupDestinoStr,nomeBackupDestino,'application/json');
+  const checksumOrigem=(typeof checksumColecoes==='function')?checksumColecoes(origemDb):String(backupOrigemStr.length);
+  const checksumDestino=(typeof checksumColecoes==='function')?checksumColecoes(destinoAntes):String(backupDestinoStr.length);
+
+  // 2) Guardas do modo substituir_completo
+  if(modo==='substituir_completo'){
+    if(!isMaster(currentUserSafe())){alert('Somente o perfil Master pode executar a substituição completa.');return}
+    if(!motivoSubstituicao||!motivoSubstituicao.trim()){alert('Informe o motivo da substituição completa.');return}
+    if(!confirm('Isso vai APAGAR todo o SDAI atual do cliente e substituir pelos dados migrados. Esta ação não pode ser desfeita (mas você já baixou os backups). Confirma?'))return;
+  }
+
+  // 3) Migração propriamente dita
+  const destino=loadClienteDb(destinoClienteId);
+  const maps=conflitos.maps;
+  const idColisao=new Map(); // (entidade->Map origemId->novoId) quando há colisão de id
+  const stats={};
+  const ordem=['paineis','lacos','flms','portas','locais','equipamentos','falhas','planos','testes','plantas'];
+
+  if(modo==='substituir_completo'){
+    ['paineis','lacos','flms','portas','locais','equipamentos','falhas','planos','testes','plantas','baseLojas','conflitosAssociacao'].forEach(k=>{destino[k]=[]});
+  }
+
+  const refFields={
+    lacos:{painelId:'paineis'},
+    flms:{painelId:'paineis'},
+    portas:{flmId:'flms'},
+    locais:{portaId:'portas',painelId:'paineis',lacoId:'lacos'},
+    equipamentos:{painelId:'paineis',lacoId:'lacos',flmId:'flms',portaId:'portas',localId:'locais'},
+    falhas:{itemId:'equipamentos',localId:'locais'},
+    planos:{falhaId:'falhas'}
+  };
+
+  function migrarEntidade(ent){
+    const bucket=conflitos.buckets[ent];
+    const mapaEnt=maps[ent]||{};
+    const arr=(origemDb[ent]||[]);
+    let criados=0,atualizados=0,pulados=0;
+    const idsColisaoEnt=new Map();
+    const processa=(rec,isNovo)=>{
+      const clone=JSON.parse(JSON.stringify(rec));
+      // resolve referências usando os mapas já calculados na fase de conflito
+      const refs=refFields[ent]||{};
+      Object.keys(refs).forEach(campo=>{
+        const entRef=refs[campo];
+        const mapaRef=maps[entRef];
+        if(mapaRef&&clone[campo]!==undefined&&mapaRef[clone[campo]]!==undefined){
+          let resolvido=mapaRef[clone[campo]];
+          const remap=idColisao.get(entRef);
+          if(remap&&remap.has(resolvido))resolvido=remap.get(resolvido);
+          clone[campo]=resolvido;
+        }
+      });
+      // falha.itemId pode referenciar um equipamento OU um FLM (fallback quando não resolvido por equipamentos)
+      if(ent==='falhas'&&maps.flms&&maps.flms[rec.itemId]!==undefined&&!(maps.equipamentos&&maps.equipamentos[rec.itemId]!==undefined)){
+        let resolvido=maps.flms[rec.itemId];
+        const remap=idColisao.get('flms');
+        if(remap&&remap.has(resolvido))resolvido=remap.get(resolvido);
+        clone.itemId=resolvido;
+      }
+      if(isNovo){
+        let novoId=clone.id;
+        const colideComOutro=(destino[ent]||[]).some(d=>d.id===novoId);
+        if(colideComOutro){
+          novoId=id();
+          idsColisaoEnt.set(clone.id,novoId);
+          clone.id=novoId;
+        }
+        clone.clienteId=destinoClienteId;clone.subsistema='sdai';clone.migradoEm=isoNow();
+        clone.migradoPor=(currentUser().email||currentUser().nome||'sistema');
+        clone.versaoOrigem=(origemDb.config&&origemDb.config.appName?origemDb.config.appName:'')+' '+(origemDb._revision?('rev '+origemDb._revision):'');
+        clone.origemMigracao='base_legada';
+        destino[ent]=destino[ent]||[];
+        destino[ent].push(clone);
+        criados++;
+      } else {
+        // atualizar_equivalentes: mescla no registro existente
+        const destId=mapaEnt[rec.id];
+        const existente=(destino[ent]||[]).find(d=>d.id===destId);
+        if(!existente){pulados++;return}
+        Object.assign(existente,{clienteId:destinoClienteId,subsistema:'sdai',migradoEm:isoNow(),migradoPor:(currentUser().email||currentUser().nome||'sistema'),versaoOrigem:clone.versaoOrigem,origemMigracao:'base_legada'});
+        Object.keys(clone).forEach(campo=>{
+          if(['id','clienteId','subsistema','migradoEm','migradoPor','versaoOrigem','origemMigracao'].includes(campo))return;
+          if(!_campoRico(existente[campo])&&_campoRico(clone[campo]))existente[campo]=clone[campo];
+        });
+        atualizados++;
+      }
+    };
+    if(modo==='substituir_completo'){
+      arr.forEach(rec=>processa(rec,true));
+    } else if(modo==='atualizar_equivalentes'){
+      bucket.novos.forEach(rec=>processa(rec,true));
+      bucket.jaExistem.forEach(rec=>processa(rec,false));
+      pulados+=bucket.conflitos.length;
+    } else { // apenas_novos
+      bucket.novos.forEach(rec=>processa(rec,true));
+      pulados+=bucket.jaExistem.length+bucket.conflitos.length;
+    }
+    if(idsColisaoEnt.size)idColisao.set(ent,idsColisaoEnt);
+    stats[ent]={criados,atualizados,pulados};
+  }
+  ['paineis','lacos','flms','portas','locais','equipamentos','falhas','planos'].forEach(migrarEntidade);
+  // testes/plantas: sem regra de dedup específica pedida — tratadas como "sempre novas" (apenas_novos/atualizar) ou substituídas (substituir_completo)
+  ['testes','plantas'].forEach(ent=>{
+    const arr=origemDb[ent]||[];
+    let criados=0;
+    arr.forEach(rec=>{
+      const clone=JSON.parse(JSON.stringify(rec));
+      const colide=(destino[ent]||[]).some(d=>d.id===clone.id);
+      if(colide)clone.id=id();
+      clone.clienteId=destinoClienteId;clone.subsistema='sdai';clone.migradoEm=isoNow();
+      clone.migradoPor=(currentUser().email||currentUser().nome||'sistema');clone.origemMigracao='base_legada';
+      destino[ent]=destino[ent]||[];destino[ent].push(clone);criados++;
+    });
+    stats[ent]={criados,atualizados:0,pulados:0};
+  });
+  // historico, baseLojas, conflitosAssociacao, configurações relevantes: copiadas como novas entradas informativas
+  ['historico','baseLojas','conflitosAssociacao'].forEach(ent=>{
+    const arr=origemDb[ent]||[];
+    let criados=0;
+    arr.forEach(rec=>{
+      const clone=JSON.parse(JSON.stringify(rec));
+      const colide=(destino[ent]||[]).some(d=>d.id===clone.id);
+      if(colide)clone.id=id();
+      destino[ent]=destino[ent]||[];destino[ent].push(clone);criados++;
+    });
+    stats[ent]={criados,atualizados:0,pulados:0};
+  });
+
+  // 4) Log de migração (grava direto na coleção historico do destino — não usa logLocal/persistLocal
+  // aqui porque ambos dependem do cliente ATIVO em localStorage, que pode não ser o destino da migração)
+  const resumoStr=Object.keys(stats).map(k=>`${k}: +${stats[k].criados} novos, ~${stats[k].atualizados} atualizados, ${stats[k].pulados} ignorados`).join(' | ');
+  destino.historico=destino.historico||[];
+  destino.historico.push({id:id(),data:isoNow(),usuario:(currentUser().email||currentUser().nome||'usuario'),entidade:'migracao',entidadeId:destinoClienteId,acao:'migrar_base_legada',descricao:`Modo: ${modo}. ${resumoStr}. Backups: ${nomeBackupOrigem}, ${nomeBackupDestino}. Checksum origem: ${checksumOrigem}. Checksum destino (antes): ${checksumDestino}.`});
+  if(destino.historico.length>1000)destino.historico=destino.historico.slice(-1000);
+
+  // 5) Validação pós-migração (roda sobre o objeto `destino` em memória, antes de persistir,
+  // e grava a entrada de log direto nele — evita depender de loadClienteDb/logLocal que assumem
+  // o cliente ATIVO em localStorage, que pode não ser o destino desta migração)
+  const validacao=validarPosMigracao(destinoClienteId,destino);
+
+  // 6) Persistência (única gravação, já com os históricos de migração e validação incluídos)
+  const eraAtivo=(clienteAtivo()===destinoClienteId);
+  if(eraAtivo){
+    db=destino;persistLocal();render();
+  } else {
+    const _dbGuardado=db;
+    db=destino;persistClienteDb(destinoClienteId);db=_dbGuardado;
+  }
+
+  let resumoFinal='Migração concluída.\n\n'+Object.keys(stats).map(k=>`${k}: +${stats[k].criados} novos, ~${stats[k].atualizados} atualizados, ${stats[k].pulados} ignorados`).join('\n');
+  if(validacao.problemas.length)resumoFinal+='\n\nAtenção:\n'+validacao.problemas.join('\n');
+  alert(resumoFinal);
+  closeModal();
+}
+
+function validarPosMigracao(destinoClienteId,dbJaCarregado){
+  const d=dbJaCarregado||loadClienteDb(destinoClienteId);
+  const problemas=[];
+  const lacosOrfaos=(d.lacos||[]).filter(l=>!(d.paineis||[]).some(p=>p.id===l.painelId)).length;
+  if(lacosOrfaos)problemas.push(`Atenção: ${lacosOrfaos} laço(s) migrado(s) referenciam um painel que não foi encontrado — revise manualmente.`);
+  const flmsOrfaos=(d.flms||[]).filter(f=>!(d.paineis||[]).some(p=>p.id===f.painelId)||(f.lacoId&&!(d.lacos||[]).some(l=>l.id===f.lacoId))).length;
+  if(flmsOrfaos)problemas.push(`Atenção: ${flmsOrfaos} FLM(s) migrado(s) referenciam painel/laço que não foi encontrado — revise manualmente.`);
+  const portasOrfas=(d.portas||[]).filter(pt=>!(d.flms||[]).some(f=>f.id===pt.flmId)).length;
+  if(portasOrfas)problemas.push(`Atenção: ${portasOrfas} porta(s) migrada(s) referenciam um FLM que não foi encontrado — revise manualmente.`);
+  const falhasOrfas=(d.falhas||[]).filter(fl=>{
+    const itemOk=(d.equipamentos||[]).some(e=>e.id===fl.itemId)||(d.flms||[]).some(f=>f.id===fl.itemId);
+    const localOk=(d.locais||[]).some(l=>l.id===fl.localId);
+    return !itemOk||!localOk;
+  }).length;
+  if(falhasOrfas)problemas.push(`Atenção: ${falhasOrfas} falha(s) migrada(s) referenciam um item ou local que não foi encontrado — revise manualmente.`);
+  const planosOrfaos=(d.planos||[]).filter(pl=>!(d.falhas||[]).some(f=>f.id===pl.falhaId)).length;
+  if(planosOrfaos)problemas.push(`Atenção: ${planosOrfaos} plano(s) migrado(s) referenciam uma falha que não foi encontrada — revise manualmente.`);
+  const resumo=`Validação pós-migração: laços órfãos=${lacosOrfaos}, flms órfãos=${flmsOrfaos}, portas órfãs=${portasOrfas}, falhas órfãs=${falhasOrfas}, planos órfãos=${planosOrfaos}.`;
+  console.log(resumo);
+  d.historico=d.historico||[];
+  d.historico.push({id:id(),data:isoNow(),usuario:(currentUser().email||currentUser().nome||'usuario'),entidade:'migracao',entidadeId:destinoClienteId,acao:'validacao_pos_migracao',descricao:resumo});
+  if(d.historico.length>1000)d.historico=d.historico.slice(-1000);
+  if(!dbJaCarregado){
+    // chamada standalone (fora do fluxo de executarMigracaoLegada): persiste imediatamente
+    const _dbGuardado=db;db=d;
+    if(clienteAtivo()===destinoClienteId)persistLocal();else persistClienteDb(destinoClienteId);
+    db=_dbGuardado;
+  }
+  return{problemas,resumo};
 }
 function renderUsuarios(){
  const el=document.getElementById('usuarios'); if(!el)return;
@@ -3339,12 +3890,12 @@ function renderConfiguracoes(){
  const el=document.getElementById('configuracoes'); if(!el)return; const cfg=db.config||{};
  el.innerHTML=`<div class="premiumPanel"><div class="identityCard"><div class="logoPreviewBox">${cfg.logoData?`<img src="${cfg.logoData}" alt="Logo">`:'<span>L3A</span>'}</div><div><h3>Identidade visual</h3><p class="mutedLine">Padronize logotipo, nome do sistema e dados do contrato SDAI.</p><div class="formGrid" style="margin-top:14px"><div class="field"><label>Nome do sistema</label><input id="cfgAppName" value="${esc(cfg.appName||'Contratos L3A')}"></div><div class="field"><label>Subtítulo</label><input id="cfgSub" value="${esc(cfg.subtitle||'Gestão técnica SDAI • Bosch FPA/AVENAR')}"></div><div class="field"><label>Logo</label><input type="file" id="cfgLogo" accept="image/*"></div><div class="field"><label>&nbsp;</label><button class="btn" onclick="saveIdentity()">Aplicar</button></div></div></div></div></div><div class="premiumPanel"><h3>Dados corporativos</h3><div class="formGrid"><div class="field"><label>Cliente</label><input id="cfgCliente" value="${esc(cfg.cliente||'Shopping Pantanal')}"></div><div class="field"><label>Empreendimento</label><input id="cfgEmpreendimento" value="${esc(cfg.empreendimento||'Pantanal Shopping')}"></div><div class="field"><label>Responsável técnico</label><input id="cfgRespTecnico" value="${esc(cfg.responsavelTecnico||'Eng. Hélio Hayashida')}"></div><div class="field"><label>&nbsp;</label><button class="btn secondary" onclick="saveEmpresaCfg()">Salvar</button></div></div></div>`;
 }
-function renderBackup(){const el=document.getElementById('backup'); if(!el)return; el.innerHTML=`<div class="premiumPanel"><div class="systemHeaderSlim"><div class="titleBlock"><h3>Backup local</h3><p>Exportação e restauração de segurança.</p></div></div><div class="premiumGrid">${premiumStat('Painéis',db.paineis.length)}${premiumStat('Equipamentos',db.equipamentos.length)}${premiumStat('Falhas',db.falhas.length)}${premiumStat('Planos',db.planos.length)}</div><div class="premiumActions"><button class="btn" onclick="exportJson()">Exportar JSON</button><button class="btn secondary" onclick="exportAllCsv()">Exportar CSV</button><button class="btn secondary" onclick="document.getElementById('restoreJsonInput').click()">Restaurar JSON</button><input type="file" id="restoreJsonInput" accept="application/json,.json" style="display:none" onchange="restoreBackupFile(this.files[0])"></div></div>`}
+function renderBackup(){const el=document.getElementById('backup'); if(!el)return; if(!isMaster(currentUserSafe())){el.innerHTML='<div class="premiumPanel"><p style="color:var(--l3a-text-muted)">Acesso restrito ao perfil Master.</p></div>';return} el.innerHTML=`<div class="premiumPanel"><div class="systemHeaderSlim"><div class="titleBlock"><h3>Backup local</h3><p>Exportação e restauração de segurança.</p></div></div><div class="premiumGrid">${premiumStat('Painéis',db.paineis.length)}${premiumStat('Equipamentos',db.equipamentos.length)}${premiumStat('Falhas',db.falhas.length)}${premiumStat('Planos',db.planos.length)}</div><div class="premiumActions"><button class="btn" onclick="exportJson()">Exportar JSON</button><button class="btn secondary" onclick="exportAllCsv()">Exportar CSV</button><button class="btn secondary" onclick="document.getElementById('restoreJsonInput').click()">Restaurar JSON</button><input type="file" id="restoreJsonInput" accept="application/json,.json" style="display:none" onchange="restoreBackupFile(this.files[0])"></div></div>`}
 function renderLogs(){
   const el=document.getElementById('logs'); if(!el)return;
   const rows=(db.historico||[]).slice(-200).reverse();
   const isMasterUser=isMaster(currentUserSafe());
-  el.innerHTML=`<div class="premiumPanel"><h3>Logs e auditoria</h3><p>Registro das ações operacionais e administrativas.</p>${rows.length?`<div class="softTable" style="margin-top:14px">${table(rows,[['Data','data',r=>dsDateHtml?dsDateHtml(r.data):esc(r.data||'')],['Usuário','usuario'],['Entidade','entidade'],['Ação','acao'],['Descrição','descricao']])}</div>`:'<div class="emptyState" style="margin-top:14px">Nenhum log registrado ainda.</div>'}</div>
+  el.innerHTML=`<div class="premiumPanel"><h3>Logs e auditoria</h3><p>Registro das ações operacionais e administrativas.</p>${(db.historico||[]).length>200?`<p style="color:var(--l3a-text-muted);font-size:12px">Mostrando os 200 mais recentes de ${(db.historico||[]).length} registros.</p>`:''}${rows.length?`<div class="softTable" style="margin-top:14px">${table(rows,[['Data','data',r=>dsDateHtml?dsDateHtml(r.data):esc(r.data||'')],['Usuário','usuario'],['Entidade','entidade'],['Ação','acao'],['Descrição','descricao']])}</div>`:'<div class="emptyState" style="margin-top:14px">Nenhum log registrado ainda.</div>'}</div>
   ${isMasterUser?_auditoriaExclusaoFalhasPanel():`<div class="premiumPanel" style="margin-top:16px"><p style="color:var(--l3a-text-muted)">A exclusão de falhas é restrita ao perfil Master.</p></div>`}`;
 }
 /* SEGURANÇA (2026-07): único ponto do sistema autorizado a excluir uma falha.
@@ -3370,6 +3921,7 @@ function _auditoriaExclusaoFalhasPanel(){
     <h3>Auditoria — Exclusão de falhas</h3>
     <p>Exclusão restrita ao perfil Master. Todo registro excluído aqui exige motivo obrigatório, gera log permanente em Histórico e é marcado como excluído (soft-delete) — não é apagado da base.</p>
     <button class="btn secondary small" onclick="window._auditoriaVerExcluidas=${!verExcluidas};renderLogs()">${verExcluidas?'← Ver falhas ativas':'Ver falhas excluídas'}</button>
+    ${falhas.length>100?`<p style="color:var(--l3a-text-muted);font-size:12px">Mostrando as 100 mais recentes de ${falhas.length} registros.</p>`:''}
     <div class="softTable" style="margin-top:14px"><table class="tbl"><thead><tr><th>Data</th><th>Item</th><th>Local</th><th>Status</th><th>Situação</th><th>${verExcluidas?'Exclusão':'Ação'}</th></tr></thead><tbody>${rows}</tbody></table></div>
   </div>`;
 }
@@ -4622,7 +5174,258 @@ function impWizardImportar(){
   }
   filters.impWizard={tipo:'',passo:1,validado:false};
 }
-function renderImportacao(){const el=document.getElementById('importacao'); if(!el)return; if(!can('importar')){el.innerHTML='<div class="card"><h3 class="sectionTitle">Importação bloqueada</h3><p class="msg warn">Seu perfil não possui permissão para importar ou substituir base cadastral.</p></div>';return} ensureLucSchema();
+function modelosImportacaoPanelHtml(){
+  const cliente=clienteAtivoObj();
+  const nomeCliente=cliente&&cliente.nome?esc(cliente.nome):'—';
+  return `<div class="card" style="margin-bottom:14px">
+    <h3 class="sectionTitle" style="margin:0 0 8px">Modelos de importação</h3>
+    <p class="mutedLine" style="font-size:12.5px;margin:0 0 10px">Cliente: <b>${nomeCliente}</b> &nbsp;·&nbsp; Subsistema: <b>SDAI</b></p>
+    <div class="toolbar" style="gap:8px;flex-wrap:wrap">
+      <button class="btn secondary small" onclick="baixarModeloCentralSDAI()">Baixar modelo da Central SDAI</button>
+      <button class="btn secondary small" onclick="baixarModeloLojasLUC()">Baixar modelo de Lojas / Base LUC</button>
+      <button class="btn secondary small" onclick="baixarModeloFalhas()">Baixar modelo de Falhas</button>
+      <button class="btn secondary small" onclick="baixarModeloTestes()">Baixar modelo de Testes</button>
+      <button class="btn secondary small" onclick="baixarModeloCompletoCliente()">Baixar modelo completo do cliente</button>
+    </div>
+    <p class="mutedLine" style="font-size:12px;margin:10px 0 0">Estes modelos contêm apenas estrutura e exemplos — não incluem dados reais. Para exportar os dados já cadastrados deste cliente, use a aba Exportação.</p>
+  </div>`;
+}
+function normalizarNomeCabecalho(h){
+  // Utilitário criado para suportar reconhecimento flexível de cabeçalhos nos modelos de importação oficiais.
+  // Ainda não está conectado ao parser do assistente de importação existente (impWizardValidar) — isso ficaria
+  // para uma etapa futura, para não alterar o comportamento já validado do assistente atual.
+  return String(h??'')
+    .toLowerCase()
+    .trim()
+    .normalize('NFD').replace(/[̀-ͯ]/g,'')
+    .replace(/[_\s]+/g,' ')
+    .trim();
+}
+function mapaCabecalhosConhecidos(){
+  const campos={
+    // Central SDAI
+    'Painel':'painel','Modelo_Painel':'modeloPainel','Laco':'laco','Piso':'piso','Sistema':'sistema',
+    'Endereco_Fisico':'enderecoFisico','Tipo_Dispositivo':'tipoDispositivo','Modelo_Dispositivo':'modeloDispositivo',
+    'Nome_Dispositivo':'nomeDispositivo','Status':'status','FLM':'flm','Porta':'porta','Loja_Area':'lojaArea','Observacao':'observacao',
+    // Lojas / LUC
+    'LUC':'luc','Tipo_Loja':'tipoLoja','Loja':'loja','Area_Contrato_m2':'areaContratoM2',
+    // Falhas
+    'Data_Hora':'dataHora','Endereco':'endereco','Tipo':'tipo','Status_Tecnico':'statusTecnico',
+    'Criticidade':'criticidade','Diagnostico_Inicial':'diagnosticoInicial','Responsavel':'responsavel',
+    // Testes
+    'Resultado':'resultado','Status_Tecnico_Nao_Conformidade':'statusTecnicoNaoConformidade'
+  };
+  const mapa={};
+  Object.keys(campos).forEach(h=>{mapa[normalizarNomeCabecalho(h)]=campos[h]});
+  return mapa;
+}
+function _xlsxDownload(sheets,filename){
+  const wb=XLSX.utils.book_new();
+  sheets.forEach(([nome,rows])=>{
+    const ws=XLSX.utils.aoa_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb,ws,nome);
+  });
+  XLSX.writeFile(wb,filename);
+}
+function baixarModeloCentralSDAI(){
+  const dados=[
+    ['Painel','Modelo_Painel','Laco','Piso','Sistema','Endereco_Fisico','Tipo_Dispositivo','Modelo_Dispositivo','Nome_Dispositivo','Status','FLM','Porta','Loja_Area','Observacao'],
+    ['Painel 01','FPA-5000','Laço 01','Piso 1','SDAI','01-001','Detector de Fumaça','FAP-425','Detector Hall Entrada','Em operação','FLM-01','1','Loja Exemplo','—'],
+    ['Painel 01','FPA-5000','Laço 01','Piso 1','SDAI','01-002','Acionador Manual','ACM','Acionador Corredor A','Módulo aberto','FLM-01','2','Loja Exemplo 2','—'],
+    ['Painel 02','FPA-8000','Laço 03','Piso 2','SDAI','02-010','Detector Térmico','FAH','Detector Praça Alimentação','Em teste','FLM-02','1','Loja Exemplo 3','—']
+  ];
+  const status=(typeof STATUS_SISTEMA_OPTIONS!=='undefined'?STATUS_SISTEMA_OPTIONS.filter(s=>s!=='__renomear__'):['Em operação','Laço aberto','Módulo aberto','Módulo em curto','Incêndio disparado','Desativação','Em teste']).join(', ');
+  const instrucoes=[
+    ['Instruções — Modelo Central SDAI'],
+    [''],
+    ['Explicação das colunas:'],
+    ['Painel — identificação do painel Bosch (ex: Painel 01).'],
+    ['Modelo_Painel — modelo do painel (ex: FPA-5000, FPA-8000).'],
+    ['Laco — número/identificação do laço dentro do painel.'],
+    ['Piso — piso onde o equipamento está fisicamente instalado.'],
+    ['Sistema — sistema ao qual o dispositivo pertence (ex: SDAI).'],
+    ['Endereco_Fisico — código de endereço físico do dispositivo no laço (ex: 01-001).'],
+    ['Tipo_Dispositivo — tipo do equipamento (ver lista de tipos permitidos abaixo).'],
+    ['Modelo_Dispositivo — modelo/código do fabricante do dispositivo.'],
+    ['Nome_Dispositivo — nome/descrição do dispositivo.'],
+    ['Status — situação técnica atual (ver lista de status permitidos abaixo).'],
+    ['FLM — identificação do módulo FLM ao qual o dispositivo está vinculado, se aplicável.'],
+    ['Porta — porta do FLM (1 ou 2), se aplicável.'],
+    ['Loja_Area — loja ou área atendida por essa porta/dispositivo, se aplicável.'],
+    ['Observacao — texto livre.'],
+    [''],
+    ['Lista de tipos permitidos:'],
+    ['FAP, DFO → Detector de Fumaça'],
+    ['FAH → Detector Térmico'],
+    ['ACM, DM210, SM210, FMC-210, FMC-420RW → Acionador Manual'],
+    ['FLM → Módulo'],
+    [''],
+    ['Lista de status permitidos:'],
+    [status],
+    [''],
+    ['Exemplos de endereço Bosch:'],
+    ['01-001 = Painel 1, endereço físico 001 no laço.'],
+    [''],
+    ['Regras de normalização:'],
+    ['Detector nunca cria loja.'],
+    ['Acionador nunca cria loja.'],
+    ['Loja nasce pela porta do FLM.'],
+    ['Painel + Endereço Físico identificam o módulo.'],
+    ['FLM possui duas portas.'],
+    ['Cada porta pode atender uma loja diferente.']
+  ];
+  _xlsxDownload([['Dados',dados],['Instruções',instrucoes]],'modelo_central_sdai.xlsx');
+}
+function baixarModeloLojasLUC(){
+  const dados=[
+    ['LUC','Tipo_Loja','Loja','Area_Contrato_m2','Piso','Observacao'],
+    ['10001','Vestuário','Loja Exemplo Moda','85.5','Piso 1','—'],
+    ['20015','Alimentação','Loja Exemplo Alimentação','120','Piso 2','—'],
+    ['30022','Serviços','Loja Exemplo Serviços','45.2','Piso 3','—']
+  ];
+  const instrucoes=[
+    ['Instruções — Modelo Lojas / Base LUC'],
+    [''],
+    ['LUC iniciando com 1, 2 ou 3 corresponde ao Piso 1, 2 ou 3, respectivamente.'],
+    ['Tipo de Loja "Alimentação" é sempre considerado Piso 3.'],
+    ['O nome da Base LUC prevalece como nome oficial da loja.'],
+    ['Acentos devem ser aceitos normalmente nos nomes.'],
+    ['Lojas sem vínculo técnico ficam sem LUC até serem associadas.'],
+    ['Não é permitido associar a mesma LUC a mais de uma loja (associação duplicada é impedida).']
+  ];
+  _xlsxDownload([['Dados',dados],['Instruções',instrucoes]],'modelo_lojas_luc.xlsx');
+}
+function baixarModeloFalhas(){
+  const dados=[
+    ['Data_Hora','Painel','Laco','Piso','Endereco','Loja_Area','Tipo','Status_Tecnico','Criticidade','Diagnostico_Inicial','Responsavel','Observacao'],
+    ['17/06/2026 08:16','Painel 01','Laço 01','Piso 1','01-001','Loja Exemplo','Detector','Módulo aberto','Alta','Possível rompimento de fiação','Fulano de Tal','—'],
+    ['18/06/2026 10:05','Painel 02','Laço 03','Piso 2','02-010','Loja Exemplo 3','Acionador','Módulo em curto','Média','Verificar curto no laço','Fulano de Tal','—']
+  ];
+  const status=(typeof STATUS_SISTEMA_OPTIONS!=='undefined'?STATUS_SISTEMA_OPTIONS.filter(s=>s!=='__renomear__'):['Em operação','Laço aberto','Módulo aberto','Módulo em curto','Incêndio disparado','Desativação','Em teste']).join(', ');
+  const instrucoes=[
+    ['Instruções — Modelo de Falhas'],
+    [''],
+    ['Este modelo importa somente ocorrências de FALHA reais — não utilizar para registrar testes (use o modelo de Testes para isso).'],
+    [''],
+    ['Explicação das colunas:'],
+    ['Data_Hora — data e hora da falha registrada no painel.'],
+    ['Painel, Laco, Piso, Endereco — identificação/localização do equipamento.'],
+    ['Loja_Area — loja/área associada, quando aplicável.'],
+    ['Tipo — tipo de dispositivo envolvido.'],
+    ['Status_Tecnico — situação técnica da falha (ver lista abaixo).'],
+    ['Criticidade — nível de prioridade da falha.'],
+    ['Diagnostico_Inicial — descrição inicial do problema.'],
+    ['Responsavel — pessoa responsável pelo tratamento.'],
+    ['Observacao — texto livre.'],
+    [''],
+    ['Lista de Status_Tecnico permitidos:'],
+    [status]
+  ];
+  _xlsxDownload([['Dados',dados],['Instruções',instrucoes]],'modelo_falhas.xlsx');
+}
+function baixarModeloTestes(){
+  const dados=[
+    ['Data_Hora','Loja_Area','Painel','Laco','FLM','Porta','Responsavel','Resultado','Status_Tecnico_Nao_Conformidade','Observacao'],
+    ['17/06/2026 08:16','Loja Exemplo','Painel 01','Laço 01','FLM-01','1','Fulano de Tal','Conforme','','—'],
+    ['17/06/2026 09:30','Loja Exemplo 2','Painel 01','Laço 01','FLM-01','2','Fulano de Tal','Ajustado','','Sensibilidade recalibrada'],
+    ['17/06/2026 10:45','Loja Exemplo 3','Painel 02','Laço 03','FLM-02','1','Fulano de Tal','Não Conforme','Detector','Detector não respondeu ao teste']
+  ];
+  const instrucoes=[
+    ['Instruções — Modelo de Testes'],
+    [''],
+    ['Conforme não cria falha.'],
+    ['Ajustado registra apenas histórico.'],
+    ['Não Conforme cria falha e plano de ação.'],
+    ['Status Técnico da Não Conformidade é obrigatório quando Resultado = Não Conforme.'],
+    [''],
+    ['Explicação das colunas:'],
+    ['Data_Hora — data e hora do teste realizado.'],
+    ['Loja_Area — loja/área testada.'],
+    ['Painel, Laco, FLM, Porta — identificação/localização do ponto testado.'],
+    ['Responsavel — pessoa que executou o teste.'],
+    ['Resultado — ver lista de valores permitidos abaixo.'],
+    ['Status_Tecnico_Nao_Conformidade — preencher somente quando Resultado = Não Conforme.'],
+    ['Observacao — texto livre.'],
+    [''],
+    ['Lista de Resultado permitidos:'],
+    ['Conforme, Ajustado, Não Conforme']
+  ];
+  _xlsxDownload([['Dados',dados],['Instruções',instrucoes]],'modelo_testes.xlsx');
+}
+function baixarModeloCompletoCliente(){
+  const cliente=[
+    ['Nome','Nome_Empreendimento','CNPJ','Cidade','UF','Responsavel','Modulo_SDAI_Habilitado'],
+    ['Empresa Exemplo Ltda','Shopping Exemplo','00.000.000/0001-00','Cidade Exemplo','UF','Fulano de Tal','Sim']
+  ];
+  const paineis=[
+    ['Painel','Modelo_Painel','Piso','Observacao'],
+    ['Painel 01','FPA-5000','Piso 1','—']
+  ];
+  const lacos=[
+    ['Painel','Laco','Piso','Sistema','Observacao'],
+    ['Painel 01','Laço 01','Piso 1','SDAI','—']
+  ];
+  const modulos=[
+    ['Painel','Laco','Endereco_Fisico','Modelo','Piso'],
+    ['Painel 01','Laço 01','01-001','FLM-420','Piso 1']
+  ];
+  const portas=[
+    ['Painel','Endereco_Fisico_FLM','Porta','Loja_Area'],
+    ['Painel 01','01-001','1','Loja Exemplo']
+  ];
+  const dispositivos=[
+    ['Painel','Modelo_Painel','Laco','Piso','Sistema','Endereco_Fisico','Tipo_Dispositivo','Modelo_Dispositivo','Nome_Dispositivo','Status','Loja_Area','Observacao'],
+    ['Painel 01','FPA-5000','Laço 01','Piso 1','SDAI','01-002','Detector de Fumaça','FAP-425','Detector Hall Entrada','Em operação','Loja Exemplo','—']
+  ];
+  const lojas=[
+    ['LUC','Tipo_Loja','Loja','Area_Contrato_m2','Piso','Observacao'],
+    ['10001','Vestuário','Loja Exemplo Moda','85.5','Piso 1','—']
+  ];
+  const baseLuc=[
+    ['LUC','Tipo_Loja','Loja','Area_Contrato_m2','Piso','Observacao'],
+    ['10001','Vestuário','Loja Exemplo Moda','85.5','Piso 1','—']
+  ];
+  const falhas=[
+    ['Data_Hora','Painel','Laco','Piso','Endereco','Loja_Area','Tipo','Status_Tecnico','Criticidade','Diagnostico_Inicial','Responsavel','Observacao'],
+    ['17/06/2026 08:16','Painel 01','Laço 01','Piso 1','01-001','Loja Exemplo','Detector','Módulo aberto','Alta','Possível rompimento de fiação','Fulano de Tal','—']
+  ];
+  const testes=[
+    ['Data_Hora','Loja_Area','Painel','Laco','FLM','Porta','Responsavel','Resultado','Status_Tecnico_Nao_Conformidade','Observacao'],
+    ['17/06/2026 08:16','Loja Exemplo','Painel 01','Laço 01','FLM-01','1','Fulano de Tal','Conforme','','—']
+  ];
+  const planos=[
+    ['Falha_Referencia','Categoria','Prioridade','Responsavel','Situacao','Prazo','Providencia'],
+    ['FA-0001','Detector','Alta','Fulano de Tal','Em andamento','25/06/2026','Substituir detector']
+  ];
+  const plantas=[
+    ['Nome_Planta','Piso','Observacao'],
+    ['Planta Piso 1','Piso 1','—']
+  ];
+  const instrucoes=[
+    ['Instruções — Modelo Completo do Cliente'],
+    [''],
+    ['Cliente — dados cadastrais gerais do cliente/empreendimento.'],
+    ['Paineis — cadastro dos painéis Bosch instalados.'],
+    ['Lacos — laços vinculados a cada painel.'],
+    ['Modulos — módulos FLM vinculados a painel/laço.'],
+    ['Portas — portas de cada FLM e a loja/área atendida.'],
+    ['Dispositivos — equipamentos (detectores, acionadores etc.) cadastrados.'],
+    ['Lojas — cadastro técnico de lojas.'],
+    ['Base_LUC — base oficial de lojas (LUC).'],
+    ['Falhas — ocorrências de falha real.'],
+    ['Testes — registros de testes/retestes realizados.'],
+    ['Planos — plano de ação vinculado às falhas.'],
+    ['Plantas — plantas/baixas cadastradas por piso.'],
+    [''],
+    ['Preencha cada aba mantendo os cabeçalhos exatamente como estão. Não é necessário preencher todas as abas — deixe em branco o que não se aplica.']
+  ];
+  _xlsxDownload([
+    ['Cliente',cliente],['Paineis',paineis],['Lacos',lacos],['Modulos',modulos],['Portas',portas],
+    ['Dispositivos',dispositivos],['Lojas',lojas],['Base_LUC',baseLuc],['Falhas',falhas],['Testes',testes],
+    ['Planos',planos],['Plantas',plantas],['Instrucoes',instrucoes]
+  ],'modelo_completo_cliente.xlsx');
+}
+function renderImportacao(){const el=document.getElementById('importacao'); if(!el)return; if(!clienteAtivoObj())return; if(!can('importar')){el.innerHTML='<div class="card"><h3 class="sectionTitle">Importação bloqueada</h3><p class="msg warn">Seu perfil não possui permissão para importar ou substituir base cadastral.</p></div>';return} ensureLucSchema();
   const w=impW();
   const passo=(nx,label,ativo,feito)=>`<div style="display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:${ativo?'800':'500'};color:${ativo?'var(--l3a-primary)':feito?'var(--l3a-success,#15803D)':'var(--l3a-text-muted)'}"><span style="width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;border:2px solid currentColor;font-size:11px">${feito?'✓':nx}</span>${label}</div>`;
   const barra=`<div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:14px">${passo(1,'Escolher o tipo',w.passo===1,w.passo>1)}${passo(2,'Enviar e validar arquivo',w.passo===2,w.passo>2)}${passo(3,'Confirmar importação',w.passo===3,false)}</div>`;
@@ -4662,7 +5465,7 @@ function renderImportacao(){const el=document.getElementById('importacao'); if(!
       </div>
       <div id="lucImportMsg"></div><div id="lucPreviewBox"></div>`;
   }
-  el.innerHTML=`<div class="card planoToolbarCard"><h3 class="sectionTitle" style="margin:0 0 10px">Importação de dados</h3>${barra}${corpo}</div>
+  el.innerHTML=`${modelosImportacaoPanelHtml()}<div class="card planoToolbarCard"><h3 class="sectionTitle" style="margin:0 0 10px">Importação de dados</h3>${barra}${corpo}</div>
   ${w.tipo==='luc'||w.passo===1?lucAcompanhamentoHtml():''}
   <div class="card"><h3 class="sectionTitle">Último diagnóstico de importação</h3>${lastImportHtml()}</div>`}
 // Acompanhamento LUC (abas Resumo/Lojas/Conflitos/Associação) — extraído do lucImportInterface para

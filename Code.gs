@@ -264,34 +264,94 @@ function loadClienteDb_(cid){
   return {ok:true, db, clienteId:cid, sheetUrl:ss.getUrl(), spreadsheetId:ss.getId(), loadedAt:new Date().toISOString()};
 }
 
+// ── ITEM 9 (controle de concorrência) ────────────────────────────────────────
+// Comparação de revisão do lado do SERVIDOR antes de gravar — proteção real contra
+// sobrescrita silenciosa entre dois usuários/abas gravando ao mesmo tempo (um check
+// só no cliente não adianta, porque os dois clientes calculariam "sem conflito"
+// independentemente um do outro). A última revisão conhecida de cada cliente fica em
+// ScriptProperties, sob a chave propKeyCliente_(cid)+'_REV'.
+//
+// LIMITAÇÃO CONHECIDA E ACEITA: o front-end (apiPost, em index.html) envia esta
+// gravação com fetch(...,{mode:'no-cors',...}) — o que torna a RESPOSTA desta função
+// opaca para o navegador (o JS do cliente não consegue ler o corpo/erro retornado
+// aqui). Ou seja: a rejeição abaixo protege os DADOS de verdade (a gravação é
+// recusada), mas a mensagem amigável "Outro usuário alterou..." não chega em tempo
+// real à tela de quem tentou salvar — quem detecta a divergência, hoje, é a
+// conferência pós-sync (verificarSyncSalvou/checksumColecoes) já existente no
+// front-end, que compara o que foi enviado com o que ficou gravado e mostra o aviso
+// genérico de "checksum divergente". Resolver isso por completo exigiria trocar esse
+// endpoint para um fetch com CORS habilitado (fora do escopo desta estabilização —
+// risco alto de quebrar o sync que já funciona).
+function revisaoConflita_(cid, db){
+  const revEnviada = db && db._revision;
+  if(revEnviada === undefined || revEnviada === null || revEnviada === '') return null; // cliente antigo: sem _revision, não bloqueia
+  const props = PropertiesService.getScriptProperties();
+  const chave = propKeyCliente_(cid) + '_REV';
+  const revConhecida = props.getProperty(chave);
+  if(!revConhecida) return null; // nenhuma revisão registrada ainda: primeira gravação, aceita
+  if(String(revConhecida) !== String(revEnviada)){
+    return {ok:false, error:'Outro usuário alterou esta base. Atualize os dados antes de salvar.', conflict:true};
+  }
+  return null;
+}
+function registrarRevisao_(cid, db){
+  try{
+    const props = PropertiesService.getScriptProperties();
+    const chave = propKeyCliente_(cid) + '_REV';
+    const nova = (db && (db._revision !== undefined && db._revision !== null && db._revision !== '')) ? db._revision : '';
+    if(nova !== '') props.setProperty(chave, String(nova));
+  }catch(e){}
+}
+
 function saveClienteDb_(cid, db){
   if(!cid) return {ok:false, error:'clienteId obrigatório'};
-  const ss = getOrCreateClienteSS_(cid);
-  ensureSchemaGeneric_(ss, SCHEMA_CLIENTE);
+  const lock = LockService.getScriptLock();
+  try{
+    lock.waitLock(10000); // aguarda até 10s por outra gravação em andamento
+  }catch(e){
+    return {ok:false, error:'Sistema ocupado processando outra gravação simultânea. Tente novamente em alguns segundos.'};
+  }
+  try{
+    // Homologação (FASE 1/9): a checagem de revisão precisa acontecer DEPOIS de adquirir o lock, não
+    // antes. Se checasse antes, duas gravações quase simultâneas poderiam ambas passar na checagem
+    // (nenhuma das duas ainda registrou a revisão nova) e a segunda, ao finalmente conseguir o lock,
+    // sobrescreveria com dados obsoletos mesmo tendo sido "aprovada" — a checagem de conflito perderia
+    // sua função sob concorrência real. Com o lock serializando as gravações e a checagem repetida
+    // aqui dentro, a segunda chamada só entra na seção crítica depois que a primeira já registrou sua
+    // nova revisão (registrarRevisao_, no fim desta função) — então ela corretamente detecta o
+    // conflito na sua vez, em vez de sobrescrever silenciosamente.
+    const conflito = revisaoConflita_(cid, db);
+    if(conflito) return conflito;
+    const ss = getOrCreateClienteSS_(cid);
+    ensureSchemaGeneric_(ss, SCHEMA_CLIENTE);
 
-  writeSheetObjects_(ss.getSheetByName('Paineis'),             SCHEMA_CLIENTE.Paineis,            db.paineis             || []);
-  writeSheetObjects_(ss.getSheetByName('Lacos'),               SCHEMA_CLIENTE.Lacos,              db.lacos               || []);
-  writeSheetObjects_(ss.getSheetByName('FLMs'),                SCHEMA_CLIENTE.FLMs,               db.flms                || []);
-  writeSheetObjects_(ss.getSheetByName('Portas'),              SCHEMA_CLIENTE.Portas,             db.portas              || []);
-  writeSheetObjects_(ss.getSheetByName('Lojas_Areas'),         SCHEMA_CLIENTE.Lojas_Areas,        db.locais              || []);
-  writeSheetObjects_(ss.getSheetByName('Equipamentos'),        SCHEMA_CLIENTE.Equipamentos,       db.equipamentos        || []);
-  writeSheetObjects_(ss.getSheetByName('Falhas'),              SCHEMA_CLIENTE.Falhas,             db.falhas              || []);
-  writeSheetObjects_(ss.getSheetByName('Plano_Acao'),          SCHEMA_CLIENTE.Plano_Acao,         db.planos              || []);
-  writeSheetObjects_(ss.getSheetByName('Plantas'),             SCHEMA_CLIENTE.Plantas,            db.plantas             || []);
-  writeSheetObjects_(ss.getSheetByName('Inconsistencias'),     SCHEMA_CLIENTE.Inconsistencias,    db.inconsistencias     || []);
-  writeSheetObjects_(ss.getSheetByName('Importacoes'),         SCHEMA_CLIENTE.Importacoes,        db.imports             || []);
-  writeSheetObjects_(ss.getSheetByName('Base_LUC'),            SCHEMA_CLIENTE.Base_LUC,           db.baseLojas           || []);
-  writeSheetObjects_(ss.getSheetByName('Conflitos_Associacao'),SCHEMA_CLIENTE.Conflitos_Associacao,db.conflitosAssociacao|| []);
-  writeSheetObjects_(ss.getSheetByName('CFTV'),                SCHEMA_CLIENTE.CFTV,               db.cftv                || []);
-  writeSheetObjects_(ss.getSheetByName('Acesso_Pontos'),       SCHEMA_CLIENTE.Acesso_Pontos,      db.acessoPontos        || []);
-  writeSheetObjects_(ss.getSheetByName('Ambiente_Equip'),      SCHEMA_CLIENTE.Ambiente_Equip,     db.ambienteEquip       || []);
-  writeSheetObjects_(ss.getSheetByName('Notificacoes'),        SCHEMA_CLIENTE.Notificacoes,       db.notificacoes        || []);
+    writeSheetObjects_(ss.getSheetByName('Paineis'),             SCHEMA_CLIENTE.Paineis,            db.paineis             || []);
+    writeSheetObjects_(ss.getSheetByName('Lacos'),               SCHEMA_CLIENTE.Lacos,              db.lacos               || []);
+    writeSheetObjects_(ss.getSheetByName('FLMs'),                SCHEMA_CLIENTE.FLMs,               db.flms                || []);
+    writeSheetObjects_(ss.getSheetByName('Portas'),              SCHEMA_CLIENTE.Portas,             db.portas              || []);
+    writeSheetObjects_(ss.getSheetByName('Lojas_Areas'),         SCHEMA_CLIENTE.Lojas_Areas,        db.locais              || []);
+    writeSheetObjects_(ss.getSheetByName('Equipamentos'),        SCHEMA_CLIENTE.Equipamentos,       db.equipamentos        || []);
+    writeSheetObjects_(ss.getSheetByName('Falhas'),              SCHEMA_CLIENTE.Falhas,             db.falhas              || []);
+    writeSheetObjects_(ss.getSheetByName('Plano_Acao'),          SCHEMA_CLIENTE.Plano_Acao,         db.planos              || []);
+    writeSheetObjects_(ss.getSheetByName('Plantas'),             SCHEMA_CLIENTE.Plantas,            db.plantas             || []);
+    writeSheetObjects_(ss.getSheetByName('Inconsistencias'),     SCHEMA_CLIENTE.Inconsistencias,    db.inconsistencias     || []);
+    writeSheetObjects_(ss.getSheetByName('Importacoes'),         SCHEMA_CLIENTE.Importacoes,        db.imports             || []);
+    writeSheetObjects_(ss.getSheetByName('Base_LUC'),            SCHEMA_CLIENTE.Base_LUC,           db.baseLojas           || []);
+    writeSheetObjects_(ss.getSheetByName('Conflitos_Associacao'),SCHEMA_CLIENTE.Conflitos_Associacao,db.conflitosAssociacao|| []);
+    writeSheetObjects_(ss.getSheetByName('CFTV'),                SCHEMA_CLIENTE.CFTV,               db.cftv                || []);
+    writeSheetObjects_(ss.getSheetByName('Acesso_Pontos'),       SCHEMA_CLIENTE.Acesso_Pontos,      db.acessoPontos        || []);
+    writeSheetObjects_(ss.getSheetByName('Ambiente_Equip'),      SCHEMA_CLIENTE.Ambiente_Equip,     db.ambienteEquip       || []);
+    writeSheetObjects_(ss.getSheetByName('Notificacoes'),        SCHEMA_CLIENTE.Notificacoes,       db.notificacoes        || []);
 
-  // Historico: apenas append (não sobrescreve — preserva auditoria)
-  appendHistoricoCliente_(ss, 'Sistema', '', 'sync', 'Base sincronizada pelo SDAI Manager');
+    // Historico: apenas append (não sobrescreve — preserva auditoria)
+    appendHistoricoCliente_(ss, 'Sistema', '', 'sync', 'Base sincronizada pelo SDAI Manager');
 
-  writeConfigCliente_(ss, db);
-  return {ok:true, clienteId:cid, savedAt:new Date().toISOString(), sheetUrl:ss.getUrl()};
+    writeConfigCliente_(ss, db);
+    registrarRevisao_(cid, db);
+    return {ok:true, clienteId:cid, savedAt:new Date().toISOString(), sheetUrl:ss.getUrl()};
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function appendHistoricoCliente_(ss, entidade, entidadeId, acao, descricao){
@@ -347,13 +407,40 @@ function loadDatabase_(){
 
 function saveDatabase_(db){
   // Legado: salva apenas usuários e configuração no master
-  const ss = getOrCreateMaster_();
-  ensureSchemaGeneric_(ss, SCHEMA_MASTER);
-  if(db.usuarios && db.usuarios.length){
-    writeSheetObjects_(ss.getSheetByName('Usuarios'), SCHEMA_MASTER.Usuarios, db.usuarios);
+  // Item 9: mesma proteção de revisão do saveClienteDb_, chave própria (base legada sem clienteId).
+  const revEnviada = db && db._revision;
+  const lock = LockService.getScriptLock();
+  try{
+    lock.waitLock(10000); // aguarda até 10s por outra gravação em andamento
+  }catch(e){
+    return {ok:false, error:'Sistema ocupado processando outra gravação simultânea. Tente novamente em alguns segundos.'};
   }
-  appendHistoricoGlobal_(ss, '', 'Sistema', '', 'sync', 'Sync legado (sem cliente)');
-  return {ok:true, savedAt:new Date().toISOString(), sheetUrl:ss.getUrl()};
+  try{
+    // Homologação (FASE 1/9): checagem de revisão movida para DENTRO do lock (mesmo motivo
+    // documentado em saveClienteDb_) — checar antes do lock permitiria que duas gravações quase
+    // simultâneas passassem ambas na checagem antes de qualquer uma registrar sua revisão nova.
+    if(revEnviada !== undefined && revEnviada !== null && revEnviada !== ''){
+      const props = PropertiesService.getScriptProperties();
+      const revConhecida = props.getProperty('LEGADO_MASTER_REV');
+      if(revConhecida && String(revConhecida) !== String(revEnviada)){
+        return {ok:false, error:'Outro usuário alterou esta base. Atualize os dados antes de salvar.', conflict:true};
+      }
+    }
+    const ss = getOrCreateMaster_();
+    ensureSchemaGeneric_(ss, SCHEMA_MASTER);
+    if(db.usuarios && db.usuarios.length){
+      writeSheetObjects_(ss.getSheetByName('Usuarios'), SCHEMA_MASTER.Usuarios, db.usuarios);
+    }
+    appendHistoricoGlobal_(ss, '', 'Sistema', '', 'sync', 'Sync legado (sem cliente)');
+    try{
+      if(revEnviada !== undefined && revEnviada !== null && revEnviada !== ''){
+        PropertiesService.getScriptProperties().setProperty('LEGADO_MASTER_REV', String(revEnviada));
+      }
+    }catch(e){}
+    return {ok:true, savedAt:new Date().toISOString(), sheetUrl:ss.getUrl()};
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // ── UPLOAD DE FOTOS (Google Drive) ───────────────────────────────────────────
