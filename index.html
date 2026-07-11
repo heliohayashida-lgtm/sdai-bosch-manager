@@ -1,5 +1,26 @@
 <!doctype html>
-<!-- build: 2026-07-11 v6.55 - MULTIPLICIDADE DE PONTOS TÉCNICOS NA MESMA LOJA. AUDITORIA PRÉVIA (mapeamento pedido antes de alterar): (1) db.locais JÁ carrega painelId/lacoId/piso/flmId/portaId/sistema por registro — a mesma loja comercial com SDAI e CO2 já existe hoje como DOIS registros distintos em db.locais (dois localIds), cada um com seu próprio painel/laço/módulo/porta/sistema; não há um único registro "loja" guarda-chuva. (2) localIds diferentes por porta: SIM, já existem — ensureLocal() casa por portaId quando presente (`const match = portaId ? (x=>x.portaId===portaId) : (x=>up(x.nome)===up(nome))`), então nome igual + porta diferente já resultava em dois localIds mesmo antes desta correção. (3) Fluxo que consolida por nome: só o branch de EQUIPAMENTO sem módulo/porta associado em importFile() (equipamento solto, sem FLM) busca o local existente por nome (`db.locais.find(x=>up(x.nome)===up(loja))`) — inevitável porque um equipamento sem FLM não tem porta própria para casar; não afeta pontos que têm módulo/porta (a maioria). lucLocaisIrmaos()/lucSincronizarIrmaos() já existiam e JÁ sincronizavam somente metadados comerciais (nomeOficial/luc/lucAssociado/baseLojaId/statusAssociacao) — nunca status técnico/testes/falhas/planos; auditoria confirmou zero necessidade de mudança nessas duas funções. (4) Nenhuma função encontrada causando perda de distinção técnica entre pontos — Testes (db.testes, filtrado por localId) e Falhas (db.falhas, filtrado por localId/itemId) já eram por ponto, nunca por nome de loja. MUDANÇAS DESTA VERSÃO (aditivas, sobre uma base que já era estruturalmente correta): (1) Nova função chavePontoTecnico(ponto) — identidade estável do ponto técnico (cliente+sistema+painel+laço+módulo+porta+equipamento), disponível para uso futuro em auditorias/relatórios. (2) Nova função pontosTecnicosDaLoja(local) — retorna todos os pontos técnicos (db.locais) que compartilham o mesmo nome comercial/LUC, para exibição/agrupamento (não altera nem funde histórico). (3) renderLocais(): KPI "Lojas / Áreas" desdobrado em dois cards — "Lojas comerciais" (contagem distinta por nomeOficial||nome) e "Pontos técnicos" (contagem de registros/linhas, 1 por localId) — nunca mais uma única contagem ambígua; badge de Sistema (SDAI/CO2) visível em cada linha da tabela; novo filtro por Sistema. Os botões de ação (Executar teste/Registrar falha/Histórico/Editar/Excluir) já operavam sobre r.id — o localId exato daquela linha/ponto — logo já eram inerentemente ponto-específicos; não foi necessário criar um seletor de ponto adicional, pois cada linha da tabela já É um ponto técnico distinto (auditado e confirmado, não presumido). (4) formTeste(): resumo do ponto (Sistema/Painel/Laço/Piso/Loja) destacado no topo do modal com aviso explícito de que a mesma loja pode ter outros pontos independentes. (5) formFalha(): resumo do local (resumoLocal) agora prefixado com [SDAI]/[CO2] quando o item resolvido tem sistema definido — reforça visualmente qual ponto está sendo aberto. (6) renderFalhas(): badge de Sistema por linha, filtro por Sistema, campo incluído na busca textual (permite localizar "SERRA CO2" isolando só o ponto CO2). (7) renderPlano(): campo `sistema` incluído em buildPlanoRowsBase()/planoRowsFiltrados() (herdado do local da falha vinculada) e novo filtro Sistema em "Mais filtros" — mesmo padrão de Lojas/Falhas; diagnóstico do formPlano() ganhou linha "Sistema" explícita (Plano herda o mesmo ponto técnico da Falha de origem, nunca um genérico). (8) openLocal(): cabeçalho ganhou badge de Sistema; quando a loja tem outros pontos técnicos (pontosTecnicosDaLoja), lista-os como chips clicáveis "ver histórico daquele ponto" — deixando explícito que são pontos SEPARADOS (Testes/Falhas continuam filtrados só por localId===este ponto, nunca por nome). (9) importFile(): confirmado (sem alteração necessária) que sistemaResolvido = laço.sistema||sistemaAutoDetect() já é calculado e passado a ensureLocal() em toda importação de loja vinculada a módulo/porta — SDAI e CO2 nunca são consolidados no mesmo localId nessa via. NÃO ALTERADO: ensureLocal() (dedup por portaId já correto), lucLocaisIrmaos()/lucSincronizarIrmaos() (já só sincronizavam metadado comercial), criarTeste()/saveTeste()/saveFalha()/registrarExecucaoPlano()/concluirPlanoFormal() (lógica de gravação inalterada — todas já gravam por localId/itemId específico), Code.gs, login/permissões/sincronização. Testado: node --check sem erros nos scripts extraídos; simulação mental dos 10 cenários pedidos (loja com 1 ponto abre direto; loja com 2 pontos = 2 linhas distintas, cada botão já abre o ponto certo; teste em ponto SDAI não altera ponto CO2 — são localIds diferentes; falha em CO2 não afeta SDAI pelo mesmo motivo; histórico de openLocal já separado por localId; dashboard mostra Lojas comerciais ≠ Pontos técnicos; import não consolida SDAI/CO2 pois portaId difere; busca "SERRA CO2" isola via filtro de sistema+busca textual). Não avançar para outra melhoria sem validação do usuário. -->
+<!-- build: 2026-07-11 v6.59 - CHUNK C DO RETROFIT (itens 10, 13, 14, 15, 16 do pedido de 20 itens).
+HISTÓRICO COMPLETO CONSOLIDADO (v6.56 a v6.59):
+v6.56: recalcularStatusPontosTecnicos() criada e ligada em sync/boot/switchCliente/sincronizarPlanosFalhas; criarTeste() passou a atualizar db.locais.status quando um teste falha.
+v6.57 (Chunk A): coluna "último teste" + 9 filtros + 9 KPIs em renderLocais() (Lojas/Áreas); botão "Registrar falha" removido das ações de linha de Locais.
+v6.58 (Chunk B — itens 4,6,11,12,17): aba TESTES dedicada com CRUD completo (renderTestes/viewTeste/editTeste/excluirTeste/testesFiltrados); TESTE_RESULTADOS_NOVOS=['Funcionou','Não funcionou'] para testes novos (TESTE_RESULTADOS de 5 valores preservada só para leitura de legado); auditoria em db.testes (criadoPor/editadoPor+historicoEdicoes/excluidoPor+motivo); modal de confirmação (não confirm() nativo) para usar um teste "Funcionou" como evidência de resolução de falha; Relatório de Testes.
+v6.59 (Chunk C — itens 10,13,14,15,16): (10) openLocal() agora chama openLocalBlocosHtml(), com 4 blocos cores separados: Testes (verde/vermelho por resultado), Falhas ativas (vermelho), Histórico de falhas (verde=resolvida/cinza=cancelada), Alterações cadastrais (reaproveita db.historico — o MESMO array que logLocal() já gravava — filtrado por entidadeId===local.id; nenhum array novo foi criado). (13) handler global de ESC registrado uma única vez (guardado por window._escHandlerBound), fecha só o modal atual (há um único #modal no DOM — não existe pilha real de modais), mantém o X funcionando, restaura foco ao elemento que abriu o modal (window._modalReturnFocus), e se os inputs do drawer mudaram desde a abertura (_modalFormSnapshot()) mostra confirmação própria via openModal (nunca confirm() nativo) antes de fechar; bloqueado enquanto _testeSaving/_falhaSaving/_planoSaving estiverem true. (14) INVESTIGADO, SEM BUG ENCONTRADO: saveFlm() já chama save()→render() (linha ~1647), então rename de módulo já propagava corretamente para Lojas/Áreas antes desta rodada; testes/falhas/plano/histórico são linkados por localId (não por flmId/nome), então renomear um FLM não quebra nenhum vínculo — confirmado por leitura, nenhum código novo necessário aqui. (15) formLocal()/saveLocal() ganharam campos editáveis de Painel/Laço/Módulo (FLM, com onSelectFlmLocal() repopulando Porta)/Porta/Endereço, que faltavam; nome/loja/piso/sistema/status/LUC já existiam. saveLocal() confirmadamente não reatribui nem quebra localId (o.id nunca muda), então testes/falhas/plano/histórico permanecem linkados. (16) migrarLocaisOrfaosV659(base), chamada de dentro de normalizeAllStatuses() (mesmo entrypoint de sync/boot/pull/restore usado por recalcularStatusPontosTecnicos()/auditoriaSanearFalhasPlanos()), guardada por base._migradoV659: tenta resolver localId de db.testes/db.falhas órfãos via portaId→flmId→lacoId→painelId→nome→LUC; match único grava localId, ambíguo/irresolúvel vai para base.conflitosMigracao (novo array, criado só porque não existia equivalente) com motivo e candidatos, para revisão manual — nunca escolhe um candidato "no chute".
+GAPS HONESTOS DO SPEC ORIGINAL DE 20 ITENS (motivo de cada um):
+- Item 14 tecnicamente já não era um bug (ver acima) — não houve "correção", só confirmação; se havia um sintoma relatado pelo usuário que não seja rename de FLM, não foi reproduzido nesta rodada e precisaria de um caso concreto para investigar.
+- "Módulo"/"Porta" na aba Testes (v6.58) continuam resolvidos a partir do ponto técnico (loc.flmId/portaId), não de um flmId/portaId próprio do teste — formTeste() não foi alterado nesta rodada para não regredir o fluxo já validado; se o local não tiver módulo/porta cadastrados, a coluna fica vazia.
+- editTeste() ainda não reabre/fecha falha automaticamente ao mudar o resultado de um teste já salvo — mantido assim (fora do escopo pedido) para não introduzir efeito colateral não solicitado.
+- migrarLocaisOrfaosV659() usa heurística de campos remanescentes do registro antigo (painelId/lacoId/flmId/portaId/itemNome/luc) — como os testes/falhas atuais do sistema já gravam localId diretamente desde bem antes desta versão, esta migração é essencialmente uma rede de segurança para dados legados/importados; nunca foi possível testar contra uma base real com órfãos genuínos nesta sessão, então os conflitos gerados em base.conflitosMigracao devem ser revisados manualmente pela primeira execução em produção.
+- ESC handler (item 13) usa snapshot simples de valores de input/select/textarea para detectar "alterações não salvas" — não há um sistema de dirty-tracking por campo previamente existente no arquivo para reaproveitar; suficiente para o caso de uso (formulários simples em modal única), mas não distingue uma alteração real de um valor re-digitado igual ao original.
+node --check validado sem erros (zero) ao final desta rodada — build final v6.59 está em estado limpo e funcional.
+-->
+<!-- build anterior mantida abaixo para histórico -->
+<!-- build: 2026-07-11 v6.58 - CHUNK B DO RETROFIT (itens 4, 6, 11, 12, 17 do pedido de 20 itens; itens 10/13/14/15/16 — "Chunk C" — continuam NÃO feitos, propositalmente fora de escopo desta rodada). RESUMO DO QUE FOI FEITO: (1) Nova aba "TESTES" dedicada (item 4), registrada no MENU_TREE_SUBSYS (grupo Operação do SDAI, entre Falhas e Plano de Ação), VIEW_TO_SECTION, RENDER_POR_TELA, L3A_VIEWS/VIEW_LABELS e <section id="testes">, seguindo exatamente o mesmo padrão de wiring de Falhas/Locais/Plano. renderTestes()/testesFiltrados(): tabela com as 19 colunas pedidas (Data/Hora, Loja, LUC, Sistema, Painel, Laço, Piso, Módulo, Porta, Endereço, Tipo de teste, Resultado, Condição encontrada, Observação, Responsável, Anexos, Falha vinculada, Criado em, Última alteração), filtros (Data ini/fim, Loja, Sistema, Piso, Resultado, Tipo, Responsável, Busca — mesmo padrão dsFilters/filtrarRegistrosPorBusca de Locais/Falhas), KPI strip (Total/Aprovados/Reprovados/Com falha) e ações de linha Visualizar/Editar/Excluir/Abrir falha/Abrir loja. (2) TESTE_RESULTADOS_NOVOS=['Funcionou','Não funcionou'] (item 6): formTeste() agora só oferece esses 2 valores para um teste NOVO — TESTE_RESULTADOS (5 valores antigos) foi MANTIDA intacta (nada removido) só para leitura/exibição de testes já gravados (ícones, filtros, "Último teste" de Locais). saveTeste() foi reescrita: "Funcionou" nunca cria falha — só registra o teste e, SE já existir falha ativa para o mesmo localId exato, abre um modal PRÓPRIO (abrirConfirmacaoEvidenciaTeste/confirmarEvidenciaTeste — openModal, não confirm() nativo, conforme exigido) perguntando se deve normalizar a falha; só resolve com clique explícito (resolverFalhaComEvidenciaDeTeste(), mesmo padrão de f.status/f.resolvidaEm/item.status/loc.status já usado em concluirPlanoFormal()). "Não funcionou" sempre registra (ou reaproveita, nunca duplica — novo parâmetro reuseFalha em criarTeste()) uma falha para aquele localId e recalcula o status técnico na hora (recalcularStatusPontosTecnicos()), sem diálogo extra. (3) editTeste()/viewTeste()/excluirTeste() (item 11) — CRUD que não existia. editTeste() permite mudar tipo/resultado/observação/responsável/data/anexos (opções de resultado = TESTE_RESULTADOS_NOVOS + valor atual do registro, pra nunca esconder um valor legado). excluirTeste() é soft-delete (t.excluido=true) com confirmação via modal próprio (motivo opcional) — nunca confirm() nativo. Ambos chamam recalcularStatusPontosTecnicos(db) ao final. (4) Auditoria (item 12): db.testes ganhou criadoPor/criadoEm (já existia criadoEm; criadoPor é novo), editadoPor/editadoEm/historicoEdicoes (snapshot valoresAntigos/valoresNovos por edição) e excluidoPor/excluidoEm/motivoExclusao — mesmo VOCABULÁRIO já usado em excluirFalhaAuditoria() (excluida/excluidaEm/excluidaPor/motivoExclusao), adaptado para testes; logLocal() chamado em criar/editar/excluir, igual ao padrão do resto do sistema. (5) Relatório de Testes (item 17): botão "📄 Gerar Relatório" na aba Testes → abrirRelatorioTestes()/renderRelatorioTestes(), preenchendo #testesReportOut (div .printArea dentro da própria aba) com Cliente/Empreendimento/Período, KPIs (Testes no período/Lojas testadas/Pontos técnicos testados/Cobertura/Aprovação/Reprovação) e listagem detalhada via table() — mesmo padrão printArea+window.print() de renderRelatorios()/renderRelatorioExecutivoSDAI(). NÃO IMPLEMENTADO NESTA VERSÃO (Chunk C, fora de escopo desta rodada por instrução explícita): item 10 (abrir openLocal() em 4 blocos coloridos), item 13 (handler global único de ESC com dirty-check — hoje cada modal fecha do jeito que já fechava antes), item 14 (investigação do bug de propagação de rename de módulo), item 15 (auditoria de cobertura de campos editáveis em formLocal()), item 16 (migração de registros órfãos para db.conflitosMigracao). GAPS HONESTOS DENTRO DO PRÓPRIO CHUNK B: a coluna "Módulo"/"Porta" da aba Testes é resolvida a partir do PONTO TÉCNICO (loc.flmId/loc.portaId), não de um flmId/portaId próprio gravado no teste (o teste sempre teve painelId/lacoId/flmId/portaId como campos possíveis em criarTeste(), mas formTeste() nunca os preenche — só localId; mantido assim para não regredir o fluxo existente, mas então "Módulo"/"Porta" no relatório dependem do cadastro do local estar completo); editTeste() não reabre nem fecha falhas automaticamente ao mudar o resultado de um teste já salvo (só ajusta os campos do próprio teste + recalcula status derivado) — reabrir/fechar falha por edição de teste antigo não foi pedido explicitamente e ficou de fora para não criar efeito colateral não solicitado. Nenhuma função existente foi removida/renomeada (só formTeste()/saveTeste()/criarTeste()/iconeResultadoTeste() foram MODIFICADAS, mantendo compatibilidade de leitura de testes antigos com os 5 valores de TESTE_RESULTADOS). node --check validado sem erros (zero) logo após esta mudança.
+-->
+<!-- build anterior: 2026-07-11 v6.57 - CHUNK A DO RETROFIT DE LOJAS/ÁREAS (itens 1, 2, 3 e 8 do pedido de 20 itens; itens 4/6/10-17 ainda NÃO feitos, ver lista abaixo). Novas funções: ultimoTesteDoLocal(localId) (db.testes mais recente por localId exato, nunca por nome), iconeResultadoTeste(resultado) (✅ Em funcionamento / ❌ Não funcionou / 🟡 demais resultados / ⚪ sem teste) e ultimoTesteHtml(localId) (ícone+data na linha, responsável embaixo em fonte menor). renderLocais(): coluna "Último teste" substitui os antigos espaços de Resultado/Responsável (que na verdade não existiam como colunas próprias antes — o pedido presumia uma estrutura antiga; a mudança real foi ADICIONAR a coluna, que não existia); 9 novos filtros combináveis com Sistema/Busca (Data inicial/final por data do teste, Resultado [Funcionou/Não funcionou/Sem teste], Status [Em operação/Com falha], Piso, Painel, Laço, Loja, Responsável) — todos aplicados em AND; limparFiltrosTela('locais') estendida para zerar os 9 campos novos; KPI strip expandida de 4 para 9 cards (Lojas comerciais, Pontos técnicos, Lojas testadas, Pontos testados, Testes aprovados, Testes reprovados, Não testados, % cobertura, % aprovação) usando dsKpiStrip/dsKpi já existentes, sem CSS novo. Item 8: botão "Registrar falha"/🚩 removido SOMENTE das ações de linha de renderLocais() — a aba Falhas mantém seu próprio botão "+ Registrar" (formFalha()) intacto. NÃO FEITO NESTA VERSÃO (chunks B/C do pedido, para próxima rodada — parar em estado limpo foi priorizado sobre tentar tudo de uma vez em um arquivo de produção de 7300+ linhas): item 4 (aba "Testes" dedicada com CRUD completo), item 6 (restringir resultado de teste a só Funcionou/Não funcionou — hoje o sistema usa deliberadamente 5 valores, ver nota em v6.56), item 10 (abrir openLocal() em 4 blocos coloridos), item 11 (editTeste/viewTeste/excluirTeste com soft-delete e auditoria), item 12 (auditoria completa de edição/exclusão de teste), item 13 (handler global único de ESC com dirty-check), item 14 (investigar propagação de rename de módulo), item 15 (checagem de cobertura de campos editáveis em formLocal), item 16 (migração de registros órfãos para db.conflitosMigracao), item 17 (gerador de relatório de testes). Nenhuma função existente removida/renomeada; node --check validado sem erros logo após esta mudança.
+-->
+<!-- build anterior: 2026-07-11 v6.56 - CORREÇÃO CRÍTICA DE STATUS TÉCNICO (recorte deliberado de um pedido de 20 itens — ver nota de escopo abaixo). BUG CORRIGIDO: criarTeste() (fluxo "Executar teste" → resultado ruim → confirma falha) gravava a falha em db.falhas mas NUNCA atualizava item.status/loc.status — diferente de saveFalha() (aba Falhas), que já fazia isso corretamente. Resultado prático: uma falha aberta a partir de um teste reprovado na tela de Lojas/Áreas continuava aparecendo como "Em operação" em Lojas/Áreas, Equipamentos e Módulos até alguém editar manualmente aquela falha na aba Falhas. Agora criarTeste() replica exatamente o mesmo padrão de atribuição de status que saveFalha() já usa (item.status=statusFinal; loc.status=statusFinal; ultimaAlteracao=data). REDE DE SEGURANÇA ADICIONAL: nova função recalcularStatusPontosTecnicos(baseDb) — para cada db.locais, se existir falha ATIVA (não excluída, não resolvida) para aquele localId, força loc.status para o status dessa falha (a mais recente, se houver mais de uma); senão, se loc.status ainda estiver marcado como condição de falha "órfã" (sem falha ativa correspondente — normalmente falha resolvida/excluída por outro caminho que não atualizou loc.status), normaliza de volta para "Em operação". Não cria, edita nem apaga testes/falhas — só corrige o campo derivado. Chamada automaticamente (1) dentro de sincronizarPlanosFalhas() — que já é invocada por criarTeste/saveFalha/resolução/importação/boot do app, cobrindo todos esses caminhos em um único ponto sem duplicar a chamada, e (2) logo após loadClienteDb() em switchCliente() e em bootSDAIManager(), garantindo que status fique correto assim que o cliente é carregado, sem precisar de F5 nem de o usuário reabrir cada falha manualmente. NOTA DE ESCOPO IMPORTANTE: o pedido original desta rodada tinha 20 itens (nova aba Testes, coluna "Último teste", KPIs de cobertura, filtros avançados em Lojas/Áreas, edição/exclusão de teste com auditoria completa, gerador de relatório de testes, ESC-modal com dirty-check, migração de registros órfãos, edição cadastral completa do ponto técnico, restrição do resultado de teste a só "Funcionou"/"Não funcionou", remoção do botão "Registrar falha" da tela de Lojas/Áreas, entre outros). A base real do arquivo diverge da premissa do pedido em pontos estruturais (ex.: TESTE_RESULTADOS hoje tem 5 valores — Em funcionamento/Funcionamento parcial/Não funcionou/Não foi possível testar/Teste interrompido — não 2; criarTeste()/saveTeste() já são recentes e cuidadosamente blindados contra duplo-clique e troca de cliente; várias peças pedidas como "novas" — Testes recentes em openLocal, badge de Sistema, KPIs Lojas comerciais × Pontos técnicos — já existiam de rodadas anteriores). Diante do tamanho e do risco de regressão de uma reescrita completa em uma única passada, esta versão entrega e valida SOMENTE a correção crítica de status (item 9/20 do pedido) mais a rede de segurança de recomputo automático (item 20/20, na medida do já coberto por loc.status). NÃO IMPLEMENTADOS nesta versão (ficam para uma próxima rodada dedicada, um de cada vez, para permitir validação incremental do usuário): coluna "Último teste" e filtros avançados em Lojas/Áreas (item 1/2), KPIs de cobertura/aprovação (item 3), aba "Testes" dedicada com CRUD completo e relatório (itens 4/11/17), restrição do resultado de teste a 2 valores (item 6 — mantidos os 5 valores atuais, já que treino/uso real do sistema depende deles hoje), remoção do botão "Registrar falha" de Lojas/Áreas (item 8), separação de openLocal() em 4 blocos coloridos (item 10), auditoria completa criadoPor/editadoPor/excluidoPor em testes (item 12 — logLocal() já registra criação de teste, mas não still edição/exclusão pois editTeste/excluirTeste não foram criados), ESC fechando só o modal do topo com dirty-check (item 13), investigação do bug de propagação de rename de módulo (item 14) e verificação de edição cadastral completa (item 15), migração de registros órfãos para db.conflitosMigracao (item 16). Nenhuma função existente foi removida/renomeada; node --check validado sem erros após a mudança.
+-->
+<!-- build anterior: 2026-07-11 v6.55 - MULTIPLICIDADE DE PONTOS TÉCNICOS NA MESMA LOJA. AUDITORIA PRÉVIA (mapeamento pedido antes de alterar): (1) db.locais JÁ carrega painelId/lacoId/piso/flmId/portaId/sistema por registro — a mesma loja comercial com SDAI e CO2 já existe hoje como DOIS registros distintos em db.locais (dois localIds), cada um com seu próprio painel/laço/módulo/porta/sistema; não há um único registro "loja" guarda-chuva. (2) localIds diferentes por porta: SIM, já existem — ensureLocal() casa por portaId quando presente (`const match = portaId ? (x=>x.portaId===portaId) : (x=>up(x.nome)===up(nome))`), então nome igual + porta diferente já resultava em dois localIds mesmo antes desta correção. (3) Fluxo que consolida por nome: só o branch de EQUIPAMENTO sem módulo/porta associado em importFile() (equipamento solto, sem FLM) busca o local existente por nome (`db.locais.find(x=>up(x.nome)===up(loja))`) — inevitável porque um equipamento sem FLM não tem porta própria para casar; não afeta pontos que têm módulo/porta (a maioria). lucLocaisIrmaos()/lucSincronizarIrmaos() já existiam e JÁ sincronizavam somente metadados comerciais (nomeOficial/luc/lucAssociado/baseLojaId/statusAssociacao) — nunca status técnico/testes/falhas/planos; auditoria confirmou zero necessidade de mudança nessas duas funções. (4) Nenhuma função encontrada causando perda de distinção técnica entre pontos — Testes (db.testes, filtrado por localId) e Falhas (db.falhas, filtrado por localId/itemId) já eram por ponto, nunca por nome de loja. MUDANÇAS DESTA VERSÃO (aditivas, sobre uma base que já era estruturalmente correta): (1) Nova função chavePontoTecnico(ponto) — identidade estável do ponto técnico (cliente+sistema+painel+laço+módulo+porta+equipamento), disponível para uso futuro em auditorias/relatórios. (2) Nova função pontosTecnicosDaLoja(local) — retorna todos os pontos técnicos (db.locais) que compartilham o mesmo nome comercial/LUC, para exibição/agrupamento (não altera nem funde histórico). (3) renderLocais(): KPI "Lojas / Áreas" desdobrado em dois cards — "Lojas comerciais" (contagem distinta por nomeOficial||nome) e "Pontos técnicos" (contagem de registros/linhas, 1 por localId) — nunca mais uma única contagem ambígua; badge de Sistema (SDAI/CO2) visível em cada linha da tabela; novo filtro por Sistema. Os botões de ação (Executar teste/Registrar falha/Histórico/Editar/Excluir) já operavam sobre r.id — o localId exato daquela linha/ponto — logo já eram inerentemente ponto-específicos; não foi necessário criar um seletor de ponto adicional, pois cada linha da tabela já É um ponto técnico distinto (auditado e confirmado, não presumido). (4) formTeste(): resumo do ponto (Sistema/Painel/Laço/Piso/Loja) destacado no topo do modal com aviso explícito de que a mesma loja pode ter outros pontos independentes. (5) formFalha(): resumo do local (resumoLocal) agora prefixado com [SDAI]/[CO2] quando o item resolvido tem sistema definido — reforça visualmente qual ponto está sendo aberto. (6) renderFalhas(): badge de Sistema por linha, filtro por Sistema, campo incluído na busca textual (permite localizar "SERRA CO2" isolando só o ponto CO2). (7) renderPlano(): campo `sistema` incluído em buildPlanoRowsBase()/planoRowsFiltrados() (herdado do local da falha vinculada) e novo filtro Sistema em "Mais filtros" — mesmo padrão de Lojas/Falhas; diagnóstico do formPlano() ganhou linha "Sistema" explícita (Plano herda o mesmo ponto técnico da Falha de origem, nunca um genérico). (8) openLocal(): cabeçalho ganhou badge de Sistema; quando a loja tem outros pontos técnicos (pontosTecnicosDaLoja), lista-os como chips clicáveis "ver histórico daquele ponto" — deixando explícito que são pontos SEPARADOS (Testes/Falhas continuam filtrados só por localId===este ponto, nunca por nome). (9) importFile(): confirmado (sem alteração necessária) que sistemaResolvido = laço.sistema||sistemaAutoDetect() já é calculado e passado a ensureLocal() em toda importação de loja vinculada a módulo/porta — SDAI e CO2 nunca são consolidados no mesmo localId nessa via. NÃO ALTERADO: ensureLocal() (dedup por portaId já correto), lucLocaisIrmaos()/lucSincronizarIrmaos() (já só sincronizavam metadado comercial), criarTeste()/saveTeste()/saveFalha()/registrarExecucaoPlano()/concluirPlanoFormal() (lógica de gravação inalterada — todas já gravam por localId/itemId específico), Code.gs, login/permissões/sincronização. Testado: node --check sem erros nos scripts extraídos; simulação mental dos 10 cenários pedidos (loja com 1 ponto abre direto; loja com 2 pontos = 2 linhas distintas, cada botão já abre o ponto certo; teste em ponto SDAI não altera ponto CO2 — são localIds diferentes; falha em CO2 não afeta SDAI pelo mesmo motivo; histórico de openLocal já separado por localId; dashboard mostra Lojas comerciais ≠ Pontos técnicos; import não consolida SDAI/CO2 pois portaId difere; busca "SERRA CO2" isola via filtro de sistema+busca textual). Não avançar para outra melhoria sem validação do usuário. -->
 <!-- build anterior: 2026-07-11 v6.54 - CORREÇÃO PONTUAL (2 itens pedidos explicitamente, nada mais tocado em Testes/Falha/Plano além do necessário): (1) TESTE_TIPOS: lista técnica antiga (Acionamento/Supervisão/Comunicação com a central/Sirene-sinalização/Detector/Acionador manual/Módulo/Porta/Teste geral da loja/Outro) substituída pelas 5 opções operacionais corretas — FTR/Brigada/ENSEG/L3A/Lojista — identificando quem realizou/acompanhou o teste, não mais um tipo técnico de acionamento; label do campo trocado para "Responsável / origem do teste". Testes antigos com valores da lista anterior continuam sendo lidos/exibidos normalmente em "Testes recentes" (tipoTeste nunca é migrado nem apagado); só testes NOVOS usam a lista nova. (2) CAUSA RAIZ da Falha aberta pela Loja vir vazia: formFalha('', localId) só usava o localId para preencher o select de Loja — nunca resolvia o item técnico (módulo/porta) real da loja, então nenhum Painel/Laço/Piso/Item era carregado, e o técnico tinha que selecionar tudo de novo manualmente, exatamente como reportado. CORRIGIDO com a nova função resolverItemTecnicoDaLoja(local), que usa SOMENTE os vínculos reais gravados no cadastro (local.portaId/local.flmId, com fallback por db.portas.localId e db.equipamentos.localId quando o local não tiver o vínculo direto gravado) — nunca o texto visual da tabela nem dedução pelo nome. formFalha() agora chama essa função quando aberta a partir de Lojas/Áreas (falha nova) e usa o item resolvido para acionar o MESMO mecanismo de auto-preenchimento que a busca manual já usava (falhaSelectItem()) — preenchendo Painel/Laço/Piso/Loja/Item técnico automaticamente, sem criar módulo/porta/loja novos e sem duplicar nada. Quando a loja não tem nenhum vínculo técnico gravado (nem porta, nem módulo, nem equipamento), o formulário avisa isso explicitamente em vez de inventar um vínculo, e mantém a seleção manual disponível. (3) FALHA_CONDICOES: reduzida às 5 condições técnicas reais pedidas (Laço aberto/Módulo aberto/Módulo em curto/Incêndio disparado/Desativação) — "Em teste", "Renomear"/"Outro" e qualquer status personalizado saíram da lista de NOVA falha; a seleção continua sendo radio-button único (já era desde a Fase 3). Falha antiga com status "Em teste" ou personalizado continua abrindo normalmente na edição (o valor antigo é reintroduzido como opção extra só naquele registro, nunca oferecido para falha nova) — nenhum dado de registro antigo foi alterado ou apagado. Revisão de ortografia pedida ("Módulo em curdo"→"Módulo em curto", "indencdio disparado"→"Incêndio disparado"): não encontrada nenhuma ocorrência desses erros em nenhum ponto do código (STATUS_TECNICO_VALIDOS e FALHA_CONDICOES já usavam a grafia correta) — nada precisou ser corrigido nesse ponto. Funções alteradas: TESTE_TIPOS (lista), formFalha() (nova resolução de item via resolverItemTecnicoDaLoja()), FALHA_CONDICOES (lista). Nenhuma mudança em saveFalha()/saveTeste()/criarTeste()/sincronizarPlanosFalhas()/Plano de Ação/Code.gs/sincronização/importação. node --check validado sem erros. -->
 <!-- build anterior: 2026-07-11 v6.53 - VALIDAÇÃO FUNCIONAL/REGRESSÃO DA FASE 4 (Plano de Ação): auditoria dos 24 cenários pedidos encontrou e corrigiu 3 bugs reais + 1 gap de UX na v6.52. (1) BUG CRÍTICO: formPlano()/savePlano() — o hub principal do Plano, o modal com mais chance de ficar aberto por tempo — era o ÚNICO fluxo do Plano sem a trava de clienteId (os modais de execução/conclusão já tinham desde a v6.52, mas o de planejamento não). Corrigido: formPlano() agora grava window._planoClienteId na abertura, savePlano() bloqueia e alerta se o cliente mudou, e switchCliente() fecha o modal automaticamente (checando o elemento mCategoria, exclusivo do formPlano). (2) GAP: o botão "Salvar planejamento"/"Criar plano" não tinha id e nunca era desabilitado durante a gravação (diferente de Registrar execução/Concluir, que já desabilitavam) — a proteção lógica contra duplo clique (window._planoSaving) já existia e funcionava, mas faltava o feedback visual "Salvando..." pedido explicitamente na seção 12. Corrigido com id mBtnSalvarPlano. (3) BUG: planoRowsParaPdf() classificava qualquer situação diferente de "Concluído" como "pendência" — antes de existir o estado "Cancelado" (introduzido nesta fase) isso era inofensivo, mas agora fazia um Plano Cancelado aparecer no PDF de roteiro de campo como se ainda precisasse de visita técnica. Corrigido: Cancelado fica fora de ambos os modos do PDF (nem pendências, nem concluídos). (4) GAP: o filtro "Situação" da tela não tinha a opção "Cancelado" — impossível isolar planos cancelados na tabela. Corrigido, adicionado ao select. Também reforçada a rastreabilidade (seção 18): saveExecucaoPlano()/saveConclusaoPlano() agora gravam usuarioExecucao/usuarioConclusao (usuário logado que fez o lançamento) separado de executor/responsavelConclusao (quem de fato executou/foi responsável), conforme a distinção de 3 conceitos pedida. VALIDADO: regra 1 falha↔1 plano confirmada por leitura de todos os pontos de db.planos.push (todos guardados por !db.planos.find(p=>p.falhaId===X), exceto a criação explícita via savePlano quando !i, que só é alcançável pelo botão "+ Plano" — que só aparece em linhas "Falha sem plano"); nenhuma falha sintética "Em operação" é criada em lugar nenhum (grep em todos os db.falhas.push confirma que os 4 pontos existentes são: criarTeste com confirmarFalha, quickStatusChange, saveFalha nova, e um ponto pré-existente de desativação — nenhum deles roda a partir de concluirPlanoFormal); simulação Node isolada das regras de conclusão (Resolvido/Parcial/Cancelado + idempotência em duplo clique) — todos os cenários passaram, incluindo a segunda tentativa de concluir um plano já concluído sendo bloqueada. Confirmado por leitura de código (sem alteração necessária): Falha (Fase 3) e Testes (Fase 2) não foram tocados nesta fase; plano.fotos continua array simples de URLs para os PDFs, fotosMeta é puramente aditivo; sincronizarPlanosFalhas()/auditoriaSanearFalhasPlanos()/confirmarResultadoPlano()/abrirResultadoPlano() permanecem intactas e não são mais chamadas por nenhum botão da UI nova, mas continuam definidas e funcionais. GAP conhecido, não implementado nesta validação (fora de escopo — "não implemente novas funcionalidades agora"): seção 14 do pedido original da Fase 4 ("Necessário novo teste" oferecer botão de Executar Teste vinculado ao Plano) não foi construída na implementação da Fase 4 e permanece pendente para quando o usuário aprovar uma próxima rodada. -->
 <!-- build anterior: 2026-07-11 v6.52 - FASE 4: RETROFIT DO PLANO DE AÇÃO (aprovada após validação da Fase 3). AUDITORIA PRÉVIA: campos de db.planos mapeados por finalidade — Diagnóstico (100% herdado da Falha via itemInfoFromFalha()/f.status/f.motivo/f.obs/f.origem/f.data/f.responsavel/f.fotos — nada disso é gravado em campo próprio do Plano, sempre lido ao vivo da Falha relacionada); Planejamento (categoria/prioridade/responsavel/prazo/necessitaCompra/material/providencia/direcionamento — já existiam, só reorganizados); Execução (novos usos formais dos campos já existentes resultadoExecucao* e execucaoRealizada/executor/execucaoEm — *resultadoExecucao é novo, execucaoRealizada já existia desde a rotina legada de conclusão); Conclusão (concluidoEm/canceladoEm/justificativaCancelamento/responsavelConclusao — concluidoEm já existia, os demais são novos e aditivos). Nenhum campo de db.planos foi removido. Redundante identificado e eliminado da UI (não do banco): o antigo campo único "Execução realizada" do formPlano() fazia dupla função (planejamento E execução ao mesmo tempo) — agora "Providência planejada" (bloco 2) e "Registrar execução" (bloco 3, modal próprio) são ações e momentos distintos, sem pedir diagnóstico de novo em nenhum dos dois. MUDANÇAS: (1) formPlano() virou um hub de 5 blocos — Diagnóstico somente-leitura no topo (com atalho "Editar falha relacionada"), Planejamento editável (categoria/responsável ganharam mais opções — Inspeção complementar/Outra/Contratante/Outro, só adições, nada removido), e atalhos para Execução/Evidências/Conclusão como ações separadas (não mais um formulário único). Botão "Aplicar sugestão de direcionamento" substitui o preenchimento automático — direcionamento nunca mais sobrescreve a providência sem clique explícito. (2) Novo modal registrarExecucaoPlano()/saveExecucaoPlano(): resultado da execução (8 estados objetivos — EXECUCAO_RESULTADOS — com normalizeExecucaoResultado() unificando termos equivalentes como "Aguardando contratante"→"Aguardando terceiro", mantendo compatibilidade de leitura de valores antigos), descrição obrigatória, executor. (3) Novo modal concluirPlanoFormal()/saveConclusaoPlano(): situação final (Concluído/Parcial/Reprogramado/Cancelado — SITUACAO_FINAL_OPCOES) com as regras exatas do pedido — Concluído resolve a Falha (nunca cria falha sintética "Em operação", só atualiza status do item/loja/falha existentes, mesma lógica já usada por confirmarResultadoPlano() no branch Conforme); Parcial/Reprogramado mantêm Plano em andamento e Falha ativa, com campo de novo prazo; Cancelado exige justificativa e não resolve a Falha. Guard de conclusão duplicada: plano já Concluído/Cancelado recusa reabrir a tela de conclusão (usar "Reabrir"). (4) reprogramarPlano()/cancelarPlano()/reabrirPlano(): atalhos diretos com histórico (prazoOriginal preservado; reabrir um plano Concluído reabre também a Falha SE ela tinha sido resolvida por aquele mesmo plano — nunca cria um segundo plano, mesma falhaId/planoId). (5) Anexos do Plano ganharam categoria (Antes/Durante/Depois/Documento/Orçamento/Nota técnica/Vídeo/Outro) via novo array aditivo plano.fotosMeta (usuário/data/categoria/url) — plano.fotos continua sendo o array simples de URLs já consumido pelos PDFs/relatórios, sem mudança de formato; evidências da Falha continuam visíveis só no bloco Diagnóstico, nunca migradas para o Plano. (6) Mesmas proteções já validadas nas Fases 2/3: guard de duplo clique/reenvio (window._planoSaving) em savePlano/saveExecucaoPlano/saveConclusaoPlano/reprogramarPlano/cancelarPlano/reabrirPlano, e trava de clienteId (window._planoClienteId, verificada em switchCliente()) nos modais de execução/conclusão. (7) Tabela do Plano: nova coluna "Prazo" (destaque visual quando vencido), novo KPI "Vencidos" (prazo < hoje, nunca conta Concluído/Cancelado); linha ganhou ícone "🛠 Registrar execução" ao lado de "✔ Concluir" (que agora abre concluirPlanoFormal, não mais o fluxo legado); menu "⋮ Mais opções" ganhou Registrar execução/Reprogramar/Cancelar/Reabrir/Ver falha relacionada. NÃO ALTERADO (conforme pedido, só o necessário): sincronizarPlanosFalhas(), auditoriaSanearFalhasPlanos(), confirmarResultadoPlano()/abrirResultadoPlano() (rotina legada de conclusão Conforme/Não Conforme — permanece intacta e funcional, apenas não é mais o caminho padrão da UI), formFalha()/saveFalha()/criarTeste()/formTeste()/saveTeste() da Fase 2/3, importações, sincronização, Code.gs. Compatibilidade: nenhum campo de db.planos removido; planos antigos sem os novos campos abrem normalmente com defaults seguros; PDFs/relatórios continuam lendo plano.fotos/providencia/categoria/prioridade/responsavel/situacao exatamente como antes. node --check validado sem erros. -->
@@ -955,6 +976,7 @@ table{font-size:13px}
       <section id="locais" class="view"></section>
       <section id="equipamentos" class="view"></section>
       <section id="falhas" class="view"></section>
+      <section id="testes" class="view"></section>
       <section id="plano" class="view"></section>
       <section id="plantas" class="view"></section>
       <section id="importacao" class="view"></section>
@@ -1013,6 +1035,7 @@ const MENU_TREE_SUBSYS = [
       ]},
       {key:'operacao',label:'Operação',items:[
         {view:'locais',label:'Lojas / Áreas'},{view:'falhas',label:'Falhas'},
+        {view:'testes',label:'Testes'},
         {view:'plano',label:'Plano de Ação'},{view:'plantas',label:'Plantas'}
       ]},
       {key:'dados',label:'Dados',items:[
@@ -1113,7 +1136,7 @@ const MENU_PLATAFORMA_ITEMS=[
 const VIEW_TO_SECTION={
   visaoGeral:'visaoGeral',
   dashboard:'dashboard',paineis:'paineis',lacos:'lacos',flms:'flms',
-  locais:'locais',equipamentos:'equipamentos',falhas:'falhas',plano:'plano',
+  locais:'locais',equipamentos:'equipamentos',falhas:'falhas',testes:'testes',plano:'plano',
   plantas:'plantas',relatorios:'relatorios',importacao:'importacao',exportacao:'exportacao',
   cftv:'cftv',cftvDashboard:'cftv',cftvCameras:'cftv',cftvGravadores:'cftv',
   cftvSwitches:'cftv',cftvRede:'cftv',cftvLocais:'cftv',cftvOcorrencias:'cftv',
@@ -1508,6 +1531,7 @@ function switchCliente(cid,reload=true){
   }
   setClienteAtivo(cid);
   db=loadClienteDb(cid);
+  recalcularStatusPontosTecnicos();
   menuState=loadMenuStateLocal();
   updateClienteSideSelect();
   if(reload){
@@ -1869,8 +1893,9 @@ function resultCountLabel(qtdFiltrada,qtdTotal,semResultado){
 /* Limpar filtros (seção 13) — usado por Lojas/Áreas, Falhas e Plano. Zera busca + selects/datas
    daquela aba e re-renderiza; não mexe no banco, não recarrega a página. */
 function limparFiltrosTela(aba){
-  if(aba==='locais'){filters.locaisQ='';filters.locaisSistema=''}
+  if(aba==='locais'){filters.locaisQ='';filters.locaisSistema='';filters.locaisDataIni='';filters.locaisDataFim='';filters.locaisResultado='';filters.locaisStatusFiltro='';filters.locaisPiso='';filters.locaisPainel='';filters.locaisLaco='';filters.locaisLoja='';filters.locaisResp=''}
   else if(aba==='falhas')filters.falhas={situacao:'Em aberto'};
+  else if(aba==='testes')filters.testes={};
   else if(aba==='plano')filters.plano={};
   render();
   setTimeout(()=>{const el=document.querySelector(`[data-focus-key="${aba}Busca"]`); if(el)el.focus();},0);
@@ -1977,7 +2002,49 @@ function auditoriaSanearFalhasPlanos(base){
   console.log('[SDAI] Auditoria de saneamento (falhas sintéticas / planos duplicados / planos órfãos):',resumo);
   return resumo;
 }
-function normalizeAllStatuses(base){['equipamentos','flms','locais','falhas'].forEach(k=>(base[k]||[]).forEach(o=>{if(o.status)o.status=normalizeStatus(o.status)}));sincronizarPlanosFalhas(base);if(!base._saneamento2026v1){auditoriaSanearFalhasPlanos(base);base._saneamento2026v1=true;}return base}
+function normalizeAllStatuses(base){['equipamentos','flms','locais','falhas'].forEach(k=>(base[k]||[]).forEach(o=>{if(o.status)o.status=normalizeStatus(o.status)}));sincronizarPlanosFalhas(base);if(!base._saneamento2026v1){auditoriaSanearFalhasPlanos(base);base._saneamento2026v1=true;}migrarLocaisOrfaosV659(base);return base}
+// migrarLocaisOrfaosV659() (v6.59 — item 16): migração ÚNICA (guardada por base._migradoV659, no
+// mesmo padrão de base._saneamento2026v1 acima) para db.testes/db.falhas sem localId resolvível.
+// Tenta relacionar via cliente(implícito, base já é por cliente)→sistema→painel→laço→módulo→porta→
+// endereço→loja→LUC, usando os campos remanescentes do registro antigo (painelId/lacoId/flmId/
+// portaId/itemNome/endereco/luc). Match inequívoco (1 único db.locais candidato): grava localId.
+// Ambíguo (>1 candidato) ou irresolúvel (0 candidatos): empurra para base.conflitosMigracao para
+// revisão manual — nunca "chuta" um localId.
+function migrarLocaisOrfaosV659(base){
+  if(base._migradoV659)return;
+  base.conflitosMigracao=base.conflitosMigracao||[];
+  const locais=base.locais||[];
+  function candidatos(rec){
+    let cs=locais.slice();
+    const filtros=[
+      ['portaId',x=>x.portaId],
+      ['flmId',x=>x.flmId],
+      ['lacoId',x=>x.lacoId],
+      ['painelId',x=>x.painelId],
+    ];
+    filtros.forEach(([campo,get])=>{ if(rec[campo]&&cs.length>1){ const f=cs.filter(x=>get(x)===rec[campo]); if(f.length)cs=f; } });
+    const nomeAlvo=up(rec.itemNome||rec.nomeLoja||rec.loja||'');
+    if(nomeAlvo&&cs.length>1){ const f=cs.filter(x=>up(x.nome||x.nomeOficial||'')===nomeAlvo); if(f.length)cs=f; }
+    const lucAlvo=up(rec.luc||'');
+    if(lucAlvo&&cs.length>1){ const f=cs.filter(x=>up(x.luc||'')===lucAlvo); if(f.length)cs=f; }
+    return cs;
+  }
+  function migrarLista(lista,tipo){
+    (lista||[]).forEach(rec=>{
+      if(rec.localId&&locais.some(x=>x.id===rec.localId))return; // já resolvido
+      if(rec.excluido||rec.excluida)return;
+      const cs=candidatos(rec);
+      if(cs.length===1){
+        rec.localId=cs[0].id;
+      }else if(!rec.localId){
+        base.conflitosMigracao.push({id:id(),tipo,registroId:rec.id,motivo:cs.length===0?'Nenhum ponto técnico candidato encontrado':'Múltiplos pontos técnicos candidatos ('+cs.length+') — ambíguo',candidatos:cs.map(x=>x.id),criadoEm:isoNow()});
+      }
+    });
+  }
+  migrarLista(base.testes,'teste');
+  migrarLista(base.falhas,'falha');
+  base._migradoV659=true;
+}
 
 /* =========================================================================
    AUDITORIA E SINCRONIZAÇÃO ESTRUTURAL: Falhas ⇄ Plano de Ação (2026-07)
@@ -2017,6 +2084,10 @@ function normalizeAllStatuses(base){['equipamentos','flms','locais','falhas'].fo
    ========================================================================= */
 function sincronizarPlanosFalhas(base){
   base.falhas=base.falhas||[]; base.planos=base.planos||[];
+  // v6.56: toda vez que Falhas↔Plano é sincronizado (criação/edição/resolução de falha, importação,
+  // boot do app), também recomputa loc.status a partir das falhas ativas — cobre criarTeste/saveFalha/
+  // resolução/importação/boot num único ponto, sem precisar duplicar a chamada em cada caminho.
+  recalcularStatusPontosTecnicos(base);
   const relatorio={
     totalFalhas:base.falhas.length,
     totalPlanosAntes:base.planos.length,
@@ -2330,9 +2401,38 @@ function pontosTecnicosDaLoja(local){
   const chaveComercial=up(local.nomeOficial||local.nome||'');
   return (db.locais||[]).filter(x=>up(x.nomeOficial||x.nome||'')===chaveComercial);
 }
+// ultimoTesteDoLocal(localId) (v6.57 - item 1): retorna o registro de db.testes mais recente (por
+// data) para o localId exato — nunca por nome de loja. Usado pela coluna "Último teste" de
+// renderLocais() e pelos filtros de Resultado/Data/Responsável (item 2).
+function ultimoTesteDoLocal(localId){
+  if(!localId)return null;
+  const lista=(db.testes||[]).filter(t=>t.localId===localId&&!t.excluido);
+  if(!lista.length)return null;
+  return lista.slice().sort((a,b)=>String(b.data||b.criadoEm||'').localeCompare(String(a.data||a.criadoEm||'')))[0];
+}
+// iconeResultadoTeste: mapeia os 5 valores de TESTE_RESULTADOS para o ícone pedido no item 1
+// (✅ funcionou / ❌ não funcionou / 🟡 inconclusivo / ⚪ nunca testado).
+function iconeResultadoTeste(resultado){
+  if(!resultado)return '⚪';
+  if(resultado==='Em funcionamento'||resultado==='Funcionou')return '✅';
+  if(resultado==='Não funcionou')return '❌';
+  return '🟡'; // Funcionamento parcial / Não foi possível testar / Teste interrompido
+}
+function ultimoTesteHtml(localId){
+  const t=ultimoTesteDoLocal(localId);
+  if(!t)return `<div class="dsDt">⚪ Nunca testado</div>`;
+  const d=new Date(t.data||t.criadoEm); const dd=isNaN(d)?'—':`${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+  return `<div class="dsDt">${iconeResultadoTeste(t.resultado)} ${esc(dd)}</div><div style="font-size:10.5px;color:var(--l3a-text-muted)">${esc(t.responsavel||'—')}</div>`;
+}
 function renderLocais(){
   let q=filters.locaisQ||'';
   let fSistema=filters.locaisSistema||'';
+  // item 2: filtros adicionais de Lojas/Áreas (combináveis com Sistema/Busca).
+  let fDataIni=filters.locaisDataIni||'', fDataFim=filters.locaisDataFim||'';
+  let fResultado=filters.locaisResultado||''; // '', 'Funcionou', 'Não funcionou', 'Sem teste'
+  let fStatus=filters.locaisStatusFiltro||''; // '', 'Em operação', 'Com falha'
+  let fPiso=filters.locaisPiso||'', fPainel=filters.locaisPainel||'', fLaco=filters.locaisLaco||'';
+  let fLoja=filters.locaisLoja||'', fResp=filters.locaisResp||'';
   // Resolve os campos derivados (nome do painel/laço, endereço do módulo, nº da porta) ANTES de
   // filtrar, para que a busca única (filtrarRegistrosPorBusca) possa considerar nome técnico, nome
   // oficial, LUC, tipo, painel, laço, piso, endereço do módulo, porta, sistema, status e observação
@@ -2350,6 +2450,31 @@ function renderLocais(){
   let comFiltroSistema=todos.filter(r=>!fSistema||r.sistema===fSistema);
   let rows=filtrarRegistrosPorBusca(comFiltroSistema,q,r=>[r.nome,r.nomeOficial,r.luc,r.tipo,r.painel,r.laco,r.piso,r.flmEndereco,r.portaNum?'Porta '+r.portaNum:'',r.sistema,r.status,r.obs].filter(Boolean).join(' '));
 
+  // item 2: resolve o último teste de cada ponto ANTES de aplicar os filtros de Data/Resultado/
+  // Responsável (que operam sobre o teste, não sobre o cadastro do local).
+  rows=rows.map(r=>({...r,_ultimoTeste:ultimoTesteDoLocal(r.id)}));
+  if(fPiso)rows=rows.filter(r=>String(r.piso||'')===fPiso);
+  if(fPainel)rows=rows.filter(r=>r.painel===fPainel);
+  if(fLaco)rows=rows.filter(r=>r.laco===fLaco);
+  if(fLoja)rows=rows.filter(r=>(r.nomeOficial||r.nome)===fLoja);
+  if(fStatus)rows=rows.filter(r=>fStatus==='Com falha'?isFalhaStatus(r.status):!isFalhaStatus(r.status));
+  if(fResultado){
+    rows=rows.filter(r=>{
+      const t=r._ultimoTeste;
+      if(fResultado==='Sem teste')return !t;
+      if(!t)return false;
+      if(fResultado==='Funcionou')return t.resultado==='Em funcionamento';
+      if(fResultado==='Não funcionou')return t.resultado==='Não funcionou';
+      return true;
+    });
+  }
+  if(fResp)rows=rows.filter(r=>up(r._ultimoTeste?.responsavel||'')===up(fResp));
+  if(fDataIni||fDataFim)rows=rows.filter(r=>{
+    const t=r._ultimoTeste; if(!t)return false;
+    const d=String(t.data||'').slice(0,10);
+    return (!fDataIni||d>=fDataIni)&&(!fDataFim||d<=fDataFim);
+  });
+
   // Seção 19: "lojas comerciais" (dedup por Nome Oficial/LUC — a mesma loja física com vários
   // pontos técnicos conta 1 vez) É DIFERENTE de "pontos técnicos" (uma linha por registro de
   // db.locais = um vínculo técnico independente, com seu próprio status/histórico).
@@ -2357,7 +2482,18 @@ function renderLocais(){
   const lojasComerciais=new Set(rows.map(r=>up(r.nomeOficial||r.nome||r.id))).size;
   const emOp=rows.filter(r=>!isFalhaStatus(r.status)).length;
   const comFalha=rows.filter(r=>isFalhaStatus(r.status)).length;
-  const semResultado=(q||fSistema)&&!rows.length&&todos.length>0;
+  const testados=rows.filter(r=>r._ultimoTeste).length;
+  const lojasTestadas=new Set(rows.filter(r=>r._ultimoTeste).map(r=>up(r.nomeOficial||r.nome||r.id))).size;
+  const aprovados=rows.filter(r=>r._ultimoTeste?.resultado==='Em funcionamento').length;
+  const reprovados=rows.filter(r=>r._ultimoTeste?.resultado==='Não funcionou').length;
+  const naoTestados=total-testados;
+  const semResultado=(q||fSistema||fPiso||fPainel||fLaco||fLoja||fResp||fStatus||fResultado||fDataIni||fDataFim)&&!rows.length&&todos.length>0;
+
+  const pisos=unique(todos.map(r=>r.piso).filter(Boolean));
+  const paineis=unique(todos.map(r=>r.painel).filter(Boolean));
+  const lacos=unique(todos.map(r=>r.laco).filter(Boolean));
+  const lojas=unique(todos.map(r=>r.nomeOficial||r.nome).filter(Boolean));
+  const responsaveis=unique((db.testes||[]).map(t=>t.responsavel).filter(Boolean));
 
   const trs=rows.map(r=>{
     const loc=dsLocHtml({painel:r.painel,piso:r.piso,laco:r.laco,tipo:r.flmEndereco?'Módulo '+r.flmEndereco:'',porta:r.portaNum});
@@ -2367,9 +2503,9 @@ function renderLocais(){
       <td>${loc}</td>
       <td style="font-size:12.5px;text-align:center">${r.qtd}</td>
       <td>${dsBadgeHtml(r.status)}</td>
+      <td>${ultimoTesteHtml(r.id)}</td>
       <td><div class="dsIcoGroup">
         <button class="dsIco" onclick="formTeste('${r.id}')" title="Executar teste">📋</button>
-        <button class="dsIco" onclick="formFalha('','${r.id}')" title="Registrar falha">🚩</button>
         <button class="dsIco" onclick="openLocal('${r.id}')" title="Histórico">🕒</button>
         <button class="dsIco" onclick="formLocal('${r.id}')" title="Editar">✏️</button>
         <button class="dsIco del" onclick="del('locais','${r.id}')" title="Excluir">🗑</button>
@@ -2381,19 +2517,33 @@ function renderLocais(){
     ${dsKpiStrip([
       ['Lojas comerciais',lojasComerciais,''],
       ['Pontos técnicos',total,''],
-      ['Em operação',emOp,'ok'],
-      ['Com falha',comFalha,comFalha>0?'bad':'ok']
+      ['Lojas testadas',lojasTestadas,''],
+      ['Pontos testados',testados,''],
+      ['Testes aprovados',aprovados,'ok'],
+      ['Testes reprovados',reprovados,reprovados>0?'bad':'ok'],
+      ['Não testados',naoTestados,naoTestados>0?'warn':'ok'],
+      ['% cobertura',total?Math.round(testados/total*100)+'%':'0%',''],
+      ['% aprovação',testados?Math.round(aprovados/testados*100)+'%':'0%','']
     ])}
     <div class="dsFilters">
       <div class="field searchField"><label>Busca</label><div class="searchBox"><input value="${escSearchVal(q)}" data-filter-input="1" data-filter-path="locaisQ" data-focus-key="locaisBusca" placeholder="Nome, sistema, LUC, piso, painel, laço ou endereço..." autocomplete="off">${q?`<button type="button" class="searchClear" title="Limpar busca" onclick="filters.locaisQ='';render()">×</button>`:''}</div></div>
       <div class="field"><label>Sistema</label><select onchange="filters.locaisSistema=this.value;render()">${selectOpts(SISTEMA_LACO_OPTIONS,fSistema,'Todos')}</select></div>
+      <div class="field"><label>Data inicial</label><input type="date" value="${esc(fDataIni)}" onchange="filters.locaisDataIni=this.value;render()"></div>
+      <div class="field"><label>Data final</label><input type="date" value="${esc(fDataFim)}" onchange="filters.locaisDataFim=this.value;render()"></div>
+      <div class="field"><label>Resultado</label><select onchange="filters.locaisResultado=this.value;render()">${selectOpts(['Funcionou','Não funcionou','Sem teste'],fResultado,'Todos')}</select></div>
+      <div class="field"><label>Status</label><select onchange="filters.locaisStatusFiltro=this.value;render()">${selectOpts(['Em operação','Com falha'],fStatus,'Todos')}</select></div>
+      <div class="field"><label>Piso</label><select onchange="filters.locaisPiso=this.value;render()">${selectOpts(pisos,fPiso)}</select></div>
+      <div class="field"><label>Painel</label><select onchange="filters.locaisPainel=this.value;render()">${selectOpts(paineis,fPainel)}</select></div>
+      <div class="field"><label>Laço</label><select onchange="filters.locaisLaco=this.value;render()">${selectOpts(lacos,fLaco)}</select></div>
+      <div class="field"><label>Loja</label><select onchange="filters.locaisLoja=this.value;render()">${selectOpts(lojas,fLoja)}</select></div>
+      <div class="field"><label>Responsável</label><select onchange="filters.locaisResp=this.value;render()">${selectOpts(responsaveis,fResp)}</select></div>
       <div class="dsFilterActions"><button class="btn secondary small" onclick="limparFiltrosTela('locais')">Limpar filtros</button><button class="dsIco prim" onclick="formLocal()">+ Nova loja/área</button></div>
     </div>
     <div class="searchResultCount">${resultCountLabel(total,todos.length,semResultado)}</div>
     <div class="dsTableWrap">
       <table class="dsTable">
-        <thead><tr><th>Loja / Área</th><th>Localização</th><th style="text-align:center">Equipamentos</th><th>Status</th><th>Ações</th></tr></thead>
-        <tbody>${trs||`<tr><td colspan="5"><div class="emptyState">${todos.length?'Nenhum registro corresponde aos filtros aplicados.':'Nenhuma loja/área cadastrada.'}</div></td></tr>`}</tbody>
+        <thead><tr><th>Loja / Área</th><th>Localização</th><th style="text-align:center">Equipamentos</th><th>Status</th><th>Último teste</th><th>Ações</th></tr></thead>
+        <tbody>${trs||`<tr><td colspan="6"><div class="emptyState">${todos.length?'Nenhum registro corresponde aos filtros aplicados.':'Nenhuma loja/área cadastrada.'}</div></td></tr>`}</tbody>
       </table>
     </div>`;
 }
@@ -2564,6 +2714,34 @@ function prioridadePeso(p){return {'Crítica':1,'Alta':2,'Média':3,'Baixa':4}[p
 // pelo lado HISTÓRICO (db.falhas) dos relatórios/KPIs. Ver bloco de comentário grande em
 // dashStatusBucket() (acima de sua definição) para a separação completa operacional × histórico.
 function isFalhaStatus(s){s=up(normalizeStatus(s));return s.includes('ABERT')||s.includes('CURTO')||s.includes('INCEND')||s.includes('DISPAR')}
+// recalcularStatusPontosTecnicos() (v6.56): rede de segurança complementar à correção em criarTeste()
+// (ver comentário lá) — para cada db.locais, se existir alguma falha ATIVA (db.falhas, não excluída,
+// não resolvida — mesma regra de falhasAtivasParaPlano()) apontando para aquele localId, garante que
+// loc.status reflita essa falha (usa o status da falha ativa mais recente); senão, se o status atual
+// já for uma condição de falha "órfã" (sem falha ativa correspondente — normalmente porque a falha foi
+// resolvida/excluída por outro caminho que não passou por loc.status), normaliza de volta para "Em
+// operação". NÃO inventa nem altera testes/falhas — só corrige o campo derivado loc.status. Roda 1x
+// após carregar a base do cliente (loadClienteDb/switchCliente) e pode ser chamada manualmente.
+function recalcularStatusPontosTecnicos(baseDb){
+  const alvo=baseDb||db;
+  if(!alvo||!alvo.locais)return;
+  const ativasPorLocal={};
+  (alvo.falhas||[]).filter(f=>!f.excluida&&!f.resolvidaEm).forEach(f=>{
+    if(!f.localId)return;
+    const atual=ativasPorLocal[f.localId];
+    if(!atual||String(f.data||'')>String(atual.data||''))ativasPorLocal[f.localId]=f;
+  });
+  let alterados=0;
+  alvo.locais.forEach(loc=>{
+    const ativa=ativasPorLocal[loc.id];
+    if(ativa){
+      if(loc.status!==ativa.status){loc.status=ativa.status;alterados++}
+    }else if(isFalhaStatus(loc.status)){
+      loc.status='Em operação';alterados++
+    }
+  });
+  return alterados;
+}
 // GATE ÚNICO de criação automática de Plano de Ação (Task 2, estabilização 2026-07).
 // Antes desta consolidação, esta função só retornava true para isFalhaStatus(f.status) (ABERT/
 // CURTO/INCEND/DISPAR) — mas os 3 pontos de criação AUTOMÁTICA de plano (importação/desativação
@@ -2597,12 +2775,23 @@ const TESTE_RESULTADOS=['Em funcionamento','Funcionamento parcial','Não funcion
 // cinco é salvo por um teste NOVO. Testes antigos com valores da lista anterior continuam legíveis
 // normalmente (tipoTeste é só exibido, nunca migrado/apagado — ver renderização em "Testes recentes").
 const TESTE_TIPOS=['FTR','Brigada','ENSEG','L3A','Lojista'];
+// TESTE_RESULTADOS_NOVOS (v6.58 — item 6 do pedido de 20 itens): a partir desta versão, um teste
+// NOVO (criado pela tela "Executar teste"/aba Testes) só oferece estes 2 resultados — os 5 valores
+// antigos de TESTE_RESULTADOS continuam existindo e sendo exibidos normalmente em testes JÁ
+// gravados (histórico, filtros, ícones), nunca migrados nem apagados; só não são mais oferecidos
+// para um teste novo daqui em diante.
+const TESTE_RESULTADOS_NOVOS=['Funcionou','Não funcionou'];
 // criarTeste(): SEMPRE registra o teste em db.testes. Só cria uma falha em db.falhas quando
 // confirmarFalha===true (decisão explícita do usuário na tela, nunca automática) — corrige o
 // comportamento anterior que criava falha sozinho sempre que resultado==='Não Conforme'.
-function criarTeste({localId,itemId,painelId,lacoId,flmId,portaId,responsavel,data,tipoTeste,resultado,observacao,fotos,statusTecnico,confirmarFalha,origem}){
+// v6.58: quando reuseFalha===true (fluxo novo "Não funcionou"), em vez de sempre criar uma falha
+// nova, primeiro procura uma falha ATIVA (não excluída, não resolvida) já existente para o MESMO
+// localId exato e, se achar, reaproveita esse registro (evita duplicar falha quando o mesmo ponto
+// já está com falha aberta e recebe um novo teste reprovado) — só cria uma falha nova se não
+// houver nenhuma ativa para aquele localId.
+function criarTeste({localId,itemId,painelId,lacoId,flmId,portaId,responsavel,data,tipoTeste,resultado,observacao,fotos,statusTecnico,confirmarFalha,origem,reuseFalha}){
   db.testes=db.testes||[];
-  const novoTeste={id:id(),localId:localId||'',itemId:itemId||'',painelId:painelId||'',lacoId:lacoId||'',flmId:flmId||'',portaId:portaId||'',responsavel:responsavel||'',usuario:(currentUser().nome)||'',data:data||isoNow(),tipoTeste:tipoTeste||'Teste geral da loja',resultado:resultado||'Em funcionamento',observacao:observacao||'',fotos:fotos||[],origem:origem||'Manual',falhaId:'',criadoEm:isoNow()};
+  const novoTeste={id:id(),localId:localId||'',itemId:itemId||'',painelId:painelId||'',lacoId:lacoId||'',flmId:flmId||'',portaId:portaId||'',responsavel:responsavel||'',usuario:(currentUser().nome)||'',data:data||isoNow(),tipoTeste:tipoTeste||'Teste geral da loja',resultado:resultado||'Em funcionamento',observacao:observacao||'',fotos:fotos||[],origem:origem||'Manual',falhaId:'',criadoEm:isoNow(),criadoPor:(currentUser().email||currentUser().nome||''),excluido:false};
   db.testes.push(novoTeste);
   logLocal('teste',novoTeste.id,'registrar','Teste registrado: '+novoTeste.resultado+' — '+(locName(localId)||itemId||'')+' — tipo: '+(novoTeste.tipoTeste||'—')+' — anexos: '+(novoTeste.fotos||[]).length);
   const resultadosQuePermitemFalha=['Funcionamento parcial','Não funcionou'];
@@ -2610,13 +2799,48 @@ function criarTeste({localId,itemId,painelId,lacoId,flmId,portaId,responsavel,da
     const item=String(itemId||'').startsWith('flm:')?flmById(String(itemId).slice(4)):db.equipamentos.find(e=>e.id===itemId);
     const statusFinal=(statusTecnico&&String(statusTecnico).trim())||'Laço aberto';
     const dataOcorrencia=data||isoNow();
-    const rec={id:id(),data:dataOcorrencia,dataAbertura:dataOcorrencia,painelId:painelId||(item&&item.painelId)||'',lacoId:lacoId||(item&&item.lacoId)||'',piso:(item&&item.piso)||'',tipo:(item&&item.tipo)||'',itemId:itemId||'',itemNome:(item&&(item.endereco||item.modelo))||'',localId:localId||'',status:statusFinal,statusAnterior:(item&&item.status)||'',responsavel:responsavel||'',origem:'Teste',testeId:novoTeste.id,motivo:observacao||('Falha identificada durante teste: '+novoTeste.resultado),obs:observacao||'',resolvidaEm:''};
-    db.falhas.push(rec);
+    // v6.58 (item 2 do pedido): create-or-reuse — nunca duplica falha para o mesmo localId exato.
+    let rec=reuseFalha&&localId?(db.falhas||[]).find(f=>f.localId===localId&&!f.excluida&&!f.resolvidaEm):null;
+    if(rec){
+      rec.status=statusFinal; rec.testeId=novoTeste.id; rec.data=dataOcorrencia;
+      rec.motivo=observacao||rec.motivo||('Falha reconfirmada durante novo teste: '+novoTeste.resultado);
+      rec.obs=observacao||rec.obs||'';
+      logLocal('teste',novoTeste.id,'falha_reutilizada','Falha existente '+rec.id+' reaproveitada (não duplicada) a partir do teste '+novoTeste.id+' ('+novoTeste.resultado+').');
+    } else {
+      rec={id:id(),data:dataOcorrencia,dataAbertura:dataOcorrencia,painelId:painelId||(item&&item.painelId)||'',lacoId:lacoId||(item&&item.lacoId)||'',piso:(item&&item.piso)||'',tipo:(item&&item.tipo)||'',itemId:itemId||'',itemNome:(item&&(item.endereco||item.modelo))||'',localId:localId||'',status:statusFinal,statusAnterior:(item&&item.status)||'',responsavel:responsavel||'',origem:'Teste',testeId:novoTeste.id,motivo:observacao||('Falha identificada durante teste: '+novoTeste.resultado),obs:observacao||'',resolvidaEm:''};
+      db.falhas.push(rec);
+      logLocal('teste',novoTeste.id,'falha_gerada','Falha '+rec.id+' criada a partir do teste '+novoTeste.id+' ('+novoTeste.resultado+'), mediante confirmação explícita do usuário.');
+    }
     novoTeste.falhaId=rec.id;
+    // CORREÇÃO (bug crítico, 2026-07 v6.56): criarTeste() gravava a falha em db.falhas mas nunca
+    // atualizava item.status/loc.status — diferente de saveFalha() (aba Falhas), que sempre atualiza
+    // os dois. Resultado: uma falha criada a partir de um teste reprovado não aparecia como "Com
+    // falha" em Lojas/Áreas, Equipamentos nem Módulos até alguém editar manualmente na aba Falhas.
+    // Alinhado aqui ao mesmo padrão de saveFalha() (~linha 3278-3280).
+    if(item){item.status=statusFinal;item.ultimaAlteracao=dataOcorrencia}
+    const locFalha=localById(localId); if(locFalha){locFalha.status=statusFinal;locFalha.ultimaAlteracao=dataOcorrencia}
     sincronizarPlanosFalhas(db);
-    logLocal('teste',novoTeste.id,'falha_gerada','Falha '+rec.id+' criada a partir do teste '+novoTeste.id+' ('+novoTeste.resultado+'), mediante confirmação explícita do usuário.');
+    recalcularStatusPontosTecnicos(db);
   }
   return novoTeste;
+}
+// resolverFalhaComEvidenciaDeTeste() (v6.58 — item 2 do pedido): resolve explicitamente uma falha
+// ATIVA usando um teste "Funcionou" como evidência de normalização — mesmo padrão de resolução já
+// usado em concluirPlanoFormal()/reabrirPlano() (f.status='Em operação'; f.resolvidaEm=agora;
+// atualiza item/loc). NUNCA chamada automaticamente — só após confirmação explícita do usuário no
+// modal aberto por saveTeste().
+function resolverFalhaComEvidenciaDeTeste(falhaId,testeId){
+  const f=(db.falhas||[]).find(x=>x.id===falhaId); if(!f)return;
+  const agora=isoNow();
+  f.status='Em operação'; f.resolvidaEm=agora; f.atualizadoEm=agora; f.resolvidaPorTesteId=testeId||'';
+  let itemId=f.itemId||''; let isFlm=String(itemId).startsWith('flm:');
+  let item=isFlm?flmById(String(itemId).slice(4)):db.equipamentos.find(e=>e.id===itemId);
+  let loc=localById(f.localId||'');
+  if(item){item.status='Em operação';item.ultimaAlteracao=agora}
+  if(loc){loc.status='Em operação';loc.ultimaAlteracao=agora}
+  logLocal('falha',f.id,'resolver_por_teste','Falha normalizada por evidência de teste '+(testeId||'')+' ("Funcionou"), confirmado explicitamente pelo usuário.');
+  sincronizarPlanosFalhas(db);
+  recalcularStatusPontosTecnicos(db);
 }
 // formTeste(): modal mobile-first de "Executar teste" — identificação pré-preenchida a partir do
 // ponto de entrada (loja/área), nunca reselecionada pelo técnico (seção 4 do pedido do usuário).
@@ -2631,14 +2855,13 @@ function formTeste(localId){
     <div class="field"><label>Responsável</label><input id="mTesteResp" value="${esc((currentUser().nome)||'')}"></div>
     <div class="field" style="grid-column:1/-1"><label>Resultado</label>
       <div class="toolbar" id="mTesteResultados" style="flex-wrap:wrap;gap:6px">
-        ${TESTE_RESULTADOS.map((r,idx)=>`<label class="check"><input type="radio" name="mTesteResultado" value="${esc(r)}" ${idx===0?'checked':''}> ${esc(r)}</label>`).join('')}
+        ${TESTE_RESULTADOS_NOVOS.map((r,idx)=>`<label class="check"><input type="radio" name="mTesteResultado" value="${esc(r)}" ${idx===0?'checked':''}> ${esc(r)}</label>`).join('')}
       </div>
     </div>
     <div class="field" style="grid-column:1/-1"><label>Observação (opcional)</label><textarea id="mTesteObs" placeholder="Curta, se necessário"></textarea></div>
     <div class="field" style="grid-column:1/-1"><label>Evidências (foto/vídeo)</label><input type="file" id="mTesteFotoInput" accept="image/*" multiple onchange="queueFotoUploads('__novoteste__',this.files,'teste');this.value=''"><small id="mFotoStatus" class="note"></small><div id="mTesteFotoGrid" style="margin-top:8px"></div></div>
   </div><br>
-  <button class="btn" onclick="saveTeste(false)">Salvar teste</button>
-  <button class="btn secondary" id="mBtnTesteFalha" style="display:none" onclick="saveTeste(true)">Salvar teste e registrar falha</button>
+  <button class="btn" onclick="saveTeste()">Salvar teste</button>
   <button class="btn secondary" onclick="closeModal()">Cancelar</button>`);
   window._testeFotosTemp=[];
   // Guarda de troca de cliente (item 10 da validação, 2026-07): o formulário fica travado ao
@@ -2647,15 +2870,14 @@ function formTeste(localId){
   // cliente novo (switchCliente() também fecha o modal automaticamente, ver switchCliente()).
   window._testeClienteId=clienteAtivo();
   window._testeSaving=false;
-  document.querySelectorAll('input[name="mTesteResultado"]').forEach(r=>r.addEventListener('change',atualizaBotaoFalhaTeste));
-  atualizaBotaoFalhaTeste();
 }
-function atualizaBotaoFalhaTeste(){
-  const sel=document.querySelector('input[name="mTesteResultado"]:checked')?.value||'';
-  const btn=document.getElementById('mBtnTesteFalha'); if(!btn)return;
-  btn.style.display=['Funcionamento parcial','Não funcionou'].includes(sel)?'inline-block':'none';
-}
-function saveTeste(confirmarFalha){
+// saveTeste() (v6.58 — itens 2/6 do pedido de 20 itens): reescrita para a regra nova de 2
+// resultados. "Funcionou" NUNCA cria falha — só registra o teste; se já existir falha ATIVA para
+// o MESMO localId exato, pergunta (via modal próprio, não confirm() nativo) se este teste deve ser
+// usado como evidência de normalização — nunca resolve sozinho. "Não funcionou" SEMPRE registra
+// (ou reaproveita, nunca duplica) uma falha para aquele localId e recalcula o status técnico na
+// hora — sem diálogo de confirmação extra, porque o próprio resultado do teste já É a confirmação.
+function saveTeste(){
   if(!requireAccess('editarFalhaPlano','Seu perfil não pode registrar testes.'))return;
   // Proteção contra duplo clique/reenvio (item 11 da validação): trava a gravação até terminar.
   if(window._testeSaving)return;
@@ -2665,9 +2887,8 @@ function saveTeste(confirmarFalha){
     return;
   }
   const localId=document.getElementById('mTesteLocalId')?.value||'';
-  const resultado=document.querySelector('input[name="mTesteResultado"]:checked')?.value||'Em funcionamento';
-  if(confirmarFalha&&!['Funcionamento parcial','Não funcionou'].includes(resultado)){confirmarFalha=false}
-  if(confirmarFalha&&!confirm('Confirma o registro de uma FALHA a partir deste teste? Isso vai criar um lançamento na aba Falhas e um Plano de Ação.')){return}
+  const resultado=document.querySelector('input[name="mTesteResultado"]:checked')?.value||'Funcionou';
+  const naoFuncionou=resultado==='Não funcionou';
   window._testeSaving=true;
   document.querySelectorAll('#modal .btn').forEach(b=>b.disabled=true);
   let t;
@@ -2676,13 +2897,274 @@ function saveTeste(confirmarFalha){
       localId,tipoTeste:document.getElementById('mTesteTipo')?.value,resultado,
       responsavel:n(document.getElementById('mTesteResp')?.value),
       observacao:n(document.getElementById('mTesteObs')?.value),
-      fotos:window._testeFotosTemp||[],confirmarFalha,origem:'Manual'
+      fotos:window._testeFotosTemp||[],confirmarFalha:naoFuncionou,reuseFalha:true,origem:'Manual'
     });
   }finally{
     window._testeSaving=false;
   }
   closeModal(); save();
-  if(t.falhaId)alert('Teste registrado. Falha criada com sucesso — abra a aba Falhas/Plano de Ação para dar continuidade.');
+  if(t.falhaId){
+    alert('Teste registrado. Falha aberta/atualizada — o status técnico já reflete "Com falha". Veja a aba Falhas/Plano de Ação para dar continuidade.');
+    return;
+  }
+  // "Funcionou": nunca resolve sozinho — só pergunta, com modal próprio, se existir falha ativa.
+  const falhaAtiva=(db.falhas||[]).find(f=>f.localId===localId&&!f.excluida&&!f.resolvidaEm);
+  if(falhaAtiva)abrirConfirmacaoEvidenciaTeste(falhaAtiva.id,t.id);
+}
+// abrirConfirmacaoEvidenciaTeste() (v6.58 — item 2 do pedido): modal de confirmação usando o MESMO
+// padrão de openModal() já usado em todo o resto do sistema — nunca o confirm() nativo do
+// navegador, como exigido explicitamente pelo pedido para este caso específico.
+function abrirConfirmacaoEvidenciaTeste(falhaId,testeId){
+  openModal(`<h2>Usar este teste como evidência?</h2>
+  <p class="mutedLine">Existe uma falha em aberto para este ponto técnico. Deseja utilizar este teste (resultado "Funcionou") como evidência de normalização da falha?</p>
+  <br><button class="btn" onclick="confirmarEvidenciaTeste('${esc(falhaId)}','${esc(testeId)}')">Sim, normalizar a falha</button>
+  <button class="btn secondary" onclick="closeModal()">Não, manter a falha em aberto</button>`);
+}
+function confirmarEvidenciaTeste(falhaId,testeId){
+  resolverFalhaComEvidenciaDeTeste(falhaId,testeId);
+  closeModal(); save();
+  alert('Falha normalizada com base no teste.');
+}
+/* =========================================================================
+   ABA TESTES (v6.58 — item 4/11/12/17 do pedido de 20 itens): CRUD completo e dedicado de
+   db.testes, com filtros, KPIs, editTeste/viewTeste/excluirTeste (soft-delete + auditoria) e
+   gerador de relatório. Segue o MESMO padrão estrutural de renderFalhas()/renderPlano() (dsKpiStrip,
+   dsFilters, dsTableWrap/dsTable, filtrarRegistrosPorBusca) e o MESMO padrão de wiring de
+   render()/RENDER_POR_TELA/VIEW_TO_SECTION/MENU_TREE_SUBSYS já usado por Falhas/Locais/Plano.
+   ========================================================================= */
+// testesFiltrados(): resolve os campos derivados do PONTO TÉCNICO (localId exato — nunca por nome
+// de loja) e da falha vinculada, e aplica os filtros da tela em AND (mesmo padrão de renderLocais()/
+// renderFalhas()).
+function testesFiltrados(){
+  const f=filters.testes||{};
+  const base=(db.testes||[]).filter(t=>!t.excluido).map(t=>{
+    const loc=localById(t.localId);
+    const falha=t.falhaId?(db.falhas||[]).find(x=>x.id===t.falhaId):null;
+    let endereco='';
+    if(t.itemId){const isFlm=String(t.itemId).startsWith('flm:'); const item=isFlm?flmById(String(t.itemId).slice(4)):db.equipamentos.find(e=>e.id===t.itemId); endereco=item?(item.endereco||item.modelo||''):''}
+    return {...t,
+      loja:loc?.nomeOficial||loc?.nome||'',
+      luc:loc?.luc||'',
+      sistema:loc?.sistema||'',
+      painel:paiName(loc?.painelId)||paiName(t.painelId),
+      laco:lacName(loc?.lacoId)||lacName(t.lacoId),
+      piso:loc?.piso||'',
+      modulo:flmById(loc?.flmId||t.flmId)?.nome||'',
+      porta:loc?.portaId||t.portaId||'',
+      endereco,
+      condicaoEncontrada:falha?normalizeStatus(falha.status):'',
+      falhaSituacao:falha?(falha.resolvidaEm?'Resolvida':'Em aberto'):''
+    };
+  }).sort((a,b)=>String(b.data||b.criadoEm||'').localeCompare(String(a.data||a.criadoEm||'')));
+  let rows=base.filter(t=>
+    (!f.dataIni||String(t.data||'')>=f.dataIni)&&
+    (!f.dataFim||String(t.data||'')<=f.dataFim+'T23:59')&&
+    (!f.loja||t.loja===f.loja)&&
+    (!f.sistema||t.sistema===f.sistema)&&
+    (!f.piso||t.piso===f.piso)&&
+    (!f.resultado||t.resultado===f.resultado)&&
+    (!f.tipo||t.tipoTeste===f.tipo)&&
+    (!f.responsavel||t.responsavel===f.responsavel)
+  );
+  const semBusca=rows;
+  rows=filtrarRegistrosPorBusca(rows,f.q,x=>[x.loja,x.luc,x.sistema,x.painel,x.laco,x.piso,x.modulo,x.endereco,x.tipoTeste,x.resultado,x.observacao,x.responsavel].filter(Boolean).join(' '));
+  return {rows,base,semBusca};
+}
+function renderTestes(){
+  const f=filters.testes||{};
+  const {rows,base,semBusca}=testesFiltrados();
+  const totalTestes=base.length;
+  const aprovados=base.filter(t=>t.resultado==='Funcionou'||t.resultado==='Em funcionamento').length;
+  const reprovados=base.filter(t=>t.resultado==='Não funcionou').length;
+  const comFalha=base.filter(t=>t.falhaId).length;
+  const semResultado=f.q&&!rows.length&&semBusca.length>0;
+  const lojas=unique(base.map(t=>t.loja)), pisos=unique(base.map(t=>t.piso)), resps=unique(base.map(t=>t.responsavel));
+  const trs=rows.map(r=>{
+    const resultadoIcone=iconeResultadoTeste(r.resultado);
+    return `<tr>
+      <td>${dsDateHtml(r.data)}</td>
+      <td><div style="font-weight:700;font-size:13px">${esc(r.loja||'—')}</div>${r.sistema?`<span class="pill ${r.sistema==='CO2'?'warn':'info'}" style="font-size:10.5px;padding:1px 6px">${esc(r.sistema)}</span>`:''}</td>
+      <td>${esc(r.luc||'—')}</td>
+      <td>${esc(r.sistema||'—')}</td>
+      <td>${esc(r.painel||'—')}</td>
+      <td>${esc(r.laco||'—')}</td>
+      <td>${esc(r.piso||'—')}</td>
+      <td>${esc(r.modulo||'—')}</td>
+      <td>${esc(r.porta||'—')}</td>
+      <td>${esc(r.endereco||'—')}</td>
+      <td>${esc(r.tipoTeste||'—')}</td>
+      <td>${resultadoIcone} ${esc(r.resultado||'—')}</td>
+      <td>${r.condicaoEncontrada?esc(r.condicaoEncontrada)+(r.falhaSituacao?` (${esc(r.falhaSituacao)})`:''):'—'}</td>
+      <td style="max-width:180px;font-size:12px">${esc(r.observacao||'—')}</td>
+      <td style="font-size:12px">${esc(r.responsavel||'—')}</td>
+      <td>${fotosThumbsHtml(r.fotos,32)}</td>
+      <td>${r.falhaId?`<button class="dsIco" onclick="formFalha('${r.falhaId}')" title="Abrir falha">🚩</button>`:'—'}</td>
+      <td style="font-size:11px">${esc((r.criadoEm||'').replace('T',' '))}</td>
+      <td style="font-size:11px">${esc((r.editadoEm||'—'))}</td>
+      <td><div class="dsIcoGroup">
+        <button class="dsIco" onclick="viewTeste('${r.id}')" title="Visualizar">👁️</button>
+        <button class="dsIco" onclick="editTeste('${r.id}')" title="Editar">✏️</button>
+        <button class="dsIco" onclick="excluirTeste('${r.id}')" title="Excluir">🗑️</button>
+        ${r.falhaId?`<button class="dsIco" onclick="formFalha('${r.falhaId}')" title="Abrir falha">🚩</button>`:''}
+        ${r.localId?`<button class="dsIco" onclick="openLocal('${r.localId}')" title="Abrir loja/ponto técnico">🏬</button>`:''}
+      </div></td>
+    </tr>`;
+  }).join('');
+  document.getElementById('testes').innerHTML=`
+    ${dsKpiStrip([
+      ['Total de testes',totalTestes,''],
+      ['Aprovados',aprovados,'ok'],
+      ['Reprovados',reprovados,reprovados>0?'bad':'ok'],
+      ['Com falha vinculada',comFalha,comFalha>0?'warn':'ok']
+    ])}
+    <div class="dsFilters">
+      <div class="field"><label>Data inicial</label><input type="date" value="${esc(f.dataIni||'')}" onchange="filters.testes={...filters.testes,dataIni:this.value};render()"></div>
+      <div class="field"><label>Data final</label><input type="date" value="${esc(f.dataFim||'')}" onchange="filters.testes={...filters.testes,dataFim:this.value};render()"></div>
+      <div class="field"><label>Loja</label><select onchange="filters.testes={...filters.testes,loja:this.value};render()">${selectOpts(lojas,f.loja)}</select></div>
+      <div class="field"><label>Sistema</label><select onchange="filters.testes={...filters.testes,sistema:this.value};render()">${selectOpts(SISTEMA_LACO_OPTIONS,f.sistema,'Todos')}</select></div>
+      <div class="field"><label>Piso</label><select onchange="filters.testes={...filters.testes,piso:this.value};render()">${selectOpts(pisos,f.piso)}</select></div>
+      <div class="field"><label>Resultado</label><select onchange="filters.testes={...filters.testes,resultado:this.value};render()">${selectOpts(unique(base.map(t=>t.resultado)),f.resultado)}</select></div>
+      <div class="field"><label>Tipo</label><select onchange="filters.testes={...filters.testes,tipo:this.value};render()">${selectOpts(TESTE_TIPOS,f.tipo)}</select></div>
+      <div class="field"><label>Responsável</label><select onchange="filters.testes={...filters.testes,responsavel:this.value};render()">${selectOpts(resps,f.responsavel)}</select></div>
+      <div class="field searchField"><label>Busca</label><div class="searchBox"><input value="${escSearchVal(f.q||'')}" data-filter-input="1" data-filter-group="testes" data-filter-key="q" data-focus-key="testesBusca" placeholder="Loja, LUC, sistema, painel, laço, piso..." autocomplete="off">${f.q?`<button type="button" class="searchClear" title="Limpar busca" onclick="filters.testes={...filters.testes,q:''};render()">×</button>`:''}</div></div>
+      <div class="dsFilterActions"><button class="btn secondary small" onclick="limparFiltrosTela('testes')">Limpar filtros</button><button class="btn small" onclick="abrirRelatorioTestes()">📄 Gerar Relatório</button></div>
+    </div>
+    <div class="searchResultCount">${resultCountLabel(rows.length,semBusca.length,semResultado)}</div>
+    <div class="dsTableWrap">
+      <table class="dsTable">
+        <thead><tr>
+          <th>Data/Hora</th><th>Loja</th><th>LUC</th><th>Sistema</th><th>Painel</th><th>Laço</th>
+          <th>Piso</th><th>Módulo</th><th>Porta</th><th>Endereço</th><th>Tipo de teste</th>
+          <th>Resultado</th><th>Condição encontrada</th><th>Observação</th><th>Responsável</th>
+          <th>Anexos</th><th>Falha vinculada</th><th>Criado em</th><th>Última alteração</th><th>Ações</th>
+        </tr></thead>
+        <tbody>${trs||`<tr><td colspan="20"><div class="emptyState">${base.length?'Nenhum registro corresponde aos filtros aplicados.':'Nenhum teste registrado.'}</div></td></tr>`}</tbody>
+      </table>
+    </div>
+    <div id="testesReportOut" class="printArea"></div>`;
+}
+// viewTeste(): modal somente-leitura com todos os campos pedidos (item 4) + anexos.
+function viewTeste(idTeste){
+  const t=(db.testes||[]).find(x=>x.id===idTeste); if(!t){alert('Teste não encontrado.');return}
+  const loc=localById(t.localId); const falha=t.falhaId?(db.falhas||[]).find(x=>x.id===t.falhaId):null;
+  openModal(`<h2>Teste — ${esc(loc?.nomeOficial||loc?.nome||'—')}</h2>
+  <div class="compactHelp" style="margin-bottom:10px"><span class="pill ${(loc?.sistema||'SDAI')==='CO2'?'warn':'info'}">${esc(loc?.sistema||'—')}</span> <b>${esc(paiName(loc?.painelId)||'—')}</b> • Laço ${esc(lacName(loc?.lacoId)||'—')} • Piso ${esc(loc?.piso||'—')} • LUC ${esc(loc?.luc||'—')}</div>
+  <div class="formGrid">
+    <div class="field"><label>Data/Hora</label><div>${esc((t.data||'').replace('T',' '))}</div></div>
+    <div class="field"><label>Tipo de teste</label><div>${esc(t.tipoTeste||'—')}</div></div>
+    <div class="field"><label>Resultado</label><div>${iconeResultadoTeste(t.resultado)} ${esc(t.resultado||'—')}</div></div>
+    <div class="field"><label>Responsável</label><div>${esc(t.responsavel||'—')}</div></div>
+    <div class="field" style="grid-column:1/-1"><label>Observação</label><div>${esc(t.observacao||'—')}</div></div>
+    <div class="field" style="grid-column:1/-1"><label>Condição encontrada / Falha vinculada</label><div>${falha?esc(normalizeStatus(falha.status))+' — '+(falha.resolvidaEm?'Resolvida':'Em aberto'):'—'}</div></div>
+    <div class="field" style="grid-column:1/-1"><label>Anexos</label>${fotosThumbsHtml(t.fotos,60)}</div>
+    <div class="field"><label>Criado em / por</label><div style="font-size:12px">${esc((t.criadoEm||'—'))} — ${esc(t.criadoPor||'—')}</div></div>
+    <div class="field"><label>Última alteração</label><div style="font-size:12px">${esc(t.editadoEm||'—')}${t.editadoPor?' — '+esc(t.editadoPor):''}</div></div>
+  </div><br>
+  <button class="btn secondary" onclick="closeModal()">Fechar</button>`);
+}
+// editTeste() (item 11 do pedido): permite alterar tipo/resultado/observação/responsável/data/
+// anexos. As opções de Resultado somam TESTE_RESULTADOS_NOVOS + o valor atual do registro (mesmo
+// que seja um dos 5 valores antigos), pra nunca "sumir" um valor legado da tela de edição.
+function editTeste(idTeste){
+  if(!requireAccess('editarFalhaPlano','Seu perfil não pode editar testes.'))return;
+  const t=(db.testes||[]).find(x=>x.id===idTeste); if(!t){alert('Teste não encontrado.');return}
+  const loc=localById(t.localId);
+  const opcoesResultado=[...new Set([...TESTE_RESULTADOS_NOVOS,t.resultado].filter(Boolean))];
+  window._testeEditFotos=(t.fotos||[]).slice();
+  openModal(`<h2>Editar teste — ${esc(loc?.nomeOficial||loc?.nome||'—')}</h2>
+  <input type="hidden" id="mEditTesteId" value="${esc(idTeste)}">
+  <div class="formGrid">
+    <div class="field"><label>Data/Hora</label><input type="datetime-local" id="mEditTesteData" value="${esc((t.data||'').slice(0,16))}"></div>
+    <div class="field"><label>Tipo de teste</label><select id="mEditTesteTipo">${TESTE_TIPOS.map(x=>`<option ${x===t.tipoTeste?'selected':''}>${esc(x)}</option>`).join('')}</select></div>
+    <div class="field"><label>Responsável</label><input id="mEditTesteResp" value="${esc(t.responsavel||'')}"></div>
+    <div class="field" style="grid-column:1/-1"><label>Resultado</label>
+      <div class="toolbar" style="flex-wrap:wrap;gap:6px">${opcoesResultado.map(r=>`<label class="check"><input type="radio" name="mEditTesteResultado" value="${esc(r)}" ${r===t.resultado?'checked':''}> ${esc(r)}</label>`).join('')}</div>
+    </div>
+    <div class="field" style="grid-column:1/-1"><label>Observação</label><textarea id="mEditTesteObs">${esc(t.observacao||'')}</textarea></div>
+    <div class="field" style="grid-column:1/-1"><label>Anexos</label><input type="file" id="mEditTesteFotoInput" accept="image/*" multiple onchange="queueFotoUploads('__editteste__',this.files,'teste');this.value=''"><div id="mEditTesteFotoGrid" style="margin-top:8px">${fotosThumbsHtml(window._testeEditFotos,50)}</div></div>
+  </div><br>
+  <button class="btn" onclick="saveEditTeste()">Salvar alterações</button>
+  <button class="btn secondary" onclick="closeModal()">Cancelar</button>`);
+}
+function saveEditTeste(){
+  const idTeste=document.getElementById('mEditTesteId')?.value||'';
+  const t=(db.testes||[]).find(x=>x.id===idTeste); if(!t){alert('Teste não encontrado.');closeModal();return}
+  const valoresAntigos={tipoTeste:t.tipoTeste,resultado:t.resultado,observacao:t.observacao,responsavel:t.responsavel,data:t.data,fotos:(t.fotos||[]).slice()};
+  const novoResultado=document.querySelector('input[name="mEditTesteResultado"]:checked')?.value||t.resultado;
+  t.tipoTeste=document.getElementById('mEditTesteTipo')?.value||t.tipoTeste;
+  t.resultado=novoResultado;
+  t.observacao=n(document.getElementById('mEditTesteObs')?.value);
+  t.responsavel=n(document.getElementById('mEditTesteResp')?.value);
+  const novaData=document.getElementById('mEditTesteData')?.value; if(novaData)t.data=novaData;
+  t.fotos=window._testeEditFotos||t.fotos||[];
+  const valoresNovos={tipoTeste:t.tipoTeste,resultado:t.resultado,observacao:t.observacao,responsavel:t.responsavel,data:t.data,fotos:(t.fotos||[]).slice()};
+  t.editadoPor=(currentUser().email||currentUser().nome||'');
+  t.editadoEm=isoNow();
+  t.historicoEdicoes=t.historicoEdicoes||[];
+  t.historicoEdicoes.push({em:t.editadoEm,por:t.editadoPor,valoresAntigos,valoresNovos});
+  logLocal('teste',t.id,'editar','Teste editado por '+t.editadoPor+'.');
+  recalcularStatusPontosTecnicos(db);
+  closeModal(); save();
+}
+// excluirTeste() (item 11/12 do pedido): soft-delete com confirmação via modal próprio (não
+// confirm() nativo) e motivo + auditoria completa (excluidoPor/excluidoEm/motivo).
+function excluirTeste(idTeste){
+  if(!requireAccess('editarFalhaPlano','Seu perfil não pode excluir testes.'))return;
+  const t=(db.testes||[]).find(x=>x.id===idTeste); if(!t){alert('Teste não encontrado.');return}
+  openModal(`<h2>Excluir teste</h2>
+  <p class="mutedLine">O registro NÃO é apagado — fica marcado como excluído (soft-delete) e some das telas operacionais. Esta ação é registrada no histórico.</p>
+  <div class="field"><label>Motivo (opcional)</label><textarea id="mExclTesteMotivo"></textarea></div><br>
+  <button class="btn danger" onclick="confirmarExcluirTeste('${esc(idTeste)}')">Confirmar exclusão</button>
+  <button class="btn secondary" onclick="closeModal()">Cancelar</button>`);
+}
+function confirmarExcluirTeste(idTeste){
+  const t=(db.testes||[]).find(x=>x.id===idTeste); if(!t){closeModal();return}
+  const motivo=n(document.getElementById('mExclTesteMotivo')?.value);
+  t.excluido=true;
+  t.excluidoPor=(currentUser().email||currentUser().nome||'');
+  t.excluidoEm=isoNow();
+  t.motivoExclusao=motivo;
+  logLocal('teste',t.id,'excluir','Teste excluído (soft-delete) por '+t.excluidoPor+(motivo?'. Motivo: '+motivo:'.'));
+  recalcularStatusPontosTecnicos(db);
+  closeModal(); save();
+}
+// abrirRelatorioTestes()/renderRelatorioTestes() (item 17 do pedido): mesmo padrão de "Gerar
+// Relatório" já usado em renderRelatorios()/renderRelatorioExecutivoSDAI() — printArea + window.print().
+function abrirRelatorioTestes(){renderRelatorioTestes();setTimeout(()=>{document.getElementById('testesReportOut')?.scrollIntoView({behavior:'smooth'})},100)}
+function renderRelatorioTestes(){
+  const out=document.getElementById('testesReportOut'); if(!out)return;
+  const {rows}=testesFiltrados();
+  const f=filters.testes||{};
+  const emp=db.empreendimento||{};
+  const lojasTestadas=unique(rows.map(r=>r.loja)).length;
+  const pontosTecnicos=unique(rows.map(r=>r.localId)).length;
+  const totalPontos=(db.locais||[]).length;
+  const cobertura=totalPontos?Math.round((pontosTecnicos/totalPontos)*100):0;
+  const aprovados=rows.filter(r=>r.resultado==='Funcionou'||r.resultado==='Em funcionamento').length;
+  const reprovados=rows.filter(r=>r.resultado==='Não funcionou').length;
+  const pctAprov=rows.length?Math.round((aprovados/rows.length)*100):0;
+  const pctReprov=rows.length?Math.round((reprovados/rows.length)*100):0;
+  out.innerHTML=`
+    <div class="reportBlock">
+      <h3>Relatório de Testes — SDAI</h3>
+      <div class="compactHelp">Cliente: <b>${esc(emp.cliente||'—')}</b> • Empreendimento: <b>${esc(emp.nome||'—')}</b> • Período: <b>${esc(f.dataIni||'início')} a ${esc(f.dataFim||'hoje')}</b> • Emitido em ${now()}</div>
+      <div class="grid" style="margin-top:10px">
+        ${kpi('Testes no período',rows.length)}
+        ${kpi('Lojas testadas',lojasTestadas)}
+        ${kpi('Pontos técnicos testados',pontosTecnicos)}
+        ${kpi('Cobertura',cobertura+'%')}
+        ${kpi('Aprovação',pctAprov+'%')}
+        ${kpi('Reprovação',pctReprov+'%')}
+      </div>
+      <h4 style="margin-top:14px">Listagem detalhada</h4>
+      ${table(rows,[
+        ['Data','data',r=>esc((r.data||'').replace('T',' '))],
+        ['Loja','loja'],['Sistema','sistema'],['Painel','painel'],['Laço','laco'],['Piso','piso'],
+        ['Tipo','tipoTeste'],['Resultado','resultado'],['Condição','condicaoEncontrada'],
+        ['Responsável','responsavel'],['Observação','observacao']
+      ])}
+    </div>
+    <div class="toolbar hidePrint" style="margin-top:10px"><button class="btn secondary small" onclick="window.print()">📄 Gerar PDF (A4)</button></div>`;
 }
 // CORREÇÃO (bug reportado): esta era a definição de isFalhaStatus() que REALMENTE valia em todo o
 // sistema (a última declaração de uma função sobrepõe as anteriores em JavaScript), e ela incluía
@@ -2874,7 +3356,36 @@ async function importFile(){try{if(!clienteAtivoObj())throw new Error('Nenhum cl
         `Registros atualizados: ${stats.registrosAtualizados} · Registros ignorados: ${stats.ignorados} · Registros com inconsistência: ${stats.registrosComInconsistencia} · Linhas lidas no arquivo: ${stats.registrosLidos}<br>`+
         `DFO/FAP/ACM/DM210/SM210/FMC são importados como equipamentos vinculados a Área Comum/Técnica, sem criar loja.</div>`;
       document.getElementById('impMsg').innerHTML=resumoHtml}catch(e){document.getElementById('impMsg').innerHTML=`<div class="msg err">${esc(e.message)}</div>`}}
-function openModal(html){document.getElementById('drawer').innerHTML=html;document.getElementById('modal').classList.add('show')} function openModalWide(html){document.getElementById('drawer').classList.add('wide');openModal(html)} function closeModal(){document.getElementById('modal').classList.remove('show');document.getElementById('drawer').classList.remove('wide')} document.getElementById('modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal()})
+function _modalFormSnapshot(){const d=document.getElementById('drawer');if(!d)return '';return Array.from(d.querySelectorAll('input,select,textarea')).map(el=>el.type==='checkbox'||el.type==='radio'?el.checked:el.value).join('|')}
+function openModal(html){window._modalReturnFocus=document.activeElement;document.getElementById('drawer').innerHTML=html;document.getElementById('modal').classList.add('show');window._modalInitialSnapshot=_modalFormSnapshot()} function openModalWide(html){document.getElementById('drawer').classList.add('wide');openModal(html)} function closeModal(){document.getElementById('modal').classList.remove('show');document.getElementById('drawer').classList.remove('wide')} document.getElementById('modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal()})
+// _restoreModalFocus()/handler de ESC (v6.59 — item 13): fecha só o modal atual (não há pilha real —
+// #modal é único no DOM, então "topmost" é sempre o único aberto), mantém o X funcionando (inalterado
+// acima), restaura foco ao elemento que abriu o modal, e registrado UMA única vez (guardado por
+// window._escHandlerBound) para nunca empilhar listeners a cada abertura de modal. Se houver alterações
+// não salvas (snapshot dos inputs do drawer mudou desde a abertura) e nenhum salvamento _*Saving em
+// andamento, usa o MESMO padrão de modal de confirmação (openModal), nunca confirm() nativo.
+function _restoreModalFocus(){try{if(window._modalReturnFocus&&document.body.contains(window._modalReturnFocus))window._modalReturnFocus.focus()}catch(e){}}
+function _escConfirmarFechar(){window._escConfirmOpen=false;closeModal();_restoreModalFocus()}
+function _escCancelarFechar(){window._escConfirmOpen=false;document.getElementById('drawer').innerHTML=window._escPrevHtml||'';document.getElementById('modal').classList.add('show')}
+if(!window._escHandlerBound){
+  window._escHandlerBound=true;
+  document.addEventListener('keydown',function(e){
+    if(e.key!=='Escape')return;
+    const modalEl=document.getElementById('modal');
+    if(!modalEl||!modalEl.classList.contains('show'))return;
+    if(window._escConfirmOpen)return;
+    if(window._testeSaving||window._falhaSaving||window._planoSaving)return;
+    const dirty=_modalFormSnapshot()!==(window._modalInitialSnapshot||'');
+    if(dirty){
+      window._escConfirmOpen=true;
+      window._escPrevHtml=document.getElementById('drawer').innerHTML;
+      document.getElementById('drawer').innerHTML=`<h2>Fechar sem salvar?</h2><p class="mutedLine">Existem alterações não salvas. Deseja fechar?</p><br><button class="btn danger" onclick="_escConfirmarFechar()">Sim, fechar</button> <button class="btn secondary" onclick="_escCancelarFechar()">Cancelar</button>`;
+    }else{
+      closeModal();
+      _restoreModalFocus();
+    }
+  });
+}
 function formPainel(i=''){if(!requireAccess('cadastro','Seu perfil não pode criar/editar painéis.'))return; let o=db.paineis.find(x=>x.id===i)||{};openModal(`<h2>${i?'Editar':'Novo'} Painel</h2><div class="formGrid"><div class="field"><label>Nome</label><input id="mNome" value="${esc(o.nome)}"></div><div class="field"><label>Modelo</label><input id="mModelo" value="${esc(o.modelo)}"></div><div class="field"><label>Localização</label><input id="mLoc" value="${esc(o.localizacao)}"></div><div class="field"><label>Observação</label><input id="mObs" value="${esc(o.obs)}"></div></div><br><button class="btn" onclick="savePainel('${i}')">Salvar</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`)}
 function savePainel(i){let o=i?db.paineis.find(x=>x.id===i):{id:id()}; o.nome=n(mNome.value);o.modelo=n(mModelo.value);o.localizacao=n(mLoc.value);o.obs=n(mObs.value); if(!i){db.paineis.push(o); logLocal('painel',o.id,'criar','Painel criado manualmente: '+o.nome)} closeModal(); save()}
 function openLacoDetalhes(lacoId){
@@ -3997,7 +4508,7 @@ setInterval(()=>scheduleAutoSync(0),30000);
 window.addEventListener('beforeunload',e=>{const c=syncCfg(); if(c.configured&&c.dirty){e.preventDefault(); e.returnValue='Você tem alterações ainda não confirmadas no Google Sheets. Se sair agora, pode perder o que fez. Deseja mesmo sair?'; return e.returnValue}});
 
 /* ===== Build 6.1 overrides: login real, abas por usuário e telas premium ===== */
-const VIEW_LABELS={dashboard:'Dashboard',paineis:'Painéis',lacos:'Laços',flms:'Módulos',locais:'Lojas / Áreas',equipamentos:'Detectores / Acionadores',falhas:'Falhas',plano:'Plano de Ação',relatorios:'Relatórios',importacao:'Importação',exportacao:'Exportação',sistema:'Gestão de Dados',usuarios:'Usuários e Acessos',configuracoes:'Configurações',backup:'Backup',logs:'Logs',sobre:'Sobre'};
+const VIEW_LABELS={dashboard:'Dashboard',paineis:'Painéis',lacos:'Laços',flms:'Módulos',locais:'Lojas / Áreas',equipamentos:'Detectores / Acionadores',falhas:'Falhas',testes:'Testes',plano:'Plano de Ação',relatorios:'Relatórios',importacao:'Importação',exportacao:'Exportação',sistema:'Gestão de Dados',usuarios:'Usuários e Acessos',configuracoes:'Configurações',backup:'Backup',logs:'Logs',sobre:'Sobre'};
 const DEFAULT_VIEWS_BY_ROLE={Administrador:Object.keys(VIEW_LABELS),Supervisor:['dashboard','paineis','lacos','flms','locais','equipamentos','falhas','plano','relatorios','exportacao','logs','sobre'],Operacional:['dashboard','falhas','plano','relatorios','sobre']};
 /* [removido na limpeza 2026-07: versão antiga substituída pela declaração final desta função] */
 /* [removido na limpeza 2026-07: versão antiga substituída pela declaração final desta função] */
@@ -4020,7 +4531,7 @@ function applyRoleUI(){applyNavPermissions();const p=perfilAtual(); document.que
 
 
 /* === V6.2 HOTFIX FUNCTIONS: Sistema, usuários, permissões e telas vazias === */
-const L3A_VIEWS = {visaoGeral:'Visão Geral do Cliente',dashboard:'Dashboard',paineis:'Painéis',lacos:'Laços',flms:'Módulos',locais:'Lojas / Áreas',equipamentos:'Detectores / Acionadores',falhas:'Falhas',plano:'Plano de Ação',plantas:'Plantas',relatorios:'Relatórios',importacao:'Importação',exportacao:'Exportação',cftv:'CFTV',cftvDashboard:'Dashboard CFTV',cftvCameras:'Câmeras',cftvGravadores:'Gravadores',cftvSwitches:'Switches',cftvRede:'Pontos de rede',cftvLocais:'Locais CFTV',cftvOcorrencias:'Ocorrências CFTV',cftvPlano:'Plano CFTV',cftvTestes:'Testes CFTV',cftvPlantas:'Plantas CFTV',cftvRelatorios:'Relatórios CFTV',cftvImportacao:'Importação CFTV',cftvExportacao:'Exportação CFTV',acesso:'Controle de Acesso',acessoDashboard:'Dashboard Acesso',acessoPortas:'Portas',acessoCatracas:'Catracas',acessoLeitores:'Leitores',acessoControladoras:'Controladoras',acessoOcorrencias:'Ocorrências Acesso',acessoPlano:'Plano Acesso',acessoTestes:'Testes Acesso',acessoPlantas:'Plantas Acesso',acessoRelatorios:'Relatórios Acesso',acessoImportacao:'Importação Acesso',acessoExportacao:'Exportação Acesso',ambiente:'Ambiente / Som',ambienteDashboard:'Dashboard Ambiente',ambienteSensores:'Sensores',ambienteAmplificadores:'Amplificadores',ambienteAltfalantes:'Alto-falantes',ambienteControladores:'Controladores',ambienteEquipamentos:'Equip. Ambientais',ambienteAmbientes:'Ambientes',ambienteOcorrencias:'Ocorrências Ambiente',ambientePlano:'Plano Ambiente',ambienteTestes:'Testes Ambiente',ambientePlantas:'Plantas Ambiente',ambienteRelatorios:'Relatórios Ambiente',ambienteImportacao:'Importação Ambiente',ambienteExportacao:'Exportação Ambiente',clientes:'Clientes',sistema:'Gestão de Dados',usuarios:'Usuários e Acessos',configuracoes:'Configurações',backup:'Backup',logs:'Logs',sobre:'Sobre'};
+const L3A_VIEWS = {visaoGeral:'Visão Geral do Cliente',dashboard:'Dashboard',paineis:'Painéis',lacos:'Laços',flms:'Módulos',locais:'Lojas / Áreas',equipamentos:'Detectores / Acionadores',falhas:'Falhas',testes:'Testes',plano:'Plano de Ação',plantas:'Plantas',relatorios:'Relatórios',importacao:'Importação',exportacao:'Exportação',cftv:'CFTV',cftvDashboard:'Dashboard CFTV',cftvCameras:'Câmeras',cftvGravadores:'Gravadores',cftvSwitches:'Switches',cftvRede:'Pontos de rede',cftvLocais:'Locais CFTV',cftvOcorrencias:'Ocorrências CFTV',cftvPlano:'Plano CFTV',cftvTestes:'Testes CFTV',cftvPlantas:'Plantas CFTV',cftvRelatorios:'Relatórios CFTV',cftvImportacao:'Importação CFTV',cftvExportacao:'Exportação CFTV',acesso:'Controle de Acesso',acessoDashboard:'Dashboard Acesso',acessoPortas:'Portas',acessoCatracas:'Catracas',acessoLeitores:'Leitores',acessoControladoras:'Controladoras',acessoOcorrencias:'Ocorrências Acesso',acessoPlano:'Plano Acesso',acessoTestes:'Testes Acesso',acessoPlantas:'Plantas Acesso',acessoRelatorios:'Relatórios Acesso',acessoImportacao:'Importação Acesso',acessoExportacao:'Exportação Acesso',ambiente:'Ambiente / Som',ambienteDashboard:'Dashboard Ambiente',ambienteSensores:'Sensores',ambienteAmplificadores:'Amplificadores',ambienteAltfalantes:'Alto-falantes',ambienteControladores:'Controladores',ambienteEquipamentos:'Equip. Ambientais',ambienteAmbientes:'Ambientes',ambienteOcorrencias:'Ocorrências Ambiente',ambientePlano:'Plano Ambiente',ambienteTestes:'Testes Ambiente',ambientePlantas:'Plantas Ambiente',ambienteRelatorios:'Relatórios Ambiente',ambienteImportacao:'Importação Ambiente',ambienteExportacao:'Exportação Ambiente',clientes:'Clientes',sistema:'Gestão de Dados',usuarios:'Usuários e Acessos',configuracoes:'Configurações',backup:'Backup',logs:'Logs',sobre:'Sobre'};
 // PERFIS v2: Master tudo; Gestor sem sistema/backup/usuários/import/export; Operacional foca em
 // falhas+planos; Visualizador só leitura+relatórios. Chaves antigas mantidas como alias.
 const L3A_ROLE_VIEWS = {
@@ -4068,7 +4579,7 @@ function saveEmpresaCfg(){db.config=db.config||{}; db.config.cliente=n(document.
 const RENDER_POR_TELA={
   visaoGeral:renderVisaoGeral,
   dashboard:renderDashboard,paineis:renderPaineis,lacos:renderLacos,flms:renderFlms,
-  locais:renderLocais,equipamentos:renderEquipamentos,falhas:renderFalhas,plano:renderPlano,
+  locais:renderLocais,equipamentos:renderEquipamentos,falhas:renderFalhas,testes:renderTestes,plano:renderPlano,
   plantas:(...a)=>renderPlantas(...a),importacao:renderImportacao,exportacao:renderExportacao,
   relatorios:renderRelatorios,
   // CFTV — só as telas com CRUD real (câmeras/gravadores) usam renderCftv; o
@@ -6696,7 +7207,15 @@ function formLocal(i=''){
   let o=db.locais.find(x=>x.id===i)||{};
   const lucAtual=lucValorLocal(o);
   const nomeAtual=lucNomeOficialLocal(o)||o.nome||'';
-  openModal(`<h2>${i?'Editar':'Nova'} Loja / Área</h2><p class="msg warn">Selecione a loja correta na lista da Base LUC — o Nome Oficial e o LUC são preenchidos automaticamente, sem risco de erro de digitação. Use isso para corrigir associações erradas feitas pela automação.</p><div class="formGrid"><div class="field" style="grid-column:1/-1"><label>Selecionar loja da Base LUC</label><select id="mBaseLojaSelect" onchange="onSelectBaseLojaModal(this)">${lucBaseLojaOptionsHtml(o.baseLojaId||'')}</select></div><div class="field"><label>Nome Oficial</label><input id="mNome" value="${esc(nomeAtual)}"></div><div class="field"><label>LUC</label><input id="mLuc" value="${esc(lucAtual)}" placeholder="—"><input type="hidden" id="mBaseLojaId" value="${esc(o.baseLojaId||'')}"></div><div class="field"><label>Classificação</label><select id="mTipo"><option ${o.tipo==='Loja'?'selected':''}>Loja</option><option ${o.tipo==='Área Técnica'?'selected':''}>Área Técnica</option><option ${o.tipo==='Área Comum'?'selected':''}>Área Comum</option></select></div><div class="field"><label>Sistema</label><select id="mSistema">${SISTEMA_LACO_OPTIONS.map(op=>`<option value="${esc(op)}" ${(o.sistema||'SDAI')===op?'selected':''}>${op}</option>`).join('')}</select></div><div class="field"><label>Piso</label><input id="mPiso" value="${esc(o.piso)}"></div><div class="field"><label>Status</label><select id="mStatus">${STATUS_SISTEMA_OPTIONS.map(st=>`<option ${normalizeStatus(o.status)===st?'selected':''}>${st}</option>`).join('')}</select></div><div class="field"><label>Nome antigo / cadastro original</label><input id="mNomeOriginal" value="${esc(o.nomeOriginalCadastro||'')}" placeholder="Preenchido ao vincular Base LUC"></div></div><br><button class="btn" onclick="saveLocal('${i}')">Salvar</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`);
+  const portasDoFlm=o.flmId?db.portas.filter(p=>p.flmId===o.flmId):[];
+  openModal(`<h2>${i?'Editar':'Nova'} Loja / Área</h2><p class="msg warn">Selecione a loja correta na lista da Base LUC — o Nome Oficial e o LUC são preenchidos automaticamente, sem risco de erro de digitação. Use isso para corrigir associações erradas feitas pela automação.</p><div class="formGrid"><div class="field" style="grid-column:1/-1"><label>Selecionar loja da Base LUC</label><select id="mBaseLojaSelect" onchange="onSelectBaseLojaModal(this)">${lucBaseLojaOptionsHtml(o.baseLojaId||'')}</select></div><div class="field"><label>Nome Oficial</label><input id="mNome" value="${esc(nomeAtual)}"></div><div class="field"><label>LUC</label><input id="mLuc" value="${esc(lucAtual)}" placeholder="—"><input type="hidden" id="mBaseLojaId" value="${esc(o.baseLojaId||'')}"></div><div class="field"><label>Classificação</label><select id="mTipo"><option ${o.tipo==='Loja'?'selected':''}>Loja</option><option ${o.tipo==='Área Técnica'?'selected':''}>Área Técnica</option><option ${o.tipo==='Área Comum'?'selected':''}>Área Comum</option></select></div><div class="field"><label>Sistema</label><select id="mSistema">${SISTEMA_LACO_OPTIONS.map(op=>`<option value="${esc(op)}" ${(o.sistema||'SDAI')===op?'selected':''}>${op}</option>`).join('')}</select></div><div class="field"><label>Piso</label><input id="mPiso" value="${esc(o.piso)}"></div><div class="field"><label>Status</label><select id="mStatus">${STATUS_SISTEMA_OPTIONS.map(st=>`<option ${normalizeStatus(o.status)===st?'selected':''}>${st}</option>`).join('')}</select></div><div class="field"><label>Painel</label><select id="mPainelLocal"><option value="">—</option>${db.paineis.map(p=>`<option value="${p.id}" ${p.id===o.painelId?'selected':''}>${esc(p.nome)}</option>`).join('')}</select></div><div class="field"><label>Laço</label><select id="mLacoLocal"><option value="">—</option>${db.lacos.map(l=>`<option value="${l.id}" ${l.id===o.lacoId?'selected':''}>${esc(paiName(l.painelId)+' - '+l.nome)}</option>`).join('')}</select></div><div class="field"><label>Módulo (FLM)</label><select id="mFlmLocal" onchange="onSelectFlmLocal(this)"><option value="">—</option>${db.flms.map(f=>`<option value="${f.id}" ${f.id===o.flmId?'selected':''}>${esc((f.endereco||f.modelo||f.id)+' • '+paiName(f.painelId))}</option>`).join('')}</select></div><div class="field"><label>Porta</label><select id="mPortaLocal"><option value="">—</option>${portasDoFlm.map(p=>`<option value="${p.id}" ${p.id===o.portaId?'selected':''}>${esc(p.numero)}</option>`).join('')}</select></div><div class="field" style="grid-column:1/-1"><label>Endereço</label><input id="mEnderecoLocal" value="${esc(o.endereco||'')}" placeholder="Endereço livre do ponto técnico (opcional; herda do módulo se vazio)"></div><div class="field"><label>Nome antigo / cadastro original</label><input id="mNomeOriginal" value="${esc(o.nomeOriginalCadastro||'')}" placeholder="Preenchido ao vincular Base LUC"></div></div><br><button class="btn" onclick="saveLocal('${i}')">Salvar</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`);
+}
+// onSelectFlmLocal() (v6.59 — item 15): ao trocar o módulo no formLocal, repopula a lista de portas
+// disponíveis (db.portas filtradas por flmId) sem exigir reabrir o modal.
+function onSelectFlmLocal(sel){
+  const portaSel=document.getElementById('mPortaLocal'); if(!portaSel)return;
+  const ps=sel.value?db.portas.filter(p=>p.flmId===sel.value):[];
+  portaSel.innerHTML='<option value="">—</option>'+ps.map(p=>`<option value="${p.id}">${esc(p.numero)}</option>`).join('');
 }
 function saveLocal(i){
   let o=i?db.locais.find(x=>x.id===i):{id:id(),ultimaAlteracao:isoNow()};
@@ -6722,6 +7241,14 @@ function saveLocal(i){
   o.sistema=document.getElementById('mSistema')?.value||o.sistema||'SDAI';
   o.piso=n(mPiso.value);
   o.status=normalizeStatus(mStatus.value);
+  // Painel/Laço/Módulo/Porta/Endereço (v6.59 — item 15): editáveis diretamente na loja/área;
+  // testes/falhas/plano/histórico permanecem linkados por localId (o.id nunca muda aqui),
+  // então essa reclassificação de endereçamento não quebra nenhum vínculo existente.
+  o.painelId=n(document.getElementById('mPainelLocal')?.value||'')||o.painelId||'';
+  o.lacoId=n(document.getElementById('mLacoLocal')?.value||'')||o.lacoId||'';
+  o.flmId=n(document.getElementById('mFlmLocal')?.value||'');
+  o.portaId=n(document.getElementById('mPortaLocal')?.value||'');
+  o.endereco=n(document.getElementById('mEnderecoLocal')?.value||'');
   o.ultimaAlteracao=isoNow();
   if(!i){db.locais.push(o); logLocal('Loja/Área',o.id,'criar','Loja/Área criada manualmente: '+o.nome)}
   lucSincronizarIrmaos(o);
@@ -6741,8 +7268,44 @@ function openLocal(i){
   const sisBadge=`<span class="pill ${(l.sistema||'SDAI')==='CO2'?'warn':'info'}" style="font-size:10.5px;padding:2px 7px">${esc(l.sistema||'SDAI')}</span>`;
   openModal(`<h2>${esc(lucNomeOficialLocal(l))} ${sisBadge}</h2><p><b>LUC:</b> ${lucDisplayLocal(l)} • <b>Chave lógica:</b> ${esc(lucChaveLogicaLocal(l))} • <b>Tipo:</b> ${esc(l.tipo)} • <b>Painel:</b> ${esc(paiName(l.painelId))} • <b>Laço:</b> ${esc(lacName(l.lacoId))} • <b>Piso:</b> ${esc(l.piso)}</p>${l.nomeOriginalCadastro?`<p class="note"><b>Nome antigo:</b> ${esc(l.nomeOriginalCadastro)}</p>`:''}
   ${irmaos.length?`<p class="note"><b>Outros pontos técnicos desta loja (${irmaos.length}):</b> ${irmaos.map(x=>`<span class="pill ${((x.sistema||'SDAI')==='CO2')?'warn':'info'}" style="font-size:10.5px;padding:2px 7px;cursor:pointer" onclick="closeModal();openLocal('${x.id}')">${esc(x.sistema||'SDAI')} • ${esc(paiName(x.painelId)||'—')}/${esc(lacName(x.lacoId)||'—')}</span>`).join(' ')} — histórico independente, cada ponto tem seus próprios testes e falhas.</p>`:''}
-  <h3>Testes recentes (${testes.length})</h3><div class="timeline">${testes.slice(0,10).map(t=>`<div class="tl"><b>${esc(t.resultado)}</b>${t.falhaId?' <span class="badge bad">gerou falha</span>':''}<br><small>${esc(fmtDataHoraTexto(t.data))} • ${esc(t.tipoTeste||'')} • ${esc(t.responsavel||'')}</small>${t.observacao?`<p>${esc(t.observacao)}</p>`:''}</div>`).join('')||'<p class="msg warn">Nenhum teste registrado ainda.</p>'}</div>
-  <h3>Histórico da loja/área</h3><div class="timeline">${hist.map(h=>`<div class="tl"><b>${esc(h.status)}</b><br><small>${esc(h.data)} • ${esc(h.itemNome||'')}</small><p>${esc(h.motivo||h.obs||'Sem observação')}</p></div>`).join('')||'<p class="msg warn">Sem histórico.</p>'}</div>`);
+  ${openLocalBlocosHtml(l,testes,hist)}`);
+}
+// openLocalBlocosHtml() (v6.59 — item 10): 4 blocos cores separados no detalhe do ponto técnico.
+// Cores: verde = teste funcionou / falha resolvida; vermelho = teste não funcionou / falha ativa;
+// cinza = falha cancelada/excluída. "Alterações cadastrais" reaproveita db.historico (mesmo array
+// gravado por logLocal()) filtrado por entidadeId===l.id — não foi criado nenhum array novo.
+function openLocalBlocosHtml(l,testes,hist){
+  const testeCard=t=>{
+    const ok=up(t.resultado||'').includes('FUNCION')&&!up(t.resultado||'').includes('NÃO')&&!up(t.resultado||'').includes('NAO');
+    const cor=ok?'#15803D':'#B42318',bg=ok?'rgba(21,128,61,.08)':'rgba(180,35,24,.08)';
+    return `<div class="tl" style="border-left:3px solid ${cor};background:${bg};padding:8px 10px;margin-bottom:6px;border-radius:4px">
+      <b style="color:${cor}">${esc(t.resultado)}</b>${t.falhaId?' <span class="badge bad">gerou falha</span>':''}<br>
+      <small>${esc(t.tipoTeste||'')} • ${esc(t.responsavel||'')} • ${esc(fmtDataHoraTexto(t.data))} • ${esc(t.sistema||l.sistema||'')}</small><br>
+      <small>Painel: ${esc(paiName(t.painelId||l.painelId)||'—')} • Laço: ${esc(lacName(t.lacoId||l.lacoId)||'—')} • Módulo: ${esc(flmById(t.flmId||l.flmId)?.endereco||'—')} • Porta: ${esc((db.portas||[]).find(p=>p.id===(t.portaId||l.portaId))?.numero||'—')}</small>
+      ${t.observacao?`<p>${esc(t.observacao)}</p>`:''}${(t.fotos&&t.fotos.length)?`<small>${t.fotos.length} anexo(s)</small>`:''}
+    </div>`;
+  };
+  const falhasAtivas=hist.filter(f=>!f.excluida&&!f.resolvidaEm);
+  const falhasHistorico=hist.filter(f=>f.excluida||f.resolvidaEm);
+  const falhaCard=f=>{
+    const cancelada=!!f.excluida;
+    const cor=cancelada?'#8695AB':(f.resolvidaEm?'#15803D':'#B42318'),bg=cancelada?'rgba(134,149,171,.10)':(f.resolvidaEm?'rgba(21,128,61,.08)':'rgba(180,35,24,.08)');
+    return `<div class="tl" style="border-left:3px solid ${cor};background:${bg};padding:8px 10px;margin-bottom:6px;border-radius:4px">
+      <b style="color:${cor}">${esc(f.status)}</b> ${cancelada?'<span class="badge">cancelada</span>':(f.resolvidaEm?'<span class="badge ok">resolvida</span>':'<span class="badge bad">ativa</span>')}<br>
+      <small>${esc(fmtDataHoraTexto(f.data))}${f.resolvidaEm?' • resolvida em '+esc(fmtDataHoraTexto(f.resolvidaEm)):''} • ${esc(f.sistema||l.sistema||'')}</small><br>
+      <small>Painel: ${esc(paiName(f.painelId||l.painelId)||'—')} • Laço: ${esc(lacName(f.lacoId||l.lacoId)||'—')} • Módulo: ${esc(flmById(f.flmId||l.flmId)?.endereco||'—')} • Porta: ${esc((db.portas||[]).find(p=>p.id===(f.portaId||l.portaId))?.numero||'—')} • Endereço: ${esc(l.endereco||'')}</small>
+      ${(f.motivo||f.obs)?`<p>${esc(f.motivo||f.obs)}</p>`:''}
+    </div>`;
+  };
+  const cadastro=(db.historico||[]).filter(h=>h.entidadeId===l.id).sort((a,b)=>String(b.data).localeCompare(String(a.data)));
+  const cadastroCard=h=>`<div class="tl" style="border-left:3px solid #64748B;background:rgba(100,116,139,.07);padding:8px 10px;margin-bottom:6px;border-radius:4px">
+    <b>${esc(h.acao||'')}</b><br><small>${esc(fmtDataHoraTexto(h.data))} • ${esc(h.usuario||'')}</small>
+    ${h.descricao?`<p>${esc(h.descricao)}</p>`:''}
+  </div>`;
+  return `<h3 style="color:#15803D">Testes (${testes.length})</h3><div class="timeline">${testes.slice(0,20).map(testeCard).join('')||'<p class="msg warn">Nenhum teste registrado ainda.</p>'}</div>
+  <h3 style="color:#B42318">Falhas ativas (${falhasAtivas.length})</h3><div class="timeline">${falhasAtivas.map(falhaCard).join('')||'<p class="msg ok">Sem falhas ativas.</p>'}</div>
+  <h3>Histórico de falhas (${falhasHistorico.length})</h3><div class="timeline">${falhasHistorico.map(falhaCard).join('')||'<p class="msg warn">Sem histórico de falhas.</p>'}</div>
+  <h3 style="color:#64748B">Alterações cadastrais (${cadastro.length})</h3><div class="timeline">${cadastro.slice(0,20).map(cadastroCard).join('')||'<p class="msg warn">Sem alterações registradas.</p>'}</div>`;
 }
 
 /* =========================================================================
@@ -7215,6 +7778,7 @@ function bootSDAIManager(){
       const clienteExiste=loadClientes().find(c=>c.id===cid);
       if(clienteExiste){
         db=loadClienteDb(cid);
+        recalcularStatusPontosTecnicos();
         menuState=loadMenuStateLocal();
         // Aplica a mesma prioridade de view do switchCliente ao abrir a página com
         // um cliente já selecionado — evita abrir Dashboard SDAI para cliente sem SDAI.
