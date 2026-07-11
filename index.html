@@ -1116,7 +1116,28 @@ const API_TOKEN_KEY=KEY+':apiToken';
 function getApiToken(){return localStorage.getItem(API_TOKEN_KEY)||''}
 function setApiToken(t){localStorage.setItem(API_TOKEN_KEY,String(t||''))}
 function jsonp(action, params={}){return new Promise((resolve,reject)=>{const cb='cb_'+Date.now()+'_'+Math.random().toString(36).slice(2); window[cb]=(data)=>{delete window[cb]; s.remove(); resolve(data)}; const q=new URLSearchParams({action,callback:cb,token:getApiToken(),...params}); const s=document.createElement('script'); s.src=API_URL+'?'+q.toString(); s.onerror=()=>{delete window[cb]; s.remove(); reject(new Error('Falha de comunicação com Apps Script'))}; document.body.appendChild(s); setTimeout(()=>{if(window[cb]){delete window[cb]; try{s.remove()}catch(e){} reject(new Error('Tempo esgotado na API'))}},30000)})}
-async function apiPost(action,payload){return fetch(API_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action,payload,token:getApiToken()})})}
+async function apiPost(action,payload){
+  const cid=clienteAtivo();
+  const body=Object.assign({action,payload,token:getApiToken()},cid?{clienteId:cid}:{});
+  return fetch(API_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)});
+}
+/* Sincroniza a lista de clientes com o Google (chama saveClientes no backend) */
+async function syncClientesGoogle(){
+  const c=syncCfg(); if(!c.configured)return;
+  try{
+    const clientes=loadClientes();
+    await fetch(API_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body:JSON.stringify({action:'saveClientes',clientes,token:getApiToken()})});
+  }catch(e){console.warn('syncClientes falhou:',e.message)}
+}
+/* Após salvar cliente, dispara setup no backend para garantir que a planilha existe */
+async function ensureClienteSheet(cid,nomeCliente){
+  const c=syncCfg(); if(!c.configured)return;
+  try{
+    await fetch(API_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body:JSON.stringify({action:'setupClienteDb',clienteId:cid,nomeCliente,token:getApiToken()})});
+  }catch(e){console.warn('setupClienteDb falhou:',e.message)}
+}
 async function setupGoogle(){try{updateSyncFooter('saving'); const r=await jsonp('setup'); if(!r.ok)throw new Error(r.error||'Erro ao configurar banco'); setSyncCfg({configured:true,sheetUrl:r.sheetUrl||'',dirty:true}); renderSistema(); updateSyncFooter(); alert('Banco Google configurado/validado.');}catch(e){updateSyncFooter('error'); alert('Falha ao configurar banco: '+e.message)}}
 async function loadGoogle(){try{updateSyncFooter('saving'); const r=await jsonp('load'); if(!r.ok)throw new Error(r.error||'Erro ao carregar'); if(r.db && Object.keys(r.db).length){
   const atual=lucContagemDB(db); const novo=lucContagemDB(r.db);
@@ -1145,7 +1166,9 @@ async function syncNow(showAlert=true){
     updateSyncFooter('saving');
     persistLocal();
     const esperado=lucContagemDB(db);
-    await apiPost('save',{db});
+    const cid=clienteAtivo();
+    if(cid){await apiPost('saveClienteDb',{db});}
+    else{await apiPost('save',{db});}
     await new Promise(r=>setTimeout(r,1200));
     // PERFORMANCE (2026-07): a conferência relê a base INTEIRA do Google (download completo) a cada
     // sync. No sync MANUAL isso continua sempre (é o momento em que o usuário quer certeza). No sync
@@ -2779,6 +2802,10 @@ function salvarCliente(id){
     clientes.push({id:uid(),nome,cnpj:document.getElementById('cliCnpj').value.trim(),email:document.getElementById('cliEmail').value.trim(),tel:document.getElementById('cliTel').value.trim(),endereco:document.getElementById('cliEnd').value.trim(),obs:document.getElementById('cliObs').value.trim(),modulos:mods,criadoEm:isoNow()});
   }
   saveClientes(clientes);closeModal();renderClientes();updateClienteSideSelect();updateNavSubsistemas();
+  // Sincroniza lista de clientes com Google e garante planilha do cliente
+  try{syncClientesGoogle()}catch(e){}
+  const novoId=id?id:(clientes[clientes.length-1]||{}).id;
+  if(novoId){try{ensureClienteSheet(novoId,nome)}catch(e){}}
 }
 function deleteCliente(id){
   if(!confirm('Excluir este cliente? A base de dados do cliente será removida permanentemente.'))return;
