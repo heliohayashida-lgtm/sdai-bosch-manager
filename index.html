@@ -1,5 +1,11 @@
 <!doctype html>
-<!-- build: 2026-07-11 v6.40 - Compatibilidade com bancos legados: detectarBaseLegada()/detectarBaseLegadaDeArquivo() identificam bases SDAI antigas (localStorage pré-multicliente ou backup JSON) sem clienteId; novo bloco "Migração de banco antigo" em Sistema > Banco de Dados com prévia de conflitos por entidade (painel/laço/FLM/porta/loja/equipamento/falha/plano), backup obrigatório de origem e destino antes de qualquer gravação, e 3 modos (apenas novos / atualizar equivalentes / substituir completo, este último exigindo Master + motivo + dupla confirmação); validarPosMigracao() audita referências órfãs após migrar; SDAI (Dashboard, Painéis, Falhas etc.) agora fica bloqueado por completo enquanto nenhum cliente está selecionado, com aviso claro. Tela de Importação ganhou painel "Modelos de importação" com 5 modelos oficiais para download (Central SDAI, Lojas/LUC, Falhas, Testes, completo do cliente), cada um em XLSX com abas Dados+Instruções, mostrando o cliente/subsistema de destino — sem alterar o assistente de importação já existente. -->
+<!-- build: 2026-07-11 v6.46 - BREADCRUMB NAVEGÁVEL + RENOMEAÇÃO "GESTÃO DE DADOS": updateBreadcrumb() reescrita para gerar botões clicáveis (Cliente → Visão Geral; Subsistema → Dashboard daquele subsistema; Grupo → abre o subsistema com aquele grupo em foco, via nova breadcrumbAbrirGrupo(), que só ajusta menuState.openSubsys/openGroups — o mesmo estado já usado por toggleSubsys/toggleGrp — e chama navigate(); a Tela atual não é clicável, é apenas destaque). View 'sistema' renomeada de "Banco de Dados" para "Gestão de Dados" em todos os pontos de rótulo (MENU_SISTEMA_ITEMS, MENU_ADMINISTRACAO_ITEMS, VIEW_LABELS, L3A_VIEWS) e nos textos de ajuda que apontavam para ela — a view em si (id 'sistema', função renderSistema(), sincronização/backup/Apps Script que ela hospeda) não foi tocada, é troca de rótulo. -->
+<!-- build anterior: 2026-07-11 v6.45 - REVISÃO DE NAVEGAÇÃO/UX (incremental): (1) bloco único "Sistema" reorganizado em dois grupos colapsáveis — "Administração" (Banco de Dados/Usuários e Acessos/Configurações/Backup/Logs) e "Plataforma" (Clientes/Sobre) — usando exatamente as mesmas views e a mesma checagem de permissão userViews() de antes (MENU_SISTEMA_ITEMS não foi removido, só passou a existir também como MENU_ADMINISTRACAO_ITEMS/MENU_PLATAFORMA_ITEMS para desenhar os dois blocos); ambos iniciam RECOLHIDOS e só abrem ao clicar ou quando a tela atual pertence ao grupo (mesmo padrão de openGroups/toggleGrp já usado pelos subsistemas), com estado persistido em menuState.openSistemaGrp dentro do já existente localStorage['sdai_menu_v1__<clienteId>']. Não foram criadas as telas "Integrações", "Google Apps Script" e "Licenciamento" pedidas na estrutura sugerida — não existem no sistema atual e criá-las seria funcionalidade nova, fora do escopo desta correção incremental (ver relatório de entrega). (2) fontes ajustadas: subsistemas (SDAI/CFTV/Acesso/Ambiente) 13.5→13px, labels de campo 11.5→12px, KPI (.metric) título 11.5→12px, tabelas (table/.dsTable) padronizadas em 13px. (3) Plano de Ação: filtros avançados Painel/Laço/Piso/Loja agora são DEPENDENTES — Laço só lista laços do Painel escolhido, Piso só lista pisos daquele Painel+Laço, Loja só lista lojas daquele Painel+Laço+Piso; trocar o Painel limpa Laço/Piso/Loja (mesma ideia para Laço→Piso/Loja e Piso→Loja), evitando combinações impossíveis sem exigir um botão "aplicar". Falhas não tinha filtros de Painel/Laço/Piso/Loja no layout atual — adicioná-los é funcionalidade nova (ver recomendações futuras), não uma correção do que já existia. Nenhuma função de login/permissões/banco/importação/sincronização foi alterada; toggleSistemaGrp() é uma função nova, buildNavTree()/loadMenuStateLocal() foram ajustadas apenas para desenhar/persistir os dois novos blocos. -->
+<!-- build anterior: 2026-07-11 v6.44 - BUSCA ÚNICA PARA LOJAS/ÁREAS, FALHAS E PLANO DE AÇÃO: CAUSA RAIZ do "espaço bloqueado": esc() usa n(s), que faz .trim(); o valor do campo de busca é reimpresso via value="${esc(...)}" a cada render() (debounce após parar de digitar), então um espaço digitado no FINAL do texto (ex. "MC " antes de digitar "DON") era removido no redesenho seguinte, colando as palavras — não era um bloqueio de tecla, era o valor perdendo o espaço de ponta a cada re-render. Criada escSearchVal() (mesma função de esc(), sem trim) e trocada nos 4 campos de busca (Locais/Equipamentos/Falhas/Plano); esc() continua igual em todo o resto do sistema. CAUSA RAIZ da busca parcial/múltiplas palavras não funcionar, e diferente em cada aba: Locais comparava JSON.stringify(l).toUpperCase() (sem remover acento) com up(busca) (COM remoção de acento) — nunca batia para nomes acentuados, e a estrutura do JSON quebra a adjacência entre campos; Falhas já usava up() dos dois lados mas exigia substring CONTÍGUA de tudo (uma frase, não termos independentes); Plano comparava fx.q=f.q.toUpperCase() (SEM remover acento) com x._q=up(...) (COM remoção de acento) — praticamente nunca batia com acento, e também exigia substring contígua. Consolidado em duas funções únicas, reaproveitadas pelas 3 abas: normalizarBusca(valor) (maiúsculas, sem acento/diacrítico, sem apóstrofo/aspas, hífen/underscore/barra viram espaço, pontuação residual removida, espaços colapsados) e filtrarRegistrosPorBusca(registros,busca,extrairTexto) (divide a busca em termos e exige que TODOS apareçam, em qualquer campo/ordem — lógica E). Funções alteradas: renderLocais() (busca agora considera nome técnico/oficial/LUC/tipo/painel/laço/piso/endereço FLM/porta/sistema/status/observação), renderFalhas() (resolve loja/nomeOficial/LUC antes de filtrar; busca textual combinada em AND com os selects Tipo/Status, mantendo Situação como filtro separado), planoFiltrosAtuais()/planoRowsFiltrados() (busca agora usa a mesma função única, combinada em AND com Situação/Prioridade/Categoria/Responsável/Painel/Laço/Piso/Loja/Status Técnico/Período, exatamente como antes). Debounce de digitação aumentado de 120ms para 300ms (o valor de 120ms forçava um render() completo — tela inteira, KPIs, filtros e árvore do menu — cedo demais durante a digitação rápida, dando sensação de travamento). Adicionados em Locais/Falhas/Plano: botão "×" para limpar a busca, botão padronizado "Limpar filtros" (limparFiltrosTela()), e contador de resultados que diferencia base vazia ("Nenhuma loja/área cadastrada") de filtro sem resultado ("Nenhum registro corresponde aos filtros aplicados") — sem nunca mostrar contagem de linhas como se fosse quantidade de lojas. Nenhuma escrita no banco: busca e filtros continuam sendo só estado em memória (filters.*), sem chamar persistLocal()/markDirty()/sincronização — confirmado por leitura de todas as funções tocadas, nenhuma delas grava no localStorage nem altera db. Testado com simulação Node.js das funções reais extraídas do arquivo: ROM→ROMANNEL, ROMA→ROMANNEL, "MC DON"→MCDONALD'S, MCDONALDS→MCDONALD'S, "PRAÇA ALIM"→Praça de Alimentação, "PRACA ALIMENTACAO"→Praça de Alimentação, "CASA BOMB"→Casa de Bombas, "PISO 2"→registros do Piso 2, "LAÇO 3"/"LACO 3"→mesmo resultado, "3.1.4"→endereço 3.1.4.0, "ROMANNEL MODULO ABERTO"→localizado mesmo com termos em campos diferentes — todos os 12 testes obrigatórios passaram. Nenhuma alteração em banco/clienteId/importação/sincronização/login/permissões/regras de falha ou associação de LUC. -->
+<!-- build anterior: 2026-07-11 v6.43 - UX/UI DA NAVEGAÇÃO LATERAL (correção incremental, sem reescrever o menu): CAUSA DO "FECHAMENTO AUTOMÁTICO": navigate() chamava document.querySelector('.side').classList.remove('open') incondicionalmente a cada clique; essa classe só tem efeito no layout mobile (media query max-width:768px — em desktop a lateral é fixa via grid, não controlada por .open), então na prática não fechava nada em desktop, mas para deixar o comportamento explícito e à prova de futuras mudanças de CSS, agora esse remove('open') só roda quando window.matchMedia('(max-width:768px)') é verdadeiro. A árvore (buildNavTree/toggleSubsys/toggleGrp/menuState/loadMenuStateLocal/saveMenuStateLocal) já preservava corretamente o subsistema/grupo abertos ao navegar dentro dele e ao visitar telas de "Sistema" (viewLocation retorna null para essas telas, então openSubsys não é sobrescrito) — nenhuma mudança de lógica foi necessária aí. Alterações visuais: (1) removido o bloco "Administrador • Online" da lateral (div#profileBadge) — a função applyBrand() continua existindo e populando o topUser do cabeçalho normalmente, só não escreve mais num elemento que não existe mais na lateral (guard if(pb) já existia); (2) seletor de cliente (#clienteSideSelect, switchClienteSide(), clienteAtivo()/clienteAtivoObj()) mantido 100% funcional, apenas com CSS mais compacto (linha única, ~32px); (3) botão de recolher (#sideCollapseBtn, mesmo listener) virou ícone único de 34×34px com tooltip nativo (title), sem o texto "Recolher menu" ocupando a largura toda; (4) fontes da navegação aumentadas (itens principais 14px, subsistemas 13.5px, grupos 12.5px, itens internos 13px), título de tela 20→23px, campos/selects 13.5→14px (min-height 40px), KPIs (.metric) título 10.5→11.5px e valor 26→28px; (5) item ativo com menos peso visual (fundo azul discreto + barra lateral fina de 2.5px, sem gradiente/sombra pesada); (6) modo recolhido (.app.sideCollapsed) corrigido para atuar sobre as classes reais da árvore (navFlatItem/navSubsysHead/navGrpHead/navLeaf — antes a regra citava classes antigas .nav/.navTitleBtn/.navGroup que não são mais usadas pelo buildNavTree, então o recolhimento não afetava a árvore real); agora os itens ficam com texto truncado e tooltip (title, adicionado em buildNavTree) em vez de sumirem, preservando o acesso a todos os subsistemas. Nenhuma função foi removida, nenhuma lógica de login/permissões/banco/importação/sincronização foi tocada; buildNavTree(), navigate(), toggleSubsys(), toggleGrp(), loadMenuStateLocal(), saveMenuStateLocal(), updateNavSubsistemas(), switchCliente() mantêm exatamente as mesmas assinaturas e comportamento funcional de antes. -->
+<!-- build anterior: 2026-07-11 v6.42 - AJUSTE DO IMPORTADOR AO LAYOUT REAL (Painel/Laço/Piso/Endereço FLM/Porta/Loja/Tipo/Modelo/Endereço/Fabricante/Status/Observação): auditoria confirmou que a hierarquia Painel→Laço→Módulo(FLM)→Porta→Loja e a classificação de dispositivos (ensurePanel/ensureLaco/ensureFlm/ensurePorta/ensureLocal/classifyDevice) já processavam corretamente o formato real (chaves de deduplicação já eram escopadas por painelId; um módulo + N portas já resultava em 1 FLM só; detector sem Endereço FLM já não cria módulo/porta/loja; "Ativo"→"Em operação" e a categoria Sirene/Sinalizador já existiam). Corrigidos 3 pontos: (1) o resumo final de importFile() SUBSTITUÍA as contagens desta importação pelos totais acumulados de toda a base do cliente (ex.: "lojas criadas" virava o total de lojas já cadastradas, não as criadas nesta rodada) — agora o resumo mostra painéis/laços/módulos/portas/lojas-áreas/equipamentos CRIADOS nesta importação, além de registros atualizados/ignorados/registros com inconsistência, sem nunca apresentar linhas lidas como se fossem lojas. (2) nova blindagem: se o cliente ativo for trocado depois de "Validar" e antes de "Confirmar", a confirmação é bloqueada e o assistente pede nova validação (impWizardValidar agora grava clienteIdValidado/validadoEm; impWizardImportar confere antes de gravar). (3) importFile() passa a checar explicitamente se há cliente ativo antes de processar, além do bloqueio já existente na tela. Nenhuma outra lógica alterada — cache de arquivo (_impFileCache), aliases de cabeçalho antigo/novo, importação LUC, login/permissões e demais telas permanecem exatamente como estavam. -->
+<!-- build anterior: 2026-07-11 v6.41 - CORREÇÃO CIRÚRGICA DA IMPORTAÇÃO (causa raiz): (A) o render() após "Validar" recriava o <input type="file"> vazio — o navegador descartava o arquivo selecionado e o "Confirmar importação" falhava na primeira linha de readRows() sem nunca chegar ao persistLocal(); agora o objeto File fica em cache (_impFileCache/_lucFileCache) e sobrevive ao render, com limpeza ao voltar ao passo 1 e ao fim da importação. (B) o parser não reconhecia os cabeçalhos do modelo oficial novo (Tipo_Dispositivo, Modelo_Dispositivo, Nome_Dispositivo, Endereco_Fisico, Loja_Area) — a validação passava (usa .includes) mas o get() exigia igualdade exata; aliases adicionados. (C) o reset do assistente rodava antes do importFile() async terminar — agora aguarda a conclusão. Prévia é regenerada após o render do passo 3. Nenhuma outra lógica alterada. -->
+<!-- build anterior: 2026-07-11 v6.40 - Compatibilidade com bancos legados: detectarBaseLegada()/detectarBaseLegadaDeArquivo() identificam bases SDAI antigas (localStorage pré-multicliente ou backup JSON) sem clienteId; novo bloco "Migração de banco antigo" em Sistema > Banco de Dados com prévia de conflitos por entidade (painel/laço/FLM/porta/loja/equipamento/falha/plano), backup obrigatório de origem e destino antes de qualquer gravação, e 3 modos (apenas novos / atualizar equivalentes / substituir completo, este último exigindo Master + motivo + dupla confirmação); validarPosMigracao() audita referências órfãs após migrar; SDAI (Dashboard, Painéis, Falhas etc.) agora fica bloqueado por completo enquanto nenhum cliente está selecionado, com aviso claro. Tela de Importação ganhou painel "Modelos de importação" com 5 modelos oficiais para download (Central SDAI, Lojas/LUC, Falhas, Testes, completo do cliente), cada um em XLSX com abas Dados+Instruções, mostrando o cliente/subsistema de destino — sem alterar o assistente de importação já existente. -->
 <!-- build anterior: 2026-07-11 v6.39 - Homologação para produção: restoreBackupFile()/renderBackup/exportJson/exportAllCsv restritos a Master com validação de formato; LockService no Code.gs; avisos de limite de exibição em Auditoria/Logs. -->
 <html lang="pt-BR">
 <head>
@@ -98,26 +104,21 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   color:#e7eefb;padding:18px 12px 24px;position:sticky;top:0;height:100vh;overflow-y:auto;overflow-x:hidden;
   display:flex;flex-direction:column;gap:2px;box-shadow:6px 0 30px rgba(5,15,27,.18)}
 .side::-webkit-scrollbar-thumb{background:rgba(255,255,255,.14)}
-.brand{display:flex;align-items:center;gap:12px;padding:8px 8px 18px;border-bottom:1px solid rgba(255,255,255,.10);margin-bottom:6px}
-.logo{width:46px;height:46px;flex:0 0 46px;border-radius:var(--l3a-radius-md);background:linear-gradient(150deg,#fff,#eaf2fc);
-  color:var(--l3a-primary-700);font-weight:800;font-size:13px;letter-spacing:.01em;display:grid;place-items:center;
+.brandRow{display:flex;align-items:center;gap:8px;padding:6px 4px 14px;border-bottom:1px solid rgba(255,255,255,.08);margin-bottom:6px}
+.brand{display:flex;align-items:center;gap:10px;min-width:0;flex:1}
+.logo{width:38px;height:38px;flex:0 0 38px;border-radius:var(--l3a-radius-md);background:linear-gradient(150deg,#fff,#eaf2fc);
+  color:var(--l3a-primary-700);font-weight:800;font-size:12px;letter-spacing:.01em;display:grid;place-items:center;
   box-shadow:var(--l3a-shadow-sm);overflow:hidden}
 .logo.hasImg{background-size:contain!important;background-position:center!important;background-repeat:no-repeat!important;
   background-color:#fff!important;color:transparent!important}
-.brand b{display:block;font-size:15px;font-weight:800;letter-spacing:-.02em;color:#fff}
-.brand span{display:block;margin-top:2px;font-size:11.5px;color:#8fa8c6;line-height:1.3}
+.brand b{display:block;font-size:14.5px;font-weight:800;letter-spacing:-.02em;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.brand span{display:none} /* subtítulo redundante com o cabeçalho/breadcrumb — removido da lateral (mantido no DOM/JS de applyBrand) */
 
-.sideToggle{display:flex;align-items:center;justify-content:center;gap:8px;border:1px solid rgba(255,255,255,.12);
-  background:rgba(255,255,255,.06);color:#dce8f8;border-radius:var(--l3a-radius-md);padding:9px 10px;margin:2px 4px 10px;
-  width:calc(100% - 8px);font-weight:700;font-size:12.5px;transition:background var(--l3a-dur) var(--l3a-ease)}
-.sideToggle:hover{background:rgba(255,255,255,.12)}
-.sideToggle i{display:inline-flex;color:#fff}
-.app.sideCollapsed .sideToggle span{display:none}
-.app.sideCollapsed .sideToggle:before{content:none!important}
-
-.profileBadge{margin:4px 4px 12px;padding:11px 12px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.045);
-  border-radius:var(--l3a-radius-md);font-size:12px;color:#c3d4ea}
-.profileBadge b{display:block;color:#fff;font-size:13px;font-weight:750}
+/* Botão de recolher: discreto, somente ícone, ~34px — não deve competir visualmente com a navegação */
+.sideToggle{display:flex;align-items:center;justify-content:center;flex:0 0 34px;width:34px;height:34px;border:1px solid rgba(255,255,255,.12);
+  background:rgba(255,255,255,.06);color:#dce8f8;border-radius:var(--l3a-radius-md);padding:0;transition:background var(--l3a-dur) var(--l3a-ease)}
+.sideToggle:hover{background:rgba(255,255,255,.14)}
+.sideToggle svg{display:block}
 
 .navTitle{display:none!important} /* substituído pelo acordeão .navGroup/.navTitleBtn gerado via JS */
 .navGroup{margin:10px 2px 2px}
@@ -143,21 +144,31 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   box-shadow:0 8px 20px rgba(11,95,173,.35),inset 0 0 0 1px rgba(255,255,255,.12)}
 .nav button.active i{color:#fff}
 
-.app.sideCollapsed{grid-template-columns:76px 1fr}
+.app.sideCollapsed{grid-template-columns:68px 1fr}
 .app.sideCollapsed .brand div:not(.logo),.app.sideCollapsed .navTitleBtn,.app.sideCollapsed .navGroup,
-.app.sideCollapsed .nav button span,.app.sideCollapsed .profileBadge{display:none}
-.app.sideCollapsed .side{padding-left:10px;padding-right:10px}
+.app.sideCollapsed .nav button span,.app.sideCollapsed .clienteSelector{display:none}
+.app.sideCollapsed .side{padding-left:8px;padding-right:8px}
 .app.sideCollapsed .nav button{justify-content:center;gap:0}
 .app.sideCollapsed .nav{gap:6px}
 .app.sideCollapsed .nav > button{display:flex} /* mantém acesso visível mesmo com grupos ocultos */
+/* Menu recolhido: os itens da árvore real (navFlatItem/navSubsysHead/navGrpHead/navLeaf) continuam
+   visíveis e clicáveis — texto truncado com tooltip (title) via JS em buildNavTree(), sem esconder
+   o acesso aos subsistemas. */
+.app.sideCollapsed .navTree button{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-left:8px;padding-right:8px}
+.app.sideCollapsed .navSectionLabel{opacity:.4}
 
 /* ---------- 5. CABEÇALHO --------------------------------------------------- */
 .top{height:72px;background:rgba(255,255,255,.9);backdrop-filter:blur(10px);border-bottom:1px solid var(--l3a-border);
   display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 28px;position:sticky;top:0;z-index:40}
 .pageHead{display:flex;align-items:center;gap:12px;min-width:0}
 .pageTitleWrap{min-width:0}
-.top h1{font-size:20px;font-weight:800;letter-spacing:-.03em;line-height:1.1}
+.top h1{font-size:23px;font-weight:800;letter-spacing:-.03em;line-height:1.1}
 .top p{margin:4px 0 0;color:var(--l3a-text-muted);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Breadcrumb navegável (item 22) */
+.crumb{border:0;background:none;padding:0;font:inherit;font-size:12.5px;color:var(--l3a-text-muted);cursor:pointer;border-radius:4px}
+button.crumb:hover{color:var(--l3a-primary);text-decoration:underline}
+.crumb.current{color:var(--l3a-text-soft);font-weight:700;cursor:default}
+.crumbSep{margin:0 5px;color:var(--l3a-text-muted);opacity:.5;font-size:11px}
 .topMeta{display:flex;align-items:center;gap:10px;margin-left:auto}
 .menuToggle{display:none;border:0;background:var(--l3a-primary);color:#fff;border-radius:var(--l3a-radius-md);
   padding:9px 11px;align-items:center;justify-content:center}
@@ -204,8 +215,8 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   position:relative;overflow:hidden;box-shadow:var(--l3a-shadow-sm);transition:box-shadow var(--l3a-dur) var(--l3a-ease),transform var(--l3a-dur) var(--l3a-ease)}
 .metric:before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:linear-gradient(180deg,var(--l3a-primary),var(--l3a-accent))}
 .metric:hover{box-shadow:var(--l3a-shadow-md);transform:translateY(-1px)}
-.metric small{display:block;color:var(--l3a-text-muted);font-weight:800;text-transform:uppercase;font-size:10.5px;letter-spacing:.06em}
-.metric strong{display:block;margin-top:6px;font-size:26px;font-weight:800;letter-spacing:-.02em;color:var(--l3a-text)}
+.metric small{display:block;color:var(--l3a-text-muted);font-weight:800;text-transform:uppercase;font-size:12px;letter-spacing:.06em}
+.metric strong{display:block;margin-top:6px;font-size:28px;font-weight:800;letter-spacing:-.02em;color:var(--l3a-text)}
 
 .premiumGrid{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:14px}
 .premiumStat{border:1px solid var(--l3a-border);background:linear-gradient(180deg,#fff,var(--l3a-bg-soft));
@@ -281,14 +292,26 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 /* ---------- 8. FORMULÁRIOS -------------------------------------------------- */
 .toolbar{display:flex;gap:12px;flex-wrap:wrap;align-items:end;margin:12px 0}
 .field{display:flex;flex-direction:column;gap:6px;min-width:180px;flex:1}
-.field label{font-size:11.5px;font-weight:800;color:var(--l3a-text-soft);text-transform:uppercase;letter-spacing:.03em}
+.field label{font-size:12px;font-weight:800;color:var(--l3a-text-soft);text-transform:uppercase;letter-spacing:.03em}
 .field input,.field select,.field textarea{border:1px solid var(--l3a-border);border-radius:var(--l3a-radius-sm);
-  padding:10px 11px;background:var(--l3a-surface);font-size:13.5px;color:var(--l3a-text);
+  padding:10.5px 11px;min-height:40px;background:var(--l3a-surface);font-size:14px;color:var(--l3a-text);
   transition:border-color var(--l3a-dur) var(--l3a-ease),box-shadow var(--l3a-dur) var(--l3a-ease)}
 .field input:hover,.field select:hover,.field textarea:hover{border-color:var(--l3a-border-strong)}
 .field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--l3a-primary);
   box-shadow:0 0 0 3px var(--l3a-primary-50)}
 .field input[type=checkbox],.field input[type=radio]{accent-color:var(--l3a-primary);width:auto}
+/* Campo de busca padronizado (Lojas/Áreas, Falhas, Plano de Ação) */
+.searchField{min-width:220px}
+.searchBox{position:relative;display:flex;align-items:center}
+.searchBox input{width:100%;padding-right:30px!important}
+.searchBox::before{content:'🔍';position:absolute;left:10px;font-size:12px;opacity:.5;pointer-events:none}
+.searchBox input{padding-left:28px!important}
+.searchClear{position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:var(--l3a-bg-soft);
+  color:var(--l3a-text-muted);width:20px;height:20px;border-radius:50%;font-size:13px;line-height:1;cursor:pointer;
+  display:flex;align-items:center;justify-content:center}
+.searchClear:hover{background:var(--l3a-border);color:var(--l3a-text)}
+.searchResultCount{font-size:11.5px;color:var(--l3a-text-muted);font-weight:700;margin:2px 2px 10px}
+.searchNone{color:var(--l3a-warning,#b45309)}
 input[type=checkbox],input[type=radio]{accent-color:var(--l3a-primary)}
 .formGrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 
@@ -731,7 +754,8 @@ tbody tr:last-child td{border-bottom:0}
 .dsFilterActions{display:flex;gap:6px;align-items:flex-end;flex:0 0 auto}
 
 /* --- DS-4. Tabela corporativa ----------------------------------------- */
-.dsTable{width:100%;border-collapse:collapse}
+.dsTable{width:100%;border-collapse:collapse;font-size:13px}
+table{font-size:13px}
 .dsTable th{padding:7px 10px;background:var(--l3a-bg-soft);font-size:10px;text-transform:uppercase;
   letter-spacing:.06em;font-weight:800;color:var(--l3a-text-muted);border-bottom:2px solid var(--l3a-border);
   white-space:nowrap;position:sticky;top:0;z-index:2}
@@ -801,8 +825,8 @@ tbody tr:last-child td{border-bottom:0}
 .dsDt small{display:block;font-size:11px;color:var(--l3a-text-muted)}
 
 /* ── MULTI-CLIENTE ─────────────────────────────────────────────── */
-.clienteSelector{padding:10px 10px 0;position:relative}
-.clienteSelector select{width:100%;background:rgba(255,255,255,.10);color:#e7eefb;border:1px solid rgba(255,255,255,.18);border-radius:10px;padding:7px 30px 7px 10px;font-size:12px;font-weight:600;cursor:pointer;appearance:none;-webkit-appearance:none;outline:none;transition:background .15s}
+.clienteSelector{padding:0 4px 10px;position:relative}
+.clienteSelector select{width:100%;background:rgba(255,255,255,.08);color:#e7eefb;border:1px solid rgba(255,255,255,.14);border-radius:8px;padding:6px 26px 6px 9px;font-size:12px;font-weight:600;cursor:pointer;appearance:none;-webkit-appearance:none;outline:none;transition:background .15s;height:32px}
 .clienteSelector select:focus{background:rgba(255,255,255,.18)}
 .clienteSelector::after{content:'▾';position:absolute;right:18px;top:50%;transform:translateY(-50%);color:rgba(255,255,255,.55);pointer-events:none;font-size:11px}
 .clienteSelector select option{background:#0e2a44;color:#fff}
@@ -854,29 +878,29 @@ tbody tr:last-child td{border-bottom:0}
 .moduloTag{display:inline-block;vertical-align:middle;margin-left:8px;font-size:10.5px;font-weight:800;letter-spacing:.02em;text-transform:uppercase;padding:3px 9px;border-radius:var(--l3a-radius-pill);background:var(--l3a-warning-bg);color:var(--l3a-warning);border:1px solid var(--l3a-warning-line);white-space:nowrap}
 
 /* ---- Accordion Nav Tree ---- */
-.navTree{display:flex;flex-direction:column;gap:1px;padding:8px 0;overflow-y:auto;flex:1;min-height:0}
-.navSectionLabel{font-size:9.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.38);padding:10px 14px 4px;user-select:none}
-.navFlatItem{display:flex;align-items:center;gap:8px;background:none;border:none;color:#c3d4ea;font-size:13px;padding:7px 14px;cursor:pointer;border-radius:6px;text-align:left;width:100%;transition:background .15s,color .15s}
-.navFlatItem:hover{background:rgba(255,255,255,.07);color:#fff}
-.navFlatItem.active{background:linear-gradient(120deg,var(--l3a-primary-600),var(--l3a-primary));color:#fff;font-weight:600;box-shadow:0 4px 12px rgba(11,95,173,.3)}
+.navTree{display:flex;flex-direction:column;gap:1px;padding:6px 0;overflow-y:auto;flex:1;min-height:0}
+.navSectionLabel{font-size:9.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.32);padding:12px 14px 4px;user-select:none}
+.navFlatItem{display:flex;align-items:center;gap:8px;background:none;border:none;border-left:2.5px solid transparent;color:#c3d4ea;font-size:14px;padding:7px 12px 7px 11.5px;cursor:pointer;border-radius:6px;text-align:left;width:100%;transition:background .15s,color .15s}
+.navFlatItem:hover{background:rgba(255,255,255,.06);color:#fff}
+.navFlatItem.active{background:rgba(37,99,235,.22);border-left-color:#5b9bff;color:#fff;font-weight:650}
 .navFlatItem svg{flex-shrink:0;opacity:.7}
 .navSubsysBlock{display:flex;flex-direction:column}
-.navSubsysHead{display:flex;align-items:center;justify-content:space-between;background:none;border:none;color:#9cb3cc;font-size:12.5px;font-weight:700;padding:8px 14px;cursor:pointer;border-radius:6px;text-align:left;width:100%;transition:background .15s,color .15s;letter-spacing:.03em;text-transform:uppercase}
-.navSubsysHead:hover{background:rgba(255,255,255,.07);color:#e5e7eb}
+.navSubsysHead{display:flex;align-items:center;justify-content:space-between;background:none;border:none;color:#9cb3cc;font-size:13px;font-weight:700;padding:8px 14px;cursor:pointer;border-radius:6px;text-align:left;width:100%;transition:background .15s,color .15s;letter-spacing:.02em;text-transform:uppercase}
+.navSubsysHead:hover{background:rgba(255,255,255,.06);color:#e5e7eb}
 .navSubsysHead.open{color:#c7d2fe}
 .navSubsysBody{display:none;flex-direction:column;gap:1px;padding-left:10px}
 .navSubsysBody.open{display:flex}
 .navGrpBlock{display:flex;flex-direction:column}
-.navGrpHead{display:flex;align-items:center;justify-content:space-between;background:none;border:none;color:rgba(255,255,255,.38);font-size:10.5px;font-weight:700;padding:6px 10px;cursor:pointer;border-radius:5px;text-align:left;width:100%;transition:background .15s,color .15s;letter-spacing:.07em;text-transform:uppercase}
+.navGrpHead{display:flex;align-items:center;justify-content:space-between;background:none;border:none;color:rgba(255,255,255,.45);font-size:12.5px;font-weight:700;padding:6px 10px;cursor:pointer;border-radius:5px;text-align:left;width:100%;transition:background .15s,color .15s;letter-spacing:.05em;text-transform:uppercase}
 .navGrpHead:hover{background:rgba(255,255,255,.04);color:#9ca3af}
 .navGrpHead.open{color:#a5b4fc}
 .navGrpBody{display:none;flex-direction:column;gap:1px;padding-left:8px}
 .navGrpBody.open{display:flex}
-.navLeaf{background:none;border:none;color:#c3d4ea;font-size:12.5px;padding:6px 10px;cursor:pointer;border-radius:5px;text-align:left;width:100%;transition:background .15s,color .15s;position:relative;padding-left:18px}
-.navLeaf::before{content:'';position:absolute;left:7px;top:50%;transform:translateY(-50%);width:4px;height:4px;border-radius:50%;background:currentColor;opacity:.35;transition:opacity .15s}
-.navLeaf:hover{background:rgba(255,255,255,.06);color:#e5e7eb}
+.navLeaf{background:none;border:none;border-left:2.5px solid transparent;color:#c3d4ea;font-size:13px;padding:6px 10px 6px 15.5px;cursor:pointer;border-radius:5px;text-align:left;width:100%;transition:background .15s,color .15s;position:relative}
+.navLeaf::before{content:'';position:absolute;left:6px;top:50%;transform:translateY(-50%);width:4px;height:4px;border-radius:50%;background:currentColor;opacity:.35;transition:opacity .15s}
+.navLeaf:hover{background:rgba(255,255,255,.05);color:#e5e7eb}
 .navLeaf:hover::before{opacity:.7}
-.navLeaf.active{background:rgba(99,102,241,.18);color:#a5b4fc;font-weight:600}
+.navLeaf.active{background:rgba(99,102,241,.16);border-left-color:#818cf8;color:#a5b4fc;font-weight:600}
 .navLeaf.active::before{opacity:1;background:#818cf8}
 .navChevron{font-size:11px;transition:transform .2s;display:inline-block;opacity:.55}
 .navSubsysHead:not(.open) .navChevron,.navGrpHead:not(.open) .navChevron{transform:rotate(-90deg)}
@@ -886,9 +910,11 @@ tbody tr:last-child td{border-bottom:0}
 <body>
 <div class="app">
   <aside class="side">
-    <div class="brand"><div class="logo" id="brandLogo">L3A</div><div><b id="brandName">Contratos L3A</b><span id="brandSub">Gestão operacional • SDAI • Contratos</span></div></div><button class="sideToggle" id="sideCollapseBtn"><i><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6.5h16M4 12h16M4 17.5h16"/></svg></i><span> Recolher menu</span></button>
-    <div class="clienteSelector"><select id="clienteSideSelect" onchange="switchClienteSide(this.value)"><option value="">— Selecionar cliente —</option></select></div>
-    <div class="profileBadge" id="profileBadge"><b>Usuário</b><span>Administrador</span></div>
+    <div class="brandRow">
+      <div class="brand"><div class="logo" id="brandLogo">L3A</div><div><b id="brandName">Contratos L3A</b><span id="brandSub">Gestão operacional • SDAI • Contratos</span></div></div>
+      <button class="sideToggle" id="sideCollapseBtn" title="Recolher menu" aria-label="Recolher menu"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6.5h16M4 12h16M4 17.5h16"/></svg></button>
+    </div>
+    <div class="clienteSelector"><select id="clienteSideSelect" onchange="switchClienteSide(this.value)" title="Cliente ativo"><option value="">— Selecionar cliente —</option></select></div>
     <div class="navTree" id="navTree"></div>
   </aside>
   <main class="main">
@@ -1040,9 +1066,22 @@ const MENU_TREE_SUBSYS = [
   }
 ];
 const MENU_SISTEMA_ITEMS=[
-  {view:'clientes',label:'Clientes'},{view:'sistema',label:'Banco de Dados'},
+  {view:'clientes',label:'Clientes'},{view:'sistema',label:'Gestão de Dados'},
   {view:'usuarios',label:'Usuários e Acessos'},{view:'configuracoes',label:'Configurações'},
   {view:'backup',label:'Backup'},{view:'logs',label:'Logs'},{view:'sobre',label:'Sobre'}
+];
+/* Reorganização visual do antigo bloco único "Sistema" (2026-07): Banco de Dados/Usuários/
+   Configurações/Backup/Logs são funções administrativas do CLIENTE ativo ("Administração"), já
+   que operam sobre a base daquele cliente; Clientes e Sobre são do nível da plataforma como um todo
+   ("Plataforma"). MENU_SISTEMA_ITEMS acima continua existindo (mesmas views, mesmos labels, mesma
+   checagem de permissão userViews) — isto é só o agrupamento usado por buildNavTree() para desenhar
+   dois blocos colapsáveis em vez de uma lista única; nenhuma view foi criada, removida ou reatribuída.*/
+const MENU_ADMINISTRACAO_ITEMS=[
+  {view:'sistema',label:'Gestão de Dados'},{view:'usuarios',label:'Usuários e Acessos'},
+  {view:'configuracoes',label:'Configurações'},{view:'backup',label:'Backup'},{view:'logs',label:'Logs'}
+];
+const MENU_PLATAFORMA_ITEMS=[
+  {view:'clientes',label:'Clientes'},{view:'sobre',label:'Sobre'}
 ];
 const VIEW_TO_SECTION={
   visaoGeral:'visaoGeral',
@@ -1125,9 +1164,9 @@ function persistClienteDb(cid){
 /* Estado do menu POR CLIENTE: qual subsistema está aberto, qual grupo dentro de
    cada subsistema, e a última tela acessada. Tudo persistido em
    localStorage['sdai_menu_v1__<clienteId>'] — isolado por cliente. */
-let menuState={openSubsys:'sdai',openGroups:{},lastView:''};
+let menuState={openSubsys:'sdai',openGroups:{},lastView:'',openSistemaGrp:null};
 function menuStateKey(){return 'sdai_menu_v1__'+(clienteAtivo()||'global')}
-function loadMenuStateLocal(){try{return Object.assign({openSubsys:'sdai',openGroups:{},lastView:''},JSON.parse(localStorage.getItem(menuStateKey())||'{}'))}catch(e){return{openSubsys:'sdai',openGroups:{},lastView:''}}}
+function loadMenuStateLocal(){try{return Object.assign({openSubsys:'sdai',openGroups:{},lastView:'',openSistemaGrp:null},JSON.parse(localStorage.getItem(menuStateKey())||'{}'))}catch(e){return{openSubsys:'sdai',openGroups:{},lastView:'',openSistemaGrp:null}}}
 function saveMenuStateLocal(){try{localStorage.setItem(menuStateKey(),JSON.stringify(menuState))}catch(e){}}
 
 /* Módulos habilitados do cliente ativo (SDAI por padrão quando não há cliente). */
@@ -1163,6 +1202,15 @@ function toggleGrp(subsysKey,grpKey){
   menuState.openGroups[subsysKey]=(cur===grpKey?null:grpKey);
   saveMenuStateLocal(); buildNavTree();
 }
+/* Blocos "Administração" e "Plataforma" (2026-07) — mesmo padrão de estado por cliente já usado em
+   openSubsys/openGroups (menuState, localStorage['sdai_menu_v1__<clienteId>']), só que com uma chave
+   própria (openSistemaGrp) para não interferir na navegação dos subsistemas. Iniciam RECOLHIDOS por
+   padrão (ver loadMenuStateLocal) e só abrem quando o usuário clica, ou automaticamente quando a
+   tela atual pertence àquele bloco — exatamente a mesma regra já usada para os grupos do SDAI. */
+function toggleSistemaGrp(key){
+  menuState.openSistemaGrp=(menuState.openSistemaGrp===key?null:key);
+  saveMenuStateLocal(); buildNavTree();
+}
 function buildNavTree(){
   const tree=document.getElementById('navTree'); if(!tree)return;
   menuState=loadMenuStateLocal();
@@ -1176,34 +1224,56 @@ function buildNavTree(){
 
   let html='';
   html+=`<div class="navSectionLabel">Gestão Geral</div>`;
-  html+=`<button class="navFlatItem${currentView==='visaoGeral'?' active':''}" onclick="navigate('visaoGeral')"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg><span>Visão Geral do Cliente</span></button>`;
+  html+=`<button class="navFlatItem${currentView==='visaoGeral'?' active':''}" title="Visão Geral do Cliente" onclick="navigate('visaoGeral')"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg><span>Visão Geral do Cliente</span></button>`;
 
   html+=`<div class="navSectionLabel" style="margin-top:8px">Subsistemas</div>`;
   for(const s of MENU_TREE_SUBSYS){
     if(!modulos.includes(s.modulo))continue;
     const isOpen=menuState.openSubsys===s.key;
     html+=`<div class="navSubsysBlock">`;
-    html+=`<button class="navSubsysHead${isOpen?' open':''}" onclick="toggleSubsys('${s.key}')"><span>${s.label}</span><span class="navChevron">▾</span></button>`;
+    html+=`<button class="navSubsysHead${isOpen?' open':''}" title="${esc(s.label)}" onclick="toggleSubsys('${s.key}')"><span>${s.label}</span><span class="navChevron">▾</span></button>`;
     html+=`<div class="navSubsysBody${isOpen?' open':''}">`;
     for(const g of s.groups){
       const isGrpOpen=menuState.openGroups[s.key]===g.key;
       const hasActive=g.items.some(i=>i.view===currentView);
       const grpOpen=isGrpOpen||hasActive;
       html+=`<div class="navGrpBlock">`;
-      html+=`<button class="navGrpHead${grpOpen?' open':''}" onclick="toggleGrp('${s.key}','${g.key}')">${g.label}<span class="navChevron">▾</span></button>`;
+      html+=`<button class="navGrpHead${grpOpen?' open':''}" title="${esc(g.label)}" onclick="toggleGrp('${s.key}','${g.key}')">${g.label}<span class="navChevron">▾</span></button>`;
       html+=`<div class="navGrpBody${grpOpen?' open':''}">`;
       for(const item of g.items){
-        html+=`<button class="navLeaf${currentView===item.view?' active':''}" onclick="navigate('${item.view}')">${item.label}</button>`;
+        html+=`<button class="navLeaf${currentView===item.view?' active':''}" title="${esc(item.label)}" onclick="navigate('${item.view}')">${item.label}</button>`;
       }
       html+=`</div></div>`;
     }
     html+=`</div></div>`;
   }
 
-  html+=`<div class="navSectionLabel" style="margin-top:8px">Sistema</div>`;
-  for(const item of MENU_SISTEMA_ITEMS){
-    if(!uvs.includes(item.view))continue;
-    html+=`<button class="navFlatItem${currentView===item.view?' active':''}" onclick="navigate('${item.view}')">${item.label}</button>`;
+  // Administração (funções administrativas DO CLIENTE ativo) e Plataforma (Clientes/Sobre) — mesma
+  // checagem de permissão de sempre (uvs=userViews(u)), só reagrupada visualmente em dois blocos
+  // colapsáveis que iniciam fechados (grpOpen força abertura só quando a tela atual está ali dentro).
+  const admItems=MENU_ADMINISTRACAO_ITEMS.filter(i=>uvs.includes(i.view));
+  if(admItems.length){
+    const admOpen=menuState.openSistemaGrp==='administracao'||admItems.some(i=>i.view===currentView);
+    html+=`<div class="navSectionLabel" style="margin-top:8px">Administração</div>`;
+    html+=`<div class="navGrpBlock">`;
+    html+=`<button class="navGrpHead${admOpen?' open':''}" title="Administração" onclick="toggleSistemaGrp('administracao')">Administração<span class="navChevron">▾</span></button>`;
+    html+=`<div class="navGrpBody${admOpen?' open':''}">`;
+    for(const item of admItems){
+      html+=`<button class="navLeaf${currentView===item.view?' active':''}" title="${esc(item.label)}" onclick="navigate('${item.view}')">${item.label}</button>`;
+    }
+    html+=`</div></div>`;
+  }
+  const platItems=MENU_PLATAFORMA_ITEMS.filter(i=>uvs.includes(i.view));
+  if(platItems.length){
+    const platOpen=menuState.openSistemaGrp==='plataforma'||platItems.some(i=>i.view===currentView);
+    html+=`<div class="navSectionLabel" style="margin-top:8px">Plataforma</div>`;
+    html+=`<div class="navGrpBlock">`;
+    html+=`<button class="navGrpHead${platOpen?' open':''}" title="Plataforma" onclick="toggleSistemaGrp('plataforma')">Plataforma<span class="navChevron">▾</span></button>`;
+    html+=`<div class="navGrpBody${platOpen?' open':''}">`;
+    for(const item of platItems){
+      html+=`<button class="navLeaf${currentView===item.view?' active':''}" title="${esc(item.label)}" onclick="navigate('${item.view}')">${item.label}</button>`;
+    }
+    html+=`</div></div>`;
   }
   tree.innerHTML=html;
 }
@@ -1213,28 +1283,58 @@ function navigate(view){
   // ponto de partida quando ainda não há cliente selecionado).
   try{menuState=loadMenuStateLocal();menuState.lastView=view;saveMenuStateLocal();}catch(e){}
   render();
-  document.querySelector('.side')?.classList.remove('open');
+  // A classe .side.open só tem efeito visual no layout mobile (overlay — ver
+  // media query max-width:768px); em desktop a lateral é fixa e nunca controlada
+  // por essa classe. Fechamos o overlay apenas em telas pequenas, para "liberar
+  // espaço" após escolher uma tela no celular, sem qualquer efeito em desktop.
+  if(window.matchMedia&&window.matchMedia('(max-width:768px)').matches){
+    document.querySelector('.side')?.classList.remove('open');
+  }
+}
+/* Breadcrumb navegável (2026-07): cada segmento (Cliente / Subsistema / Grupo / Tela) vira um
+   botão clicável. Cliente leva à Visão Geral; Subsistema leva ao Dashboard daquele subsistema (ou à
+   primeira tela do grupo "Gestão", que é onde o dashboard de cada subsistema mora); Grupo abre o
+   subsistema com aquele grupo em foco (reaproveita toggleGrp/menuState, sem duplicar estado); a Tela
+   atual não é clicável (já é onde o usuário está). Puramente de exibição — não altera currentView,
+   viewLocation, MENU_TREE_SUBSYS nem nenhuma lógica de permissão/navegação já existente.*/
+function breadcrumbGo(view){navigate(view)}
+function breadcrumbAbrirGrupo(subsysKey,grpKey){
+  menuState=loadMenuStateLocal();
+  menuState.openSubsys=subsysKey;
+  menuState.openGroups[subsysKey]=grpKey;
+  saveMenuStateLocal();
+  const g=MENU_TREE_SUBSYS.find(s=>s.key===subsysKey)?.groups.find(x=>x.key===grpKey);
+  const first=g?.items?.[0]?.view;
+  if(first)navigate(first); else buildNavTree();
 }
 function updateBreadcrumb(){
   const el=document.getElementById('breadcrumb'); if(!el)return;
   const c=clienteAtivoObj();
   const cName=c?c.nome:'';
   const loc=viewLocation(currentView);
-  const sysItem=MENU_SISTEMA_ITEMS.find(i=>i.view===currentView);
-  let path='';
+  const admItem=MENU_ADMINISTRACAO_ITEMS.find(i=>i.view===currentView);
+  const platItem=MENU_PLATAFORMA_ITEMS.find(i=>i.view===currentView);
+  const parts=[];
+  if(cName)parts.push(`<button class="crumb" onclick="breadcrumbGo('visaoGeral')">${esc(cName)}</button>`);
   if(loc){
     const s=MENU_TREE_SUBSYS.find(x=>x.key===loc.subsys);
     const g=s?.groups.find(x=>x.key===loc.group);
     const item=g?.items.find(x=>x.view===currentView);
-    path=[s?.label,g?.label,item?.label].filter(Boolean).join(' › ');
+    const dash=s?.groups[0]?.items?.[0]?.view;
+    const naDashboard=currentView===dash;
+    parts.push(naDashboard?`<span class="crumb current">${esc(s.label)}</span>`:`<button class="crumb" onclick="breadcrumbGo('${dash}')">${esc(s.label)}</button>`);
+    if(g&&!naDashboard)parts.push(`<button class="crumb" onclick="breadcrumbAbrirGrupo('${s.key}','${g.key}')">${esc(g.label)}</button>`);
+    if(item&&!naDashboard)parts.push(`<span class="crumb current">${esc(item.label)}</span>`);
   } else if(currentView==='visaoGeral'){
-    path='Visão Geral do Cliente';
-  } else if(sysItem){
-    path='Sistema › '+sysItem.label;
+    parts.push('<span class="crumb current">Visão Geral do Cliente</span>');
+  } else if(admItem){
+    parts.push('<span class="crumb">Administração</span>',`<span class="crumb current">${esc(admItem.label)}</span>`);
+  } else if(platItem){
+    parts.push('<span class="crumb">Plataforma</span>',`<span class="crumb current">${esc(platItem.label)}</span>`);
   } else {
-    path=L3A_VIEWS[currentView]||currentView;
+    parts.push(`<span class="crumb current">${esc(L3A_VIEWS[currentView]||currentView)}</span>`);
   }
-  el.textContent=cName?(cName+' • '+path):path;
+  el.innerHTML=parts.filter(Boolean).join('<span class="crumbSep">›</span>');
 }
 function renderVisaoGeral(){
   const el=document.getElementById('visaoGeral'); if(!el)return;
@@ -1326,7 +1426,10 @@ function onSearchInput(el){
   else if(path){ filters[path]=val; }
   lastSearchFocus={key:el.dataset.focusKey||path||((group||'')+'.'+(key||'')),start:el.selectionStart??val.length,end:el.selectionEnd??val.length};
   clearTimeout(searchRenderTimer);
-  searchRenderTimer=setTimeout(()=>render(),120);
+  // Debounce ajustado de 120ms para 300ms (seção 6/14): 120ms era curto demais para o custo de um
+  // render() completo (recria toda a tela, KPIs, filtros e árvore de menu) a cada tecla, o que dava
+  // sensação de travamento/redesenho constante. Preserva foco/cursor via lastSearchFocus+restoreSearchFocus.
+  searchRenderTimer=setTimeout(()=>render(),300);
 }
 function attachSearchInputs(){
   document.querySelectorAll('[data-filter-input="1"]').forEach(el=>{
@@ -1360,7 +1463,7 @@ function persistLocal(){
       localStorage.setItem(KEY,JSON.stringify(db));
     }
     _persistPendente=false;return true;
-  }catch(e){alert('ATENÇÃO: não foi possível salvar localmente ('+e.message+'). Isso costuma acontecer em navegação privada ou quando o armazenamento do navegador está cheio. Sua última alteração NÃO foi salva — não feche esta aba agora, ou você vai perder o que fez. Sincronize com o Google (Sistema → Banco de Dados → Sincronizar agora) assim que possível.');return false}}
+  }catch(e){alert('ATENÇÃO: não foi possível salvar localmente ('+e.message+'). Isso costuma acontecer em navegação privada ou quando o armazenamento do navegador está cheio. Sua última alteração NÃO foi salva — não feche esta aba agora, ou você vai perder o que fez. Sincronize com o Google (Administração → Gestão de Dados → Sincronizar agora) assim que possível.');return false}}
 // PERFORMANCE (2026-07): serializar a base inteira para o localStorage a cada tecla causava
 // microtravamentos com base grande. O throttle agrupa gravações num intervalo de 600ms (a última
 // alteração SEMPRE é gravada) e um flush garantido roda no beforeunload — nada se perde.
@@ -1608,6 +1711,53 @@ async function senhaConfere(senhaDigitada,senhaArmazenada){
 }
 const id=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
 const n=s=>String(s??'').trim(); const up=s=>n(s).toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+
+/* =========================================================================
+   BUSCA \u2014 normaliza\u00e7\u00e3o e filtragem \u00fanicas (2026-07), reutilizadas por
+   Lojas/\u00c1reas, Falhas e Plano de A\u00e7\u00e3o (e por Equipamentos, que j\u00e1 seguia
+   padr\u00e3o parecido). Substitui as 3 implementa\u00e7\u00f5es divergentes que existiam
+   (JSON.stringify em Locais, string \u00fanica sem separar termos em Falhas,
+   compara\u00e7\u00e3o com toUpperCase() sem remover acento em Plano).
+   ------------------------------------------------------------------------
+   normalizarBusca(valor): mai\u00fasculas, sem acento/diacr\u00edtico, sem ap\u00f3strofo/
+   h\u00edfen/pontua\u00e7\u00e3o (mas mant\u00e9m n\u00fameros e letras), espa\u00e7os colapsados e sem
+   sobra nas pontas. N\u00c3O altera o dado salvo \u2014 \u00e9 usada s\u00f3 para compara\u00e7\u00e3o.
+   ========================================================================= */
+function normalizarBusca(valor){
+  return up(valor)
+    .replace(/[\u2019'`\u00b4"\u201c\u201d]/g,'')          // ap\u00f3strofos/aspas somem \u2014 "MCDONALD'S" ~ "MCDONALDS"
+    .replace(/[-_/]/g,' ')             // h\u00edfen/underscore/barra viram separador de palavra
+    .replace(/[,;:()]/g,'')            // demais pontua\u00e7\u00e3o apenas some (mant\u00e9m n\u00fameros/pontos: "3.1.4" continua "3.1.4")
+    .replace(/\s+/g,' ')               // espa\u00e7os repetidos colapsados
+    .trim();
+}
+/* filtrarRegistrosPorBusca(registros, busca, extrairTexto): busca parcial e por m\u00faltiplas
+   palavras (AND, ordem livre, mesmo campo ou campos diferentes). extrairTexto(registro) deve
+   devolver uma string com todos os campos pesquis\u00e1veis concatenados (texto "cru", sem
+   normalizar \u2014 a normaliza\u00e7\u00e3o \u00e9 feita aqui). Se `busca` estiver vazia, devolve tudo. */
+function filtrarRegistrosPorBusca(registros,busca,extrairTexto){
+  const termos=normalizarBusca(busca).split(' ').filter(Boolean);
+  if(!termos.length)return registros;
+  return registros.filter(reg=>{
+    const texto=normalizarBusca(extrairTexto(reg));
+    return termos.every(termo=>texto.includes(termo));
+  });
+}
+/* Texto padrão do contador de resultados (seção 12) — diferencia base vazia de filtro sem resultado. */
+function resultCountLabel(qtdFiltrada,qtdTotal,semResultado){
+  if(semResultado)return '<span class="searchNone">Nenhum registro corresponde aos filtros aplicados.</span>';
+  if(!qtdTotal)return '';
+  return `${qtdFiltrada} registro${qtdFiltrada===1?'':'s'} encontrado${qtdFiltrada===1?'':'s'}`;
+}
+/* Limpar filtros (seção 13) — usado por Lojas/Áreas, Falhas e Plano. Zera busca + selects/datas
+   daquela aba e re-renderiza; não mexe no banco, não recarrega a página. */
+function limparFiltrosTela(aba){
+  if(aba==='locais')filters.locaisQ='';
+  else if(aba==='falhas')filters.falhas={situacao:'Em aberto'};
+  else if(aba==='plano')filters.plano={};
+  render();
+  setTimeout(()=>{const el=document.querySelector(`[data-focus-key="${aba}Busca"]`); if(el)el.focus();},0);
+}
 const STATUS_SISTEMA_OPTIONS=['Em operação','Laço aberto','Módulo aberto','Módulo em curto','Incêndio disparado','Desativação','Em teste','__renomear__'];
 // Filtro "Status Técnico" do Plano de Ação (item 2/4 do pedido do usuário, 2026-07). É deliberadamente
 // um array separado do STATUS_SISTEMA_OPTIONS (que também alimenta o cadastro de falha e inclui a
@@ -1844,6 +1994,16 @@ function fmtDataHora(raw){
 // (ex.: onclick="abrir('NOME')") — além de erro visível, era um vetor real de injeção de script.
 // &#39;/&#96; renderizam como apóstrofo/crase normais em texto HTML, então nada muda visualmente.
 function esc(s){return n(s).replace(/[&<>"'`]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','`':'&#96;'}[c]))}
+/* CAUSA RAIZ do "espaço sendo bloqueado" nos campos de busca: esc() usa n(s), que faz .trim().
+   O valor do campo de busca é reimpresso via value="${esc(...)}" a cada render() (debounce após
+   parar de digitar); quando o usuário tinha acabado de digitar um espaço no FINAL do texto (ex.:
+   "MC " antes de continuar digitando "DON"), o próximo render() reconstruía o input com o valor
+   JÁ SEM esse espaço de ponta — o navegador não "bloqueava" o espaço, o espaço digitado é que era
+   apagado no primeiro redesenho seguinte, colando as duas palavras ("MCDON" em vez de "MC DON").
+   escSearchVal() é igual a esc(), mas SEM trim — preserva espaço(s) no final enquanto o usuário
+   ainda está digitando. Usado só nos campos de busca (não deve substituir esc() nos demais lugares,
+   onde o trim de dados salvos continua sendo o comportamento correto e existente). */
+function escSearchVal(s){return String(s??'').replace(/[&<>"'`]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','`':'&#96;'}[c]))}
 function csvEscape(s){s=n(s);return /[;,"\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s}
 function normKey(k){return up(k).replace(/^\uFEFF/,'').replace(/[^A-Z0-9]/g,'')}
 function get(row,names){const keys=Object.keys(row); for(const name of names){const nk=normKey(name); const k=keys.find(x=>normKey(x)===nk); if(k!==undefined)return n(row[k])} return ''}
@@ -2037,17 +2197,23 @@ function renderFlms(){
 }
 function renderLocais(){
   let q=filters.locaisQ||'';
-  let rows=db.locais.filter(l=>!q||JSON.stringify(l).toUpperCase().includes(up(q))).map(l=>({
+  // Resolve os campos derivados (nome do painel/laço, endereço do módulo, nº da porta) ANTES de
+  // filtrar, para que a busca única (filtrarRegistrosPorBusca) possa considerar nome técnico, nome
+  // oficial, LUC, tipo, painel, laço, piso, endereço do módulo, porta, sistema, status e observação
+  // — mesma regra usada em Falhas e Plano de Ação (seção 8 do pedido do usuário, 2026-07).
+  let todos=db.locais.map(l=>({
     ...l,
     painel:paiName(l.painelId),laco:lacName(l.lacoId),
     flmEndereco:flmById(l.flmId)?.endereco||'',
     portaNum:db.portas.find(p=>p.id===l.portaId)?.numero||'',
     qtd:db.equipamentos.filter(e=>e.localId===l.id).length
   }));
+  let rows=filtrarRegistrosPorBusca(todos,q,r=>[r.nome,r.nomeOficial,r.luc,r.tipo,r.painel,r.laco,r.piso,r.flmEndereco,r.portaNum?'Porta '+r.portaNum:'',r.sistema,r.status,r.obs].filter(Boolean).join(' '));
 
   const total=rows.length;
   const emOp=rows.filter(r=>!isFalhaStatus(r.status)).length;
   const comFalha=rows.filter(r=>isFalhaStatus(r.status)).length;
+  const semResultado=q&&!rows.length&&todos.length>0;
 
   const trs=rows.map(r=>{
     const loc=dsLocHtml({painel:r.painel,piso:r.piso,laco:r.laco,tipo:r.flmEndereco?'Módulo '+r.flmEndereco:'',porta:r.portaNum});
@@ -2071,13 +2237,14 @@ function renderLocais(){
       ['Com falha',comFalha,comFalha>0?'bad':'ok']
     ])}
     <div class="dsFilters">
-      <div class="field"><label>Busca</label><input value="${esc(q)}" data-filter-input="1" data-filter-path="locaisQ" data-focus-key="locaisBusca" placeholder="Loja, piso, painel, laço..."></div>
-      <div class="dsFilterActions"><button class="dsIco prim" onclick="formLocal()">+ Nova loja/área</button></div>
+      <div class="field searchField"><label>Busca</label><div class="searchBox"><input value="${escSearchVal(q)}" data-filter-input="1" data-filter-path="locaisQ" data-focus-key="locaisBusca" placeholder="Nome, LUC, piso, painel, laço ou endereço..." autocomplete="off">${q?`<button type="button" class="searchClear" title="Limpar busca" onclick="filters.locaisQ='';render()">×</button>`:''}</div></div>
+      <div class="dsFilterActions"><button class="btn secondary small" onclick="limparFiltrosTela('locais')">Limpar filtros</button><button class="dsIco prim" onclick="formLocal()">+ Nova loja/área</button></div>
     </div>
+    <div class="searchResultCount">${resultCountLabel(total,todos.length,semResultado)}</div>
     <div class="dsTableWrap">
       <table class="dsTable">
         <thead><tr><th>Loja / Área</th><th>Localização</th><th style="text-align:center">Equipamentos</th><th>Status</th><th>Ações</th></tr></thead>
-        <tbody>${trs||`<tr><td colspan="5"><div class="emptyState">Nenhuma loja/área cadastrada.</div></td></tr>`}</tbody>
+        <tbody>${trs||`<tr><td colspan="5"><div class="emptyState">${todos.length?'Nenhum registro corresponde aos filtros aplicados.':'Nenhuma loja/área cadastrada.'}</div></td></tr>`}</tbody>
       </table>
     </div>`;
 }
@@ -2130,7 +2297,7 @@ function renderEquipamentos(){
       <div class="field"><label>Tipo</label><select onchange="filters.eq={...filters.eq,tipo:this.value};render()">${selectOpts(tipos,f.tipo)}</select></div>
       <div class="field"><label>Modelo</label><select onchange="filters.eq={...filters.eq,modelo:this.value};render()">${selectOpts(modelos,f.modelo)}</select></div>
       <div class="field"><label>Status</label><select onchange="filters.eq={...filters.eq,status:this.value};render()">${selectOpts(status,f.status)}</select></div>
-      <div class="field"><label>Busca</label><input value="${esc(f.q)}" data-filter-input="1" data-filter-group="eq" data-filter-key="q" data-focus-key="equipBusca" placeholder="Loja, endereço, modelo..."></div>
+      <div class="field"><label>Busca</label><input value="${escSearchVal(f.q||'')}" data-filter-input="1" data-filter-group="eq" data-filter-key="q" data-focus-key="equipBusca" placeholder="Loja, endereço, modelo..." autocomplete="off"></div>
       <div class="dsFilterActions"><button class="dsIco prim" onclick="formEquip()">+ Novo</button></div>
     </div>
     <p class="mutedLine" style="margin-bottom:8px">Ao mudar o Status pra uma condição de falha, o sistema registra a Falha e abre o formulário de conclusão automaticamente.</p>
@@ -2152,16 +2319,13 @@ function renderFalhas(){
   const situacaoFiltro=f.situacao||'Em aberto';
   // Item 13 (soft-delete): falhas excluídas pela Auditoria (Master) somem da operação normal, mas
   // continuam em db.falhas — só visíveis no painel de Auditoria.
-  let baseRows=(db.falhas||[]).filter(x=>!x.excluida)
-   .map(x=>({...x,painel:paiName(x.painelId),laco:lacName(x.lacoId),loja:locName(x.localId)}))
-   // PERFORMANCE: campo de busca pré-computado (antes era JSON.stringify da linha inteira a cada tecla)
-   .map(x=>({...x,_q:up([x.loja,x.painel,x.laco,x.piso,x.tipo,x.itemNome,x.status,x.responsavel,x.origem,x.motivo,x.obs,x.data].filter(Boolean).join(' '))}))
-   .filter(x=>
-    (!f.status||normalizeStatus(x.status)===f.status)&&
-    (!f.tipo||x.tipo===f.tipo)&&
-    (!f.q||x._q.includes(up(f.q)))
-   )
+  let baseRowsSemBusca=(db.falhas||[]).filter(x=>!x.excluida)
+   .map(x=>{const loc=localById(x.localId); return {...x,painel:paiName(x.painelId),laco:lacName(x.lacoId),loja:loc?.nome||'',nomeOficial:loc?.nomeOficial||'',luc:loc?.luc||''}})
+   // Filtros de select (Tipo/Status) continuam aplicados em AND com a busca textual (seção 9).
+   .filter(x=>(!f.status||normalizeStatus(x.status)===f.status)&&(!f.tipo||x.tipo===f.tipo))
    .sort((a,b)=>String(b.data).localeCompare(String(a.data)));
+  // Busca única (normalizarBusca/filtrarRegistrosPorBusca) — mesma lógica de Lojas/Áreas e Plano.
+  let baseRows=filtrarRegistrosPorBusca(baseRowsSemBusca,f.q,x=>[x.loja,x.nomeOficial,x.luc,x.itemNome,x.tipo,x.itemId,x.painel,x.laco,x.piso,x.status,x.situacao,x.responsavel,x.motivo,x.obs,x.data].filter(Boolean).join(' '));
 
   let rows=baseRows.filter(x=>situacaoFiltro==='Todos'||(situacaoFiltro==='Resolvida'?!!x.resolvidaEm:!x.resolvidaEm));
 
@@ -2169,6 +2333,7 @@ function renderFalhas(){
   const abertas=baseRows.filter(r=>!r.resolvidaEm).length;
   const criticas=baseRows.filter(r=>isFalhaStatus(r.status)&&!r.resolvidaEm).length;
   const hoje=baseRows.filter(r=>r.data&&r.data.startsWith(new Date().toISOString().slice(0,10))).length;
+  const semResultado=f.q&&!rows.length&&baseRowsSemBusca.length>0;
 
   const trs=rows.map(r=>{
     const loc=dsLocHtml({painel:r.painel,piso:r.piso,laco:r.laco,tipo:r.tipo,endereco:r.itemNome});
@@ -2199,9 +2364,10 @@ function renderFalhas(){
       <div class="field"><label>Tipo</label><select onchange="filters.falhas={...filters.falhas,tipo:this.value};render()">${selectOpts(unique(db.falhas.map(x=>x.tipo)),f.tipo)}</select></div>
       <div class="field"><label>Status</label><select onchange="filters.falhas={...filters.falhas,status:this.value};render()">${selectOpts(unique(db.falhas.map(x=>normalizeStatus(x.status))),f.status)}</select></div>
       <div class="field"><label>Situação</label><select onchange="filters.falhas={...filters.falhas,situacao:this.value};render()">${['Em aberto','Resolvida','Todos'].map(v=>`<option value="${v}" ${v===situacaoFiltro?'selected':''}>${v}</option>`).join('')}</select></div>
-      <div class="field"><label>Busca</label><input value="${esc(f.q)}" data-filter-input="1" data-filter-group="falhas" data-filter-key="q" data-focus-key="falhasBusca" placeholder="Loja, item, status..."></div>
-      <div class="dsFilterActions"><button class="dsIco prim" onclick="formFalha()">+ Registrar</button></div>
+      <div class="field searchField"><label>Busca</label><div class="searchBox"><input value="${escSearchVal(f.q||'')}" data-filter-input="1" data-filter-group="falhas" data-filter-key="q" data-focus-key="falhasBusca" placeholder="Loja, item, endereço, status ou responsável..." autocomplete="off">${f.q?`<button type="button" class="searchClear" title="Limpar busca" onclick="filters.falhas={...filters.falhas,q:''};render()">×</button>`:''}</div></div>
+      <div class="dsFilterActions"><button class="btn secondary small" onclick="limparFiltrosTela('falhas')">Limpar filtros</button><button class="dsIco prim" onclick="formFalha()">+ Registrar</button></div>
     </div>
+    <div class="searchResultCount">${resultCountLabel(rows.length,baseRowsSemBusca.length,semResultado)}</div>
     ${situacaoFiltro==='Em aberto'&&(totalFalhas-abertas)>0?`<div class="emptyState" style="padding:10px 14px;font-size:12.5px;text-align:left">${totalFalhas-abertas} falha(s) já resolvida(s) (plano de ação concluído) estão ocultas. Use o filtro "Situação" para ver o histórico.</div>`:''}
     <div class="dsTableWrap">
       <table class="dsTable">
@@ -2209,7 +2375,7 @@ function renderFalhas(){
           <th>Data</th><th>Loja / Área</th><th>Localização</th>
           <th>Status</th><th>Situação</th><th>Responsável</th><th>Ações</th>
         </tr></thead>
-        <tbody>${trs||`<tr><td colspan="7"><div class="emptyState">Nenhuma falha registrada.</div></td></tr>`}</tbody>
+        <tbody>${trs||`<tr><td colspan="7"><div class="emptyState">${baseRowsSemBusca.length?'Nenhum registro corresponde aos filtros aplicados.':'Nenhuma falha registrada.'}</div></td></tr>`}</tbody>
       </table>
     </div>`;
 }
@@ -2329,7 +2495,7 @@ function ensureDefaultUsers(){
   if(!db.usuarios.length){
     if(jaTeveUsuarios&&!window._avisoUsuariosVazioMostrado){
       window._avisoUsuariosVazioMostrado=true;
-      alert('ATENÇÃO: a lista de usuários está vazia, mas este sistema já teve usuários cadastrados antes. Isso indica que a base carregou incompleta (falha de sincronização ou armazenamento cheio). Um Administrador temporário (admin@local / 1234) foi criado para você conseguir entrar — recomenda-se ir em Sistema → Banco de Dados → "Carregar base Google" para recuperar os usuários reais antes de continuar usando o sistema.');
+      alert('ATENÇÃO: a lista de usuários está vazia, mas este sistema já teve usuários cadastrados antes. Isso indica que a base carregou incompleta (falha de sincronização ou armazenamento cheio). Um Administrador temporário (admin@local / 1234) foi criado para você conseguir entrar — recomenda-se ir em Administração → Gestão de Dados → "Carregar base Google" para recuperar os usuários reais antes de continuar usando o sistema.');
     }
     db.usuarios.push({id:'admin-default',nome:'Administrador',email:'admin@local',perfil:'Administrador',senha:'1234',ativo:'Sim',criadoEm:isoNow()});
   }
@@ -2403,30 +2569,19 @@ function selectCurrentUser(v){localStorage.setItem(KEY+':currentUserId',v); rend
 /* [removido na limpeza 2026-07: versão antiga substituída pela declaração final desta função] */
 
 
-async function readRows(){
-  const input=document.getElementById('fileImp');
-  const f=input?.files?.[0];
-  if(!f)throw new Error('Selecione um arquivo.');
-  const ext=f.name.split('.').pop().toLowerCase();
-  const data=await f.arrayBuffer();
-  if(ext==='csv'){
-    const txt=new TextDecoder('utf-8').decode(data);
-    return parseCSV(txt);
-  }
-  if(typeof XLSX==='undefined')throw new Error('Biblioteca XLSX não carregada. Para XLS/XLSX, abra com internet ou use CSV.');
-  const wb=XLSX.read(data,{type:'array'});
-  // Modelos oficiais possuem as abas Dados + Instruções. Importar todas as abas
-  // fazia as instruções entrarem como registros e impedia a carga técnica.
-  const dadosName=wb.SheetNames.find(sn=>normalizarNomeCabecalho(sn)==='dados');
-  const sheetName=dadosName||wb.SheetNames.find(sn=>!normalizarNomeCabecalho(sn).includes('instruc'))||wb.SheetNames[0];
-  if(!sheetName)throw new Error('O arquivo não possui aba de dados.');
-  return XLSX.utils.sheet_to_json(wb.Sheets[sheetName],{defval:''});
-}
+/* CAUSA RAIZ (correção 2026-07): após "Validar", impWizardValidar() chama render(), que reconstrói
+   o innerHTML da tela de Importação — recriando o <input id="fileImp"> VAZIO (o navegador descarta
+   o arquivo quando o input é recriado no DOM). Na hora do "Confirmar", readRows() lia files[0]
+   → undefined → lançava "Selecione um arquivo." e a importação nunca chegava ao persistLocal().
+   Correção: o objeto File é guardado em memória (_impFileCache) na primeira leitura e usado como
+   fallback quando o input foi recriado. O cache é limpo ao voltar ao passo 1 e ao fim da importação. */
+let _impFileCache=null;
+async function readRows(){const inp=document.getElementById('fileImp'); let f=(inp&&inp.files&&inp.files[0])||_impFileCache; if(!f)throw new Error('Selecione um arquivo.'); _impFileCache=f; let ext=f.name.split('.').pop().toLowerCase(); let data=await f.arrayBuffer(); if(ext==='csv'){let txt=new TextDecoder('utf-8').decode(data); return parseCSV(txt)} if(typeof XLSX==='undefined')throw new Error('Biblioteca XLSX não carregada. Para XLS/XLSX, abra com internet ou use CSV.'); let wb=XLSX.read(data,{type:'array'}); let rows=[]; wb.SheetNames.forEach(sn=>{rows=rows.concat(XLSX.utils.sheet_to_json(wb.Sheets[sn],{defval:''}))}); return rows}
 function parseCSV(txt){let sep=(txt.split('\n')[0].match(/;/g)||[]).length>=(txt.split('\n')[0].match(/,/g)||[]).length?';':','; let lines=txt.split(/\r?\n/).filter(x=>x.trim()); if(!lines.length)return []; let headers=splitCSV(lines[0],sep); return lines.slice(1).map(l=>{let vals=splitCSV(l,sep),o={};headers.forEach((h,i)=>o[h]=vals[i]||'');return o})}
 function splitCSV(line,sep){let out=[],cur='',q=false; for(let i=0;i<line.length;i++){let ch=line[i]; if(ch==='"'){if(q&&line[i+1]==='"'){cur+='"';i++}else q=!q}else if(ch===sep&&!q){out.push(cur);cur=''}else cur+=ch} out.push(cur); return out}
 async function previewImport(){try{let rows=await readRows(); let v=validateRows(rows); document.getElementById('previewBox').innerHTML=`<div class="msg ${v.ok?'ok':'err'}">${v.ok?'Arquivo validado':'Arquivo com inconsistências'}: ${rows.length} registros lidos.</div>${table(rows.slice(0,20),Object.keys(rows[0]||{}).map(k=>[k,k]))}${v.errors.length?table(v.errors,[['Linha','linha'],['Motivo','motivo'],['Registro','registro']]):''}`}catch(e){document.getElementById('impMsg').innerHTML=`<div class="msg err">${esc(e.message)}</div>`}}
 function validateRows(rows){let errors=[]; if(!rows.length)errors.push({linha:0,motivo:'Arquivo vazio',registro:''}); let cols=Object.keys(rows[0]||{}).map(normKey); ['PAINEL','LACO','TIPO','MODELO'].forEach(c=>{if(!cols.some(x=>x.includes(c)))errors.push({linha:1,motivo:'Coluna obrigatória ausente: '+c,registro:Object.keys(rows[0]||{}).join(', ')})}); return {ok:!errors.length,errors}}
-async function importFile(){try{const destinoClienteId=clienteAtivo(); if(!destinoClienteId)throw new Error('Selecione o cliente de destino antes de importar a Base Técnica SDAI.'); let rows=await readRows(); let mode=document.getElementById('modeImp').value; let v=validateRows(rows); if(!v.ok)throw new Error(v.errors.map(e=>e.motivo).join(' | ')); if(mode==='replace')db=emptyDB(); let stats={registrosLidos:rows.length,paineis:0,lacos:0,flms:0,portas:0,lojasCriadas:0,areasTecnicas:0,areasComuns:0,detectores:0,acionadores:0,modulos:0,ignorados:0,desativadosNaoEncontrados:0}; let errors=[],rom={ok:false,msg:'Não localizada no arquivo.'}; const equipIdsTocados=new Set(),flmIdsTocados=new Set(),paineisTocados=new Set(); rows.forEach((r,i)=>{let linha=i+2; try{let painel=get(r,['Painel','Central']); let modeloPainel=get(r,['Modelo_Painel','Modelo Painel','Modelo da Central']); let laco=get(r,['Laço','Laco','Loop']); let piso=get(r,['Piso','Pavimento']); let sistemaPlanilha=get(r,['Sistema']); let porta=get(r,['Porta','Canal','Porta / Ligação','Porta Ligação']); let loja=get(r,['Loja_Area','Loja Área','Loja','Local','Área','Area','Ambiente']); let tipo=get(r,['Tipo_Dispositivo','Tipo Dispositivo','Tipo','Classificação','Classificacao']); let modelo=get(r,['Modelo_Dispositivo','Modelo Dispositivo','Modelo','Dispositivo']); let nomeDispositivo=get(r,['Nome_Dispositivo','Nome Dispositivo','Nome do dispositivo']); let endereco=get(r,['Endereco_Fisico','Endereço Físico','Endereco Fisico','Endereço','Endereco','Zona','Endereço Equipamento']); let endFlmExplicito=get(r,['Endereço FLM','Endereco FLM','FLM','Módulo','Modulo']); let ehLinhaPorta=!!porta||up(tipo).includes('PORTA'); let endFlm=ehLinhaPorta?(endFlmExplicito||endereco):endFlmExplicito; let fab=get(r,['Fabricante']); let status=normalizeStatus(get(r,['Status'])||'Em operação'); let obs=get(r,['Observação','Observacao','Obs']); if(!painel||!laco){stats.ignorados++; errors.push({linha,motivo:'Painel ou laço ausente',registro:JSON.stringify(r)}); return} let p0=db.paineis.length,l0=db.lacos.length,f0=db.flms.length,pt0=db.portas.length,loc0=db.locais.length; let p=ensurePanel(painel,modeloPainel); paineisTocados.add(p.id); let l=ensureLaco(p.id,laco,piso); const pisoResolvido=n(l.piso)||piso; const sistemaResolvido=sistemaPlanilha||l.sistema||sistemaAutoDetect(l.nome); stats.paineis+=db.paineis.length>p0?1:0; stats.lacos+=db.lacos.length>l0?1:0; let classe=classifyDevice(modelo,tipo,loja); let isModulo=classe==='Módulo'; let flm=null,portaObj=null,local=null; if(isModulo||ehLinhaPorta){flm=ensureFlm(p.id,l.id,endFlm||endereco||modelo,modelo||'FLM',pisoResolvido); flmIdsTocados.add(flm.id); stats.flms+=db.flms.length>f0?1:0; stats.modulos+=db.flms.length>f0?1:0; if(porta||loja){portaObj=ensurePorta(flm.id,porta||'1'); stats.portas+=db.portas.length>pt0?1:0} if(loja){local=ensureLocal(loja,localClass(loja),p.id,l.id,pisoResolvido,flm.id,portaObj?.id,sistemaResolvido); if(portaObj)local.portaId=portaObj.id, portaObj.localId=local.id; let created=db.locais.length>loc0; if(created){if(local.tipo==='Loja')stats.lojasCriadas++; if(local.tipo==='Área Técnica')stats.areasTecnicas++; if(local.tipo==='Área Comum')stats.areasComuns++} if(up(loja).includes('ROMANNEL'))rom={ok:true,msg:`Importada/vinculada ao ${painel} • ${laco} • FLM ${flm.endereco} • Porta ${portaObj?.numero||porta||'1'}.`}} } else { if(loja){local=db.locais.find(x=>up(x.nome)===up(loja)); if(!local){let areaTipo=equipAreaClass(loja,modelo,tipo); if(areaTipo){local=ensureLocal(loja,areaTipo,p.id,l.id,pisoResolvido,'','',sistemaResolvido); if(up(loja).includes('ROMANNEL'))rom={ok:false,msg:'ROMANNEL apareceu em registro de equipamento/área. Não foi criada como loja; foi tratada como '+areaTipo+'.'} } else { if(up(loja).includes('ROMANNEL'))rom={ok:false,msg:'ROMANNEL apareceu em registro de equipamento, mas loja só é criada por porta de FLM. Registro não criou loja.'}; errors.push({linha,motivo:'Equipamento não cria loja. Loja informada não existe por porta de FLM: '+loja,registro:JSON.stringify(r)}) }}} let res=ensureEquip({painelId:p.id,lacoId:l.id,piso:pisoResolvido,tipo:classe,endereco:endereco||get(r,['Zona'])||'',modelo:modelo||nomeDispositivo,fabricante:fab,localId:local?.id||'',flmId:flm?.id||'',portaId:portaObj?.id||'',status,ultimaAlteracao:isoNow(),obs},mode); equipIdsTocados.add(res.obj.id); if(res.created){if(classe.includes('Detector'))stats.detectores++; else if(classe.includes('Acionador'))stats.acionadores++;} }
+async function importFile(){try{if(!clienteAtivoObj())throw new Error('Nenhum cliente selecionado. Selecione um cliente antes de importar.'); let rows=await readRows(); let mode=document.getElementById('modeImp').value; let v=validateRows(rows); if(!v.ok)throw new Error(v.errors.map(e=>e.motivo).join(' | ')); if(mode==='replace')db=emptyDB(); let stats={registrosLidos:rows.length,paineis:0,lacos:0,flms:0,portas:0,lojasCriadas:0,areasTecnicas:0,areasComuns:0,detectores:0,acionadores:0,modulos:0,ignorados:0,desativadosNaoEncontrados:0,registrosAtualizados:0,registrosComInconsistencia:0}; let errors=[],rom={ok:false,msg:'Não localizada no arquivo.'}; const equipIdsTocados=new Set(),flmIdsTocados=new Set(),paineisTocados=new Set(); rows.forEach((r,i)=>{let linha=i+2; try{let painel=get(r,['Painel','Central']); let laco=get(r,['Laço','Laco','Loop']); let piso=get(r,['Piso','Pavimento']); let endFlm=get(r,['Endereço FLM','Endereco FLM','FLM','Módulo','Modulo']); let porta=get(r,['Porta','Canal','Porta / Ligação','Porta Ligação']); let loja=get(r,['Loja','Local','Área','Area','Ambiente','Loja_Area']); let tipo=get(r,['Tipo','Classificação','Classificacao','Tipo_Dispositivo']); let modelo=get(r,['Modelo','Dispositivo','Nome do dispositivo','Modelo_Dispositivo','Nome_Dispositivo']); let endereco=get(r,['Endereço','Endereco','Zona','Endereço Equipamento','Endereco_Fisico']); let fab=get(r,['Fabricante']); let status=normalizeStatus(get(r,['Status'])||'Em operação'); let obs=get(r,['Observação','Observacao','Obs']); if(!painel||!laco){stats.ignorados++; errors.push({linha,motivo:'Painel ou laço ausente',registro:JSON.stringify(r)}); return} let p0=db.paineis.length,l0=db.lacos.length,f0=db.flms.length,pt0=db.portas.length,loc0=db.locais.length; let p=ensurePanel(painel); paineisTocados.add(p.id); let l=ensureLaco(p.id,laco,piso); const pisoResolvido=n(l.piso)||piso; const sistemaResolvido=l.sistema||sistemaAutoDetect(l.nome); stats.paineis+=db.paineis.length>p0?1:0; stats.lacos+=db.lacos.length>l0?1:0; let classe=classifyDevice(modelo,tipo,loja); let isModulo=classe==='Módulo'; let flm=null,portaObj=null,local=null; if(isModulo||endFlm){flm=ensureFlm(p.id,l.id,endFlm||endereco||modelo,modelo||'FLM',pisoResolvido); flmIdsTocados.add(flm.id); let flmCriado=db.flms.length>f0; stats.flms+=flmCriado?1:0; stats.modulos+=flmCriado?1:0; if(!flmCriado)stats.registrosAtualizados++; if(porta||loja){portaObj=ensurePorta(flm.id,porta||'1'); let portaCriada=db.portas.length>pt0; stats.portas+=portaCriada?1:0; if(!portaCriada)stats.registrosAtualizados++} if(loja){local=ensureLocal(loja,localClass(loja),p.id,l.id,pisoResolvido,flm.id,portaObj?.id,sistemaResolvido); if(portaObj)local.portaId=portaObj.id, portaObj.localId=local.id; let created=db.locais.length>loc0; if(created){if(local.tipo==='Loja')stats.lojasCriadas++; if(local.tipo==='Área Técnica')stats.areasTecnicas++; if(local.tipo==='Área Comum')stats.areasComuns++} else stats.registrosAtualizados++; if(up(loja).includes('ROMANNEL'))rom={ok:true,msg:`Importada/vinculada ao ${painel} • ${laco} • FLM ${flm.endereco} • Porta ${portaObj?.numero||porta||'1'}.`}} } else { if(loja){local=db.locais.find(x=>up(x.nome)===up(loja)); if(!local){let areaTipo=equipAreaClass(loja,modelo,tipo); if(areaTipo){local=ensureLocal(loja,areaTipo,p.id,l.id,pisoResolvido,'','',sistemaResolvido); stats.registrosComInconsistencia++; if(up(loja).includes('ROMANNEL'))rom={ok:false,msg:'ROMANNEL apareceu em registro de equipamento/área. Não foi criada como loja; foi tratada como '+areaTipo+'.'} } else { if(up(loja).includes('ROMANNEL'))rom={ok:false,msg:'ROMANNEL apareceu em registro de equipamento, mas loja só é criada por porta de FLM. Registro não criou loja.'}; stats.registrosComInconsistencia++; errors.push({linha,motivo:'Equipamento não cria loja. Loja informada não existe por porta de FLM: '+loja,registro:JSON.stringify(r)}) }}} let res=ensureEquip({painelId:p.id,lacoId:l.id,piso:pisoResolvido,tipo:classe,endereco:endereco||get(r,['Zona'])||'',modelo,fabricante:fab,localId:local?.id||'',flmId:flm?.id||'',portaId:portaObj?.id||'',status,ultimaAlteracao:isoNow(),obs},mode); equipIdsTocados.add(res.obj.id); if(res.created){if(classe.includes('Detector'))stats.detectores++; else if(classe.includes('Acionador'))stats.acionadores++;} else {stats.registrosAtualizados++} }
       }catch(e){stats.ignorados++; errors.push({linha,motivo:e.message,registro:JSON.stringify(r)})}});
       // Equipamentos/módulos "fantasma": existiam no painel antes desta importação mas
       // não apareceram desta vez (provável remoção física na central) — marca como
@@ -2456,7 +2611,17 @@ async function importFile(){try{const destinoClienteId=clienteAtivo(); if(!desti
           }
         });
       }
-      stats.lojasCriadas=db.locais.filter(x=>x.tipo==='Loja').length; stats.areasTecnicas=db.locais.filter(x=>x.tipo==='Área Técnica').length; stats.areasComuns=db.locais.filter(x=>x.tipo==='Área Comum').length; stats.detectores=db.equipamentos.filter(x=>x.tipo.includes('Detector')).length; stats.acionadores=db.equipamentos.filter(x=>x.tipo.includes('Acionador')).length; stats.modulos=db.flms.length; stats.flms=db.flms.length; stats.portas=db.portas.length; stats.paineis=db.paineis.length; stats.lacos=db.lacos.length; stats.ignorados=errors.length; db.inconsistencias=errors; db.imports.push({data:isoNow(),tipo:'IMPORTACAO_TECNICA_SDAI',clienteId:destinoClienteId,stats,errors,romannel:rom}); if(db.imports.length>10)db.imports=db.imports.slice(-10); persistLocal(); markDirty('importação'); render(); document.getElementById('impMsg').innerHTML=`<div class="msg ok">Importação concluída. DFO/FAP/ACM/DM210/SM210/FMC são importados como equipamentos vinculados a Área Comum/Técnica, sem criar loja.</div>`}catch(e){document.getElementById('impMsg').innerHTML=`<div class="msg err">${esc(e.message)}</div>`}}
+      // (correção 2026-07, seção 12 do plano) as linhas abaixo antes SUBSTITUÍAM as contagens
+      // incrementais (criados NESTA importação) pelos totais acumulados de toda a base do
+      // cliente — isso fazia o resumo mostrar "quantidade de lojas" como se fosse a
+      // quantidade de linhas/registros totais do cliente, e não o resultado real desta
+      // importação. Mantemos apenas as contagens acumuladas durante o loop acima.
+      db.inconsistencias=errors; db.imports.push({data:isoNow(),stats,errors,romannel:rom}); if(db.imports.length>10)db.imports=db.imports.slice(-10); persistLocal(); markDirty('importação'); render(); _impFileCache=null;
+      const resumoHtml=`<div class="msg ok"><b>Importação concluída para o cliente ${esc(clienteAtivoObj()?.nome||'')}.</b><br>`+
+        `Painéis criados: ${stats.paineis} · Laços criados: ${stats.lacos} · Módulos (FLM) criados: ${stats.modulos} · Portas criadas: ${stats.portas} · Lojas/Áreas criadas: ${stats.lojasCriadas+stats.areasTecnicas+stats.areasComuns} (Lojas: ${stats.lojasCriadas}, Área Técnica: ${stats.areasTecnicas}, Área Comum: ${stats.areasComuns}) · Equipamentos criados: ${stats.detectores+stats.acionadores} (Detectores: ${stats.detectores}, Acionadores: ${stats.acionadores})<br>`+
+        `Registros atualizados: ${stats.registrosAtualizados} · Registros ignorados: ${stats.ignorados} · Registros com inconsistência: ${stats.registrosComInconsistencia} · Linhas lidas no arquivo: ${stats.registrosLidos}<br>`+
+        `DFO/FAP/ACM/DM210/SM210/FMC são importados como equipamentos vinculados a Área Comum/Técnica, sem criar loja.</div>`;
+      document.getElementById('impMsg').innerHTML=resumoHtml}catch(e){document.getElementById('impMsg').innerHTML=`<div class="msg err">${esc(e.message)}</div>`}}
 function openModal(html){document.getElementById('drawer').innerHTML=html;document.getElementById('modal').classList.add('show')} function openModalWide(html){document.getElementById('drawer').classList.add('wide');openModal(html)} function closeModal(){document.getElementById('modal').classList.remove('show');document.getElementById('drawer').classList.remove('wide')} document.getElementById('modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal()})
 function formPainel(i=''){if(!requireAccess('cadastro','Seu perfil não pode criar/editar painéis.'))return; let o=db.paineis.find(x=>x.id===i)||{};openModal(`<h2>${i?'Editar':'Novo'} Painel</h2><div class="formGrid"><div class="field"><label>Nome</label><input id="mNome" value="${esc(o.nome)}"></div><div class="field"><label>Modelo</label><input id="mModelo" value="${esc(o.modelo)}"></div><div class="field"><label>Localização</label><input id="mLoc" value="${esc(o.localizacao)}"></div><div class="field"><label>Observação</label><input id="mObs" value="${esc(o.obs)}"></div></div><br><button class="btn" onclick="savePainel('${i}')">Salvar</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`)}
 function savePainel(i){let o=i?db.paineis.find(x=>x.id===i):{id:id()}; o.nome=n(mNome.value);o.modelo=n(mModelo.value);o.localizacao=n(mLoc.value);o.obs=n(mObs.value); if(!i)db.paineis.push(o); closeModal(); save()}
@@ -3145,7 +3310,7 @@ setInterval(()=>scheduleAutoSync(0),30000);
 window.addEventListener('beforeunload',e=>{const c=syncCfg(); if(c.configured&&c.dirty){e.preventDefault(); e.returnValue='Você tem alterações ainda não confirmadas no Google Sheets. Se sair agora, pode perder o que fez. Deseja mesmo sair?'; return e.returnValue}});
 
 /* ===== Build 6.1 overrides: login real, abas por usuário e telas premium ===== */
-const VIEW_LABELS={dashboard:'Dashboard',paineis:'Painéis',lacos:'Laços',flms:'Módulos',locais:'Lojas / Áreas',equipamentos:'Detectores / Acionadores',falhas:'Falhas',plano:'Plano de Ação',relatorios:'Relatórios',importacao:'Importação',exportacao:'Exportação',sistema:'Banco de Dados',usuarios:'Usuários e Acessos',configuracoes:'Configurações',backup:'Backup',logs:'Logs',sobre:'Sobre'};
+const VIEW_LABELS={dashboard:'Dashboard',paineis:'Painéis',lacos:'Laços',flms:'Módulos',locais:'Lojas / Áreas',equipamentos:'Detectores / Acionadores',falhas:'Falhas',plano:'Plano de Ação',relatorios:'Relatórios',importacao:'Importação',exportacao:'Exportação',sistema:'Gestão de Dados',usuarios:'Usuários e Acessos',configuracoes:'Configurações',backup:'Backup',logs:'Logs',sobre:'Sobre'};
 const DEFAULT_VIEWS_BY_ROLE={Administrador:Object.keys(VIEW_LABELS),Supervisor:['dashboard','paineis','lacos','flms','locais','equipamentos','falhas','plano','relatorios','exportacao','logs','sobre'],Operacional:['dashboard','falhas','plano','relatorios','sobre']};
 /* [removido na limpeza 2026-07: versão antiga substituída pela declaração final desta função] */
 /* [removido na limpeza 2026-07: versão antiga substituída pela declaração final desta função] */
@@ -3168,7 +3333,7 @@ function applyRoleUI(){applyNavPermissions();const p=perfilAtual(); document.que
 
 
 /* === V6.2 HOTFIX FUNCTIONS: Sistema, usuários, permissões e telas vazias === */
-const L3A_VIEWS = {visaoGeral:'Visão Geral do Cliente',dashboard:'Dashboard',paineis:'Painéis',lacos:'Laços',flms:'Módulos',locais:'Lojas / Áreas',equipamentos:'Detectores / Acionadores',falhas:'Falhas',plano:'Plano de Ação',plantas:'Plantas',relatorios:'Relatórios',importacao:'Importação',exportacao:'Exportação',cftv:'CFTV',cftvDashboard:'Dashboard CFTV',cftvCameras:'Câmeras',cftvGravadores:'Gravadores',cftvSwitches:'Switches',cftvRede:'Pontos de rede',cftvLocais:'Locais CFTV',cftvOcorrencias:'Ocorrências CFTV',cftvPlano:'Plano CFTV',cftvTestes:'Testes CFTV',cftvPlantas:'Plantas CFTV',cftvRelatorios:'Relatórios CFTV',cftvImportacao:'Importação CFTV',cftvExportacao:'Exportação CFTV',acesso:'Controle de Acesso',acessoDashboard:'Dashboard Acesso',acessoPortas:'Portas',acessoCatracas:'Catracas',acessoLeitores:'Leitores',acessoControladoras:'Controladoras',acessoOcorrencias:'Ocorrências Acesso',acessoPlano:'Plano Acesso',acessoTestes:'Testes Acesso',acessoPlantas:'Plantas Acesso',acessoRelatorios:'Relatórios Acesso',acessoImportacao:'Importação Acesso',acessoExportacao:'Exportação Acesso',ambiente:'Ambiente / Som',ambienteDashboard:'Dashboard Ambiente',ambienteSensores:'Sensores',ambienteAmplificadores:'Amplificadores',ambienteAltfalantes:'Alto-falantes',ambienteControladores:'Controladores',ambienteEquipamentos:'Equip. Ambientais',ambienteAmbientes:'Ambientes',ambienteOcorrencias:'Ocorrências Ambiente',ambientePlano:'Plano Ambiente',ambienteTestes:'Testes Ambiente',ambientePlantas:'Plantas Ambiente',ambienteRelatorios:'Relatórios Ambiente',ambienteImportacao:'Importação Ambiente',ambienteExportacao:'Exportação Ambiente',clientes:'Clientes',sistema:'Banco de Dados',usuarios:'Usuários e Acessos',configuracoes:'Configurações',backup:'Backup',logs:'Logs',sobre:'Sobre'};
+const L3A_VIEWS = {visaoGeral:'Visão Geral do Cliente',dashboard:'Dashboard',paineis:'Painéis',lacos:'Laços',flms:'Módulos',locais:'Lojas / Áreas',equipamentos:'Detectores / Acionadores',falhas:'Falhas',plano:'Plano de Ação',plantas:'Plantas',relatorios:'Relatórios',importacao:'Importação',exportacao:'Exportação',cftv:'CFTV',cftvDashboard:'Dashboard CFTV',cftvCameras:'Câmeras',cftvGravadores:'Gravadores',cftvSwitches:'Switches',cftvRede:'Pontos de rede',cftvLocais:'Locais CFTV',cftvOcorrencias:'Ocorrências CFTV',cftvPlano:'Plano CFTV',cftvTestes:'Testes CFTV',cftvPlantas:'Plantas CFTV',cftvRelatorios:'Relatórios CFTV',cftvImportacao:'Importação CFTV',cftvExportacao:'Exportação CFTV',acesso:'Controle de Acesso',acessoDashboard:'Dashboard Acesso',acessoPortas:'Portas',acessoCatracas:'Catracas',acessoLeitores:'Leitores',acessoControladoras:'Controladoras',acessoOcorrencias:'Ocorrências Acesso',acessoPlano:'Plano Acesso',acessoTestes:'Testes Acesso',acessoPlantas:'Plantas Acesso',acessoRelatorios:'Relatórios Acesso',acessoImportacao:'Importação Acesso',acessoExportacao:'Exportação Acesso',ambiente:'Ambiente / Som',ambienteDashboard:'Dashboard Ambiente',ambienteSensores:'Sensores',ambienteAmplificadores:'Amplificadores',ambienteAltfalantes:'Alto-falantes',ambienteControladores:'Controladores',ambienteEquipamentos:'Equip. Ambientais',ambienteAmbientes:'Ambientes',ambienteOcorrencias:'Ocorrências Ambiente',ambientePlano:'Plano Ambiente',ambienteTestes:'Testes Ambiente',ambientePlantas:'Plantas Ambiente',ambienteRelatorios:'Relatórios Ambiente',ambienteImportacao:'Importação Ambiente',ambienteExportacao:'Exportação Ambiente',clientes:'Clientes',sistema:'Gestão de Dados',usuarios:'Usuários e Acessos',configuracoes:'Configurações',backup:'Backup',logs:'Logs',sobre:'Sobre'};
 // PERFIS v2: Master tudo; Gestor sem sistema/backup/usuários/import/export; Operacional foca em
 // falhas+planos; Visualizador só leitura+relatórios. Chaves antigas mantidas como alias.
 const L3A_ROLE_VIEWS = {
@@ -4485,7 +4650,7 @@ function planoFiltrosAtuais(){
   // exatamente o que está filtrado na tela.
   const f=filters.plano||{};
   return {
-    q:(f.q||'').toUpperCase(),
+    q:f.q||'',
     cat:f.cat||'',
     prio:f.prio||'',
     sit:f.sit||'',
@@ -4506,10 +4671,12 @@ function planoRowsFiltrados(fx,{ignorarSituacao=false,ignorarCategoria=false,ign
   // Aplica os filtros (exceto os overrides explícitos acima, usados pelos cards de KPI clicáveis e
   // pelos PDFs, que precisam de variações do mesmo filtro base) sobre a base de linhas.
   let rows=buildPlanoRowsBase();
-  // PERFORMANCE: campo de busca pré-computado por linha (substitui JSON.stringify da linha inteira)
-  rows.forEach(x=>{x._q=up([x.local,x.painel,x.laco,x.piso,x.itemNome,x.statusFalha,x.categoria,x.responsavel,x.situacao,x.direcionamento,x.desde].filter(Boolean).join(' '))});
+  // Busca única (normalizarBusca/filtrarRegistrosPorBusca) — mesma lógica de Lojas/Áreas e Falhas.
+  // Antes esta função comparava fx.q (só toUpperCase, sem remover acento) com x._q (normalizado com
+  // up(), que remove acento) — a comparação nunca batia direito para termos acentuados, e mesmo sem
+  // acento exigia substring contígua (não aceitava múltiplas palavras em qualquer ordem).
+  rows=filtrarRegistrosPorBusca(rows,fx.q,x=>[x.local,x.painel,x.laco,x.piso,x.itemNome,x.statusFalha,x.categoria,x.responsavel,x.situacao,x.direcionamento,x.desde].filter(Boolean).join(' '));
   return rows.filter(x=>
-    (!fx.q||x._q.includes(fx.q))&&
     (ignorarCategoria||!fx.cat||(x.categoria||'Sem categoria')===fx.cat)&&
     (ignorarPrioridade||!fx.prio||x.prioridade===fx.prio)&&
     (ignorarSituacao||!fx.sit||x.situacao===fx.sit)&&
@@ -4569,6 +4736,8 @@ function renderPlano(){
 
   let filtrados=planoRowsFiltrados(fx)
     .sort((a,b)=>situacaoPesoPlano(a.situacao)-situacaoPesoPlano(b.situacao)||prioridadePeso(a.prioridade)-prioridadePeso(b.prioridade)||String(a.desde||a.criadoEm).localeCompare(String(b.desde||b.criadoEm)));
+  const totalSemFiltro=buildPlanoRowsBase().length;
+  const semResultadoPlano=fx.q&&!filtrados.length&&totalSemFiltro>0;
 
   const situBadge=s=>{const cls=s==='Concluído'?'ok':s==='Em andamento'?'info':s==='Sem plano'||s==='Cancelado'?'warn':'';return `<span class="pill ${cls}" style="font-size:11px">${esc(s)}</span>`};
   const prioBadge=p=>{const cls=p==='Crítica'||p==='Alta'||p==='Urgente'?'bad':p==='Média'?'warn':'';return `<span class="pill ${cls}" style="font-size:10px;padding:2px 7px">${esc(p)}</span>`};
@@ -4613,13 +4782,13 @@ function renderPlano(){
 
   const tableHtml=filtrados.length
     ?`<div class="tableWrap planoTableWrap"><table style="min-width:900px;border-collapse:collapse;width:100%"><thead style="position:sticky;top:0;background:var(--l3a-surface,#fff);z-index:1;border-bottom:2px solid var(--l3a-border)">${thead}</thead><tbody>${trs}</tbody></table></div>`
-    :'<div class="emptyState">Nenhum lançamento encontrado para os filtros selecionados.</div>';
+    :`<div class="emptyState">${totalSemFiltro?'Nenhum registro corresponde aos filtros aplicados.':'Nenhum lançamento no Plano de Ação.'}</div>`;
 
   const avancadoAberto=fx.avancado;
   document.getElementById('plano').innerHTML=`
     <div class="card planoToolbarCard">
       <div class="planoFiltrosRow">
-        <div class="field grow"><input id="plBuscaPlano" data-filter-input="1" data-filter-group="plano" data-filter-key="q" data-focus-key="planoBusca" placeholder="🔍 Buscar loja, laço, item..." value="${esc(filters.plano?.q||'')}"></div>
+        <div class="field grow searchField"><label>Busca</label><div class="searchBox"><input id="plBuscaPlano" data-filter-input="1" data-filter-group="plano" data-filter-key="q" data-focus-key="planoBusca" placeholder="Loja, item, prioridade, responsável ou providência..." autocomplete="off" value="${escSearchVal(filters.plano?.q||'')}">${fx.q?`<button type="button" class="searchClear" title="Limpar busca" onclick="filters.plano={...filters.plano,q:''};render()">×</button>`:''}</div></div>
         <select class="planoSelect" onchange="filters.plano={...filters.plano,sit:this.value};render()">${selectOpts(['Aberto','Em andamento','Concluído'],fsit,'Situação')}</select>
         <select class="planoSelect" onchange="filters.plano={...filters.plano,prio:this.value};render()">${selectOpts(planoPrioridades(),fx.prio,'Prioridade')}</select>
         <select class="planoSelect" onchange="filters.plano={...filters.plano,cat:this.value};render()">${selectOpts(planoCategorias(),fcat,'Categoria')}</select>
@@ -4627,6 +4796,7 @@ function renderPlano(){
         <input class="planoDate" type="date" title="Período inicial" onchange="filters.plano={...filters.plano,ini:this.value};render()" value="${esc(fx.ini)}">
         <input class="planoDate" type="date" title="Período final" onchange="filters.plano={...filters.plano,fim:this.value};render()" value="${esc(fx.fim)}">
         <button class="btn secondary small" onclick="togglePlanoFiltrosAvancados()">${avancadoAberto?'▴':'▾'} Mais filtros</button>
+        <button class="btn secondary small" onclick="limparFiltrosTela('plano')">Limpar filtros</button>
         <details class="pdfMenu">
           <summary class="btn secondary small">📄 Exportar PDF ▾</summary>
           <div class="pdfMenuList">
@@ -4637,10 +4807,27 @@ function renderPlano(){
         </details>
       </div>
       <div class="planoFiltrosAvancados" style="display:${avancadoAberto?'flex':'none'}">
-        <select class="planoSelect" onchange="filters.plano={...filters.plano,painel:this.value};render()">${selectOpts(unique(rows.map(x=>x.painel)),fx.painel,'Painel')}</select>
-        <select class="planoSelect" onchange="filters.plano={...filters.plano,laco:this.value};render()">${selectOpts(unique(rows.map(x=>x.laco)),fx.laco,'Laço')}</select>
-        <select class="planoSelect" onchange="filters.plano={...filters.plano,loja:this.value};render()">${selectOpts(unique(rows.map(x=>x.local)),fx.loja,'Loja')}</select>
-        <select class="planoSelect" onchange="filters.plano={...filters.plano,piso:this.value};render()">${selectOpts(unique(rows.map(x=>x.piso)),fx.piso,'Piso')}</select>
+        ${(()=>{
+          // Filtros dependentes (Painel → Laço → Piso → Loja): cada select só mostra opções que
+          // realmente existem dentro do que já foi escolhido acima dele — nunca uma combinação
+          // impossível. Se o valor já escolhido deixar de existir na lista filtrada (porque o
+          // usuário mudou o Painel, por exemplo), ele é limpo aqui — sem apagar nada que ainda é
+          // válido, e sem exigir um clique extra de "aplicar".
+          let rPainel=rows.filter(x=>!fx.painel||x.painel===fx.painel);
+          let rLaco=rPainel.filter(x=>!fx.laco||x.laco===fx.laco);
+          let rPiso=rLaco.filter(x=>!fx.piso||x.piso===fx.piso);
+          const lacoOpts=unique(rPainel.map(x=>x.laco));
+          const pisoOpts=unique(rLaco.map(x=>x.piso));
+          const lojaOpts=unique(rPiso.map(x=>x.local));
+          if(fx.laco&&!lacoOpts.includes(fx.laco)){filters.plano={...filters.plano,laco:''};fx.laco='';}
+          if(fx.piso&&!pisoOpts.includes(fx.piso)){filters.plano={...filters.plano,piso:''};fx.piso='';}
+          if(fx.loja&&!lojaOpts.includes(fx.loja)){filters.plano={...filters.plano,loja:''};fx.loja='';}
+          return `
+        <select class="planoSelect" onchange="filters.plano={...filters.plano,painel:this.value,laco:'',piso:'',loja:''};render()">${selectOpts(unique(rows.map(x=>x.painel)),fx.painel,'Painel')}</select>
+        <select class="planoSelect" onchange="filters.plano={...filters.plano,laco:this.value,piso:'',loja:''};render()">${selectOpts(lacoOpts,fx.laco,'Laço')}</select>
+        <select class="planoSelect" onchange="filters.plano={...filters.plano,piso:this.value,loja:''};render()">${selectOpts(pisoOpts,fx.piso,'Piso')}</select>
+        <select class="planoSelect" onchange="filters.plano={...filters.plano,loja:this.value};render()">${selectOpts(lojaOpts,fx.loja,'Loja')}</select>`;
+        })()}
         <select class="planoSelect" onchange="filters.plano={...filters.plano,statusTec:this.value};render()">${selectOpts(STATUS_TECNICO_OPTIONS,fx.statusTec,'Status Técnico')}</select>
         <button class="btn secondary small" onclick="auditarPlanosManual()" title="Confere se toda falha tem exatamente 1 Plano de Ação vinculado e corrige automaticamente o que faltar">Auditar Falhas × Plano</button>
       </div>
@@ -4653,8 +4840,9 @@ function renderPlano(){
     </div>
     <div class="card planoTableCard">
       <div class="planoTableHead">
-        <h3 class="sectionTitle" style="margin:0">Lançamentos${fcat?` — ${esc(fcat)}`:''} <span style="font-weight:400;font-size:13px;color:var(--l3a-text-muted)">${filtrados.length} registro(s)</span></h3>
+        <h3 class="sectionTitle" style="margin:0">Lançamentos${fcat?` — ${esc(fcat)}`:''}</h3>
       </div>
+      <div class="searchResultCount">${resultCountLabel(filtrados.length,totalSemFiltro,semResultadoPlano)}</div>
       ${tableHtml}
     </div>`;
   attachSearchInputs();
@@ -5093,7 +5281,7 @@ async function verificarBaseAoAbrir(){
   if(!isLoggedIn())return;
   const c=syncCfg();
   if(!baseParecevazia())return; // banco local ok, nada a fazer
-  if(!c.configured){alert('A base local está vazia e o banco Google ainda não foi configurado neste sistema. Vá em Sistema \u2192 Banco de Dados \u2192 "Inicializar/validar" e depois "Carregar base Google".');return}
+  if(!c.configured){alert('A base local está vazia e o banco Google ainda não foi configurado neste sistema. Vá em Administração \u2192 Gestão de Dados \u2192 "Inicializar/validar" e depois "Carregar base Google".');return}
   _recuperandoBaseInicial=true;
   updateSyncFooter('saving');
   const dEl=document.getElementById('dashboard');
@@ -5111,13 +5299,13 @@ async function verificarBaseAoAbrir(){
       _recuperandoBaseInicial=false;
       updateSyncFooter();
       render();
-      alert('A base local está vazia e a base no Google também não retornou dados. Verifique manualmente em Sistema \u2192 Banco de Dados antes de sincronizar ou continuar usando o sistema, para não gravar uma base vazia por cima da planilha.');
+      alert('A base local está vazia e a base no Google também não retornou dados. Verifique manualmente em Administração \u2192 Gestão de Dados antes de sincronizar ou continuar usando o sistema, para não gravar uma base vazia por cima da planilha.');
     }
   }catch(e){
     _recuperandoBaseInicial=false;
     updateSyncFooter('error');
     render();
-    alert('A base local está vazia e não foi possível recarregar automaticamente do Google (' + e.message + '). Vá em Sistema \u2192 Banco de Dados \u2192 "Carregar base Google" manualmente antes de continuar.');
+    alert('A base local está vazia e não foi possível recarregar automaticamente do Google (' + e.message + '). Vá em Administração \u2192 Gestão de Dados \u2192 "Carregar base Google" manualmente antes de continuar.');
   }
 }
 
@@ -5172,25 +5360,47 @@ locName=function(v){return lucOfficialName(localById(v))||_locNameBaseLuc(v)};
    confirmação explícita.
    ========================================================================= */
 function impW(){return filters.impWizard||(filters.impWizard={tipo:'',passo:1,validado:false})}
-function impWizardSet(o){filters.impWizard={...impW(),...o};render()}
+function impWizardSet(o){if(o&&o.passo===1){_impFileCache=null;if(typeof _lucFileCache!=='undefined')_lucFileCache=null;} filters.impWizard={...impW(),...o};render()}
 function impWizardValidar(){
   const w=impW();
   const p=w.tipo==='luc'?previewLucImport():previewImport();
-  Promise.resolve(p).then(()=>{filters.impWizard={...impW(),validado:true,passo:3};render()}).catch(()=>{});
+  // CAUSA RAIZ (2026-07): o render() abaixo reconstrói a tela e apaga tanto o <input type="file">
+  // quanto a prévia recém-gerada. O arquivo agora sobrevive via _impFileCache (ver readRows), e a
+  // prévia é regenerada a partir do cache logo após o render — assim o passo 3 mostra de fato a
+  // pré-visualização, em vez de uma tela vazia.
+  Promise.resolve(p).then(()=>{
+    // (seção 10 do plano) grava o cliente ativo e o instante da validação — usado em
+    // impWizardImportar() para bloquear a confirmação se o cliente for trocado depois de validar.
+    filters.impWizard={...impW(),validado:true,passo:3,clienteIdValidado:clienteAtivo(),validadoEm:isoNow()};render();
+    if(impW().tipo!=='luc'){try{previewImport()}catch(e){}}
+  }).catch(()=>{});
 }
 function impWizardImportar(){
   const w=impW();
+  // (seção 10 do plano) se o cliente ativo mudou depois da validação, bloqueia a confirmação
+  // e exige nova validação — evita gravar dados de um arquivo validado para o cliente A dentro
+  // da base do cliente B.
+  if(w.clienteIdValidado&&w.clienteIdValidado!==clienteAtivo()){
+    const m=document.getElementById('impMsg')||document.getElementById('lucImportMsg');
+    if(m)m.innerHTML='<div class="msg err">O cliente ativo foi alterado após a validação deste arquivo. Por segurança, a importação foi bloqueada. Selecione novamente o cliente de destino e valide o arquivo de novo.</div>';
+    filters.impWizard={...impW(),validado:false,passo:2};render();
+    return;
+  }
+  let exec;
   if(w.tipo==='tecnica'){
     const modo=document.getElementById('modeImp')?.value;
     if(modo==='replace'){
       if(!confirm('ATENÇÃO: o modo "Apagar dados atuais e importar do zero" DESTRÓI toda a base atual (painéis, laços, equipamentos, lojas, falhas, planos) e recomeça só com o arquivo. Tem certeza?'))return;
       if(!confirm('Segunda confirmação: essa ação é IRREVERSÍVEL depois de sincronizada com o Google. Confirmar a substituição total da base?'))return;
     }
-    importFile();
+    exec=importFile();
   } else {
-    importLucLojas();
+    exec=importLucLojas();
   }
-  filters.impWizard={tipo:'',passo:1,validado:false};
+  // CAUSA RAIZ (2026-07): o reset do assistente rodava de forma síncrona ANTES de importFile()
+  // (async) terminar — qualquer render disparado em seguida apagava o diagnóstico/erro da tela.
+  // Agora o reset (e a limpeza do arquivo em cache) só acontecem quando a importação conclui.
+  Promise.resolve(exec).finally(()=>{_impFileCache=null; if(typeof _lucFileCache!=='undefined')_lucFileCache=null; filters.impWizard={tipo:'',passo:1,validado:false};});
 }
 function modelosImportacaoPanelHtml(){
   const cliente=clienteAtivoObj();
@@ -5533,7 +5743,7 @@ function previewLucImport(){
   return (async()=>{try{ensureLucSchema(); const rows=await readLucRowsFile(); const v=normalizeLucImportRows(rows); document.getElementById('lucImportMsg').innerHTML=`<div class="msg ${v.errors.length?'warn':'ok'}">Pré-validação concluída: ${v.lojas.length} lojas válidas e ${v.errors.length} inconsistência(s). Leitura fixa: A=LUC, B=Tipo, C=Loja oficial, D=Área.</div>`; document.getElementById('lucPreviewBox').innerHTML=`${table(v.lojas.slice(0,30),[['LUC','luc'],['Loja oficial - Coluna C','nome'],['Tipo de Loja - Coluna B','tipo'],['Área Contrato - Coluna D','areaContrato'],['Piso calculado','piso']])}${v.errors.length?'<h3 class="sectionTitle">Inconsistências</h3>'+table(v.errors,[['Linha','linha'],['Motivo','motivo'],['Registro','registro']]):''}`}catch(e){document.getElementById('lucImportMsg').innerHTML=`<div class="msg err">${esc(e.message)}</div>`}})()
 }
 function importLucLojas(){
-  return (async()=>{try{ensureLucSchema(); const rows=await readLucRowsFile(); const v=normalizeLucImportRows(rows); if(!v.lojas.length)throw new Error('Nenhuma loja válida encontrada. Confirme o layout: A=LUC, B=Tipo de Loja, C=Loja oficial, D=Área Contrato.'); db.baseLojas=v.lojas; const assoc=executarAssociacaoLuc(true); db.imports=db.imports||[]; db.imports.push({data:isoNow(),tipo:'IMPORTACAO_LUC_LOJA',stats:{registrosLidos:rows.length,lojasImportadas:v.lojas.length,vinculadas:assoc.vinculadas,pendentes:assoc.pendentes,conflitos:assoc.conflitos,ignorados:v.errors.length},errors:v.errors}); if(db.imports.length>10)db.imports=db.imports.slice(-10); persistLocal(); markDirty('importação LUC/Loja'); render(); const m=document.getElementById('lucImportMsg'); if(m)m.innerHTML=`<div class="msg ok">Importação LUC/Loja concluída com leitura fixa A-D. A coluna C foi usada como nome oficial da loja e a coluna D como área contrato.</div>`}catch(e){const m=document.getElementById('lucImportMsg'); if(m)m.innerHTML=`<div class="msg err">${esc(e.message)}</div>`}})()
+  return (async()=>{try{ensureLucSchema(); const rows=await readLucRowsFile(); const v=normalizeLucImportRows(rows); if(!v.lojas.length)throw new Error('Nenhuma loja válida encontrada. Confirme o layout: A=LUC, B=Tipo de Loja, C=Loja oficial, D=Área Contrato.'); db.baseLojas=v.lojas; const assoc=executarAssociacaoLuc(true); db.imports=db.imports||[]; db.imports.push({data:isoNow(),tipo:'IMPORTACAO_LUC_LOJA',stats:{registrosLidos:rows.length,lojasImportadas:v.lojas.length,vinculadas:assoc.vinculadas,pendentes:assoc.pendentes,conflitos:assoc.conflitos,ignorados:v.errors.length},errors:v.errors}); if(db.imports.length>10)db.imports=db.imports.slice(-10); persistLocal(); markDirty('importação LUC/Loja'); render(); _lucFileCache=null; const m=document.getElementById('lucImportMsg'); if(m)m.innerHTML=`<div class="msg ok">Importação LUC/Loja concluída com leitura fixa A-D. A coluna C foi usada como nome oficial da loja e a coluna D como área contrato.</div>`}catch(e){const m=document.getElementById('lucImportMsg'); if(m)m.innerHTML=`<div class="msg err">${esc(e.message)}</div>`}})()
 }
 
 
@@ -5574,10 +5784,15 @@ function lucCleanName(v){
   if(!s)return '';
   return s.replace(/\s+([,.;:/])/g,'$1').replace(/([(/-])\s+/g,'$1').replace(/\s+([)/-])/g,'$1').trim();
 }
+/* MESMA CAUSA RAIZ da importação técnica (2026-07): o render() do assistente após "Validar" recria
+   o <input id="fileLucImp"> vazio e o arquivo era perdido antes do "Confirmar". Mesmo fallback de
+   cache — a lógica de leitura/normalização/associação LUC permanece 100% intacta. */
+let _lucFileCache=null;
 async function readLucRowsFile(){
   const input=document.getElementById('fileLucImp');
-  if(!input||!input.files||!input.files[0])throw new Error('Selecione um arquivo XLSX ou CSV para Importação LUC/Loja.');
-  const f=input.files[0];
+  const f=(input&&input.files&&input.files[0])||_lucFileCache;
+  if(!f)throw new Error('Selecione um arquivo XLSX ou CSV para Importação LUC/Loja.');
+  _lucFileCache=f;
   const ext=f.name.split('.').pop().toLowerCase();
   const data=await f.arrayBuffer();
   if(ext==='csv'){
@@ -5585,8 +5800,6 @@ async function readLucRowsFile(){
     const first=(txt.split(/\r?\n/).find(x=>x.trim())||'');
     const sep=(first.match(/;/g)||[]).length>=(first.match(/,/g)||[]).length?';':',';
     const matrix=txt.split(/\r?\n/).filter(x=>x.trim()).map(l=>splitCSV(l,sep).map(lucCleanField));
-    const cab=(matrix[0]||[]).map(normKey);
-    if(cab.some(x=>x.includes('PAINEL'))&&cab.some(x=>x.includes('LACO')))throw new Error('Arquivo técnico SDAI selecionado na importação LUC/Loja. Escolha Base técnica / central Bosch.');
     return lucMatrixToRows(matrix);
   }
   if(!['xls','xlsx'].includes(ext))throw new Error('Formato não aceito. Use XLSX, XLS ou CSV.');
@@ -5595,9 +5808,6 @@ async function readLucRowsFile(){
   let rows=[];
   wb.SheetNames.forEach(sn=>{
     const matrix=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,defval:'',raw:false}).map(row=>row.map(lucCleanField));
-    const cab=(matrix[0]||[]).map(normKey);
-    if(cab.some(x=>x.includes('PAINEL'))&&cab.some(x=>x.includes('LACO')))throw new Error('Arquivo técnico SDAI selecionado na importação LUC/Loja. Escolha Base técnica / central Bosch.');
-    if(normalizarNomeCabecalho(sn).includes('instruc'))return;
     rows=rows.concat(lucMatrixToRows(matrix));
   });
   return rows;
