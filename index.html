@@ -1445,6 +1445,122 @@ function locaisResponsaveisDisponiveis(){
   const s2=(db.usuarios||[]).map(u=>u.nome).filter(Boolean);
   return unique(s1.concat(s2));
 }
+// ===================== HISTÓRICO OPERACIONAL POR PERÍODO (Lojas/Áreas) =====================
+// Função central de data por tipo de evento (item 3 da especificação): cada tipo de evento tem
+// sua prioridade própria de campos de data. Nunca usa a data atual como substituição — se nenhum
+// campo de data existir, o evento fica sem data e é automaticamente descartado de qualquer filtro
+// por período (mas não é apagado do sistema).
+function dataEventoPorTipo(tipoEvento,obj){
+  if(!obj)return '';
+  switch(tipoEvento){
+    case 'Teste': return obj.data||obj.criadoEm||obj.executadoEm||'';
+    case 'Falha aberta': return obj.data||obj.criadoEm||obj.abertaEm||'';
+    case 'Falha fechada': return obj.resolvidaEm||obj.data||obj.criadoEm||'';
+    case 'Plano aberto': return obj.criadoEm||obj.iniciadoEm||obj.atualizadoEm||obj.concluidoEm||'';
+    case 'Plano em andamento': return obj.atualizadoEm||obj.criadoEm||'';
+    case 'Plano concluído': return obj.concluidoEm||obj.atualizadoEm||obj.criadoEm||'';
+    default: return obj.data||obj.criadoEm||obj.atualizadoEm||obj.concluidoEm||'';
+  }
+}
+// listarEventosLojaCompleto(l): monta a lista COMPLETA (sem filtro de período) de eventos de
+// histórico operacional de uma loja/área, a partir das fontes reais já existentes no sistema:
+// l.inspecoes (Testes), db.falhas (Falha aberta/fechada) e db.planos (Plano aberto/em
+// andamento/concluído). É a ÚNICA função que sabe montar esse histórico consolidado — tanto
+// obterHistoricoLojaNoPeriodo() quanto o modal de Histórico da ficha da loja reaproveitam esta
+// mesma fonte, evitando lógica duplicada e listas divergentes.
+// Cuidado com duplicação: quando um Plano de Ação é concluído, o sistema também registra um NOVO
+// lançamento em db.falhas com status "Em operação" só para reabrir o item para operação (ver
+// concluirPlano()) — esse lançamento NÃO é uma "Falha aberta" (isFalhaStatus()==false) e por isso
+// não entra como evento aqui; a conclusão real já é representada pelo evento "Falha fechada" via
+// resolvidaEm do lançamento original da falha.
+function listarEventosLojaCompleto(l){
+  if(!l)return [];
+  const eventos=[];
+  (l.inspecoes||[]).forEach(insp=>{
+    eventos.push({
+      id:'teste:'+insp.id,data:dataEventoPorTipo('Teste',insp),tipoEvento:'Teste',
+      titulo:`Teste — ${insp.resultado||'—'}`,descricao:insp.observacoes||'',
+      status:insp.resultado||'',responsavel:insp.responsavel||'',
+      fotos:(insp.fotos||[]).concat(insp.videos||[],insp.documentos||[]),
+      origem:'Inspeção',origemId:insp.id
+    });
+  });
+  (db.falhas||[]).filter(f=>f.localId===l.id).forEach(f=>{
+    if(isFalhaStatus(f.status)){
+      eventos.push({
+        id:'falha-aberta:'+f.id,data:dataEventoPorTipo('Falha aberta',f),tipoEvento:'Falha aberta',
+        titulo:`Falha aberta — ${f.status}`,descricao:f.motivo||f.obs||'',
+        status:f.status,responsavel:f.responsavel||'',fotos:[],
+        origem:f.origem||'Falha',origemId:f.id
+      });
+      if(f.resolvidaEm){
+        eventos.push({
+          id:'falha-fechada:'+f.id,data:dataEventoPorTipo('Falha fechada',f),tipoEvento:'Falha fechada',
+          titulo:'Falha fechada',descricao:f.obs||'',
+          status:'Em operação',responsavel:f.responsavel||'',fotos:[],
+          origem:f.origem||'Falha',origemId:f.id
+        });
+      }
+    }
+  });
+  (db.planos||[]).filter(p=>{const fl=(db.falhas||[]).find(x=>x.id===p.falhaId); return (fl&&fl.localId===l.id)||p.local===l.nome;}).forEach(p=>{
+    if(p.criadoEm){
+      eventos.push({
+        id:'plano-aberto:'+p.id,data:dataEventoPorTipo('Plano aberto',p),tipoEvento:'Plano aberto',
+        titulo:'Plano de Ação aberto',descricao:p.categoria||'',
+        status:p.situacao||'',responsavel:p.responsavel||'',fotos:[],
+        origem:'Plano de Ação',origemId:p.id
+      });
+    }
+    if(p.situacao==='Em andamento'&&p.atualizadoEm){
+      eventos.push({
+        id:'plano-andamento:'+p.id,data:dataEventoPorTipo('Plano em andamento',p),tipoEvento:'Plano em andamento',
+        titulo:'Plano de Ação em andamento',descricao:p.providencia||'',
+        status:p.situacao||'',responsavel:p.responsavel||'',fotos:[],
+        origem:'Plano de Ação',origemId:p.id
+      });
+    }
+    if(p.situacao==='Concluído'&&p.concluidoEm){
+      eventos.push({
+        id:'plano-concluido:'+p.id,data:dataEventoPorTipo('Plano concluído',p),tipoEvento:'Plano concluído',
+        titulo:'Plano de Ação concluído',descricao:p.providencia||'',
+        status:p.situacao||'',responsavel:p.responsavel||'',fotos:[],
+        origem:'Plano de Ação',origemId:p.id
+      });
+    }
+  });
+  return eventos.filter(e=>!!e.data);
+}
+// obterHistoricoLojaNoPeriodo(localId,dataInicial,dataFinal): função central pedida na
+// especificação — devolve todos os eventos da loja dentro do intervalo [dataInicial,dataFinal]
+// (strings 'YYYY-MM-DD', qualquer um dos dois pode vir vazio/ausente), ordenados
+// cronologicamente, junto com os totais agregados usados nos KPIs e na tabela da aba Lojas/Áreas.
+// Datas inválidas/ausentes nunca são inventadas: eventos sem data (dataEventoPorTipo retornou '')
+// já são descartados em listarEventosLojaCompleto() e portanto nunca entram em nenhum período.
+function obterHistoricoLojaNoPeriodo(localId,dataInicial,dataFinal){
+  const totaisVazios={testes:0,falhasAbertas:0,falhasResolvidas:0,planosAbertos:0,planosConcluidos:0,evidencias:0};
+  const l=db.locais.find(x=>x.id===localId);
+  if(!l)return {localId,eventos:[],totais:totaisVazios};
+  const ini=dataInicial?String(dataInicial).slice(0,10):'';
+  const fim=dataFinal?String(dataFinal).slice(0,10):'';
+  const eventos=listarEventosLojaCompleto(l).filter(e=>{
+    const d=String(e.data||'').slice(0,10);
+    if(!d)return false;
+    if(ini&&d<ini)return false;
+    if(fim&&d>fim)return false;
+    return true;
+  }).sort((a,b)=>String(a.data).localeCompare(String(b.data)));
+  const totais={testes:0,falhasAbertas:0,falhasResolvidas:0,planosAbertos:0,planosConcluidos:0,evidencias:0};
+  eventos.forEach(e=>{
+    if(e.tipoEvento==='Teste'){totais.testes++;totais.evidencias+=(e.fotos||[]).length}
+    else if(e.tipoEvento==='Falha aberta')totais.falhasAbertas++;
+    else if(e.tipoEvento==='Falha fechada')totais.falhasResolvidas++;
+    else if(e.tipoEvento==='Plano aberto')totais.planosAbertos++;
+    else if(e.tipoEvento==='Plano concluído')totais.planosConcluidos++;
+  });
+  return {localId,eventos,totais};
+}
+
 // CORREÇÃO (busca de Lojas/Áreas travando/perdendo foco): renderLocais() foi dividida em duas
 // funções. renderLocais() monta a ESTRUTURA (KPIs, filtros, cabeçalho da tabela e o próprio
 // <input> de busca) uma única vez — ao entrar na aba, ou quando um filtro dropdown muda (o que já
@@ -1456,6 +1572,9 @@ function locaisResponsaveisDisponiveis(){
 function locaisRowsFiltradas(){
   let q=filters.locaisQ||'';
   let f=filters.locaisF||{};
+  const periodoIni=f.periodoIni||'';
+  const periodoFim=f.periodoFim||'';
+  const periodoAtivo=!!(periodoIni||periodoFim);
   let rows0=db.locais.map(l=>({
     ...l,
     painel:paiName(l.painelId),laco:lacName(l.lacoId),
@@ -1463,7 +1582,11 @@ function locaisRowsFiltradas(){
     portaNum:db.portas.find(p=>p.id===l.portaId)?.numero||'',
     qtd:db.equipamentos.filter(e=>e.localId===l.id).length,
     _ultimaInspecao:ultimaInspecaoLoja(l),
-    _possuiFalha:localPossuiFalhaAberta(l)
+    _possuiFalha:localPossuiFalhaAberta(l),
+    // Item 8 da especificação: o histórico do período NUNCA depende do status atual da loja —
+    // obterHistoricoLojaNoPeriodo() é calculado sobre os eventos reais (testes/falhas/planos),
+    // não sobre l.status.
+    _historicoPeriodo:periodoAtivo?obterHistoricoLojaNoPeriodo(l.id,periodoIni,periodoFim):null
   }));
   const termo=normalizarBusca(q);
   let rows=rows0.filter(r=>{
@@ -1484,6 +1607,9 @@ function locaisRowsFiltradas(){
     if(f.falha==='nao'&&r._possuiFalha)return false;
     if(f.dataDe&&(!r._ultimaInspecao||String(r._ultimaInspecao.data||'').slice(0,10)<f.dataDe))return false;
     if(f.dataAte&&(!r._ultimaInspecao||String(r._ultimaInspecao.data||'').slice(0,10)>f.dataAte))return false;
+    // Filtro de período (histórico operacional completo): com período ativo, só entram lojas com
+    // pelo menos 1 evento no intervalo — combinado em AND com todos os filtros acima (item 9).
+    if(periodoAtivo&&(!r._historicoPeriodo||!r._historicoPeriodo.eventos.length))return false;
     return true;
   });
   return rows;
@@ -1491,32 +1617,90 @@ function locaisRowsFiltradas(){
 function renderLocaisResultado(){
   const kpiEl=document.getElementById('locaisKpis');
   const tbodyEl=document.getElementById('locaisTbody');
+  const theadEl=document.getElementById('locaisThead');
   if(!kpiEl||!tbodyEl)return; // estrutura ainda não montada (aba não está ativa) - renderLocais() cuida disso
+  const f=filters.locaisF||{};
+  const periodoAtivo=!!(f.periodoIni||f.periodoFim);
   const rows=locaisRowsFiltradas();
   const total=rows.length;
   const emOp=rows.filter(r=>!isFalhaStatus(r.status)).length;
   const comFalha=rows.filter(r=>isFalhaStatus(r.status)).length;
-  kpiEl.innerHTML=dsKpiStrip([
-    ['Lojas / Áreas',total,''],
-    ['Em operação',emOp,'ok'],
-    ['Com falha',comFalha,comFalha>0?'bad':'ok']
-  ]);
+  if(periodoAtivo){
+    // KPIs 6: com período selecionado, os KPIs contam SOMENTE eventos com data dentro do
+    // intervalo (nunca o status atual da loja) — ver obterHistoricoLojaNoPeriodo().
+    let testes=0,falhasAbertas=0,falhasResolvidas=0,planosConcluidos=0,totalEventos=0;
+    rows.forEach(r=>{
+      const t=(r._historicoPeriodo&&r._historicoPeriodo.totais)||{};
+      testes+=t.testes||0; falhasAbertas+=t.falhasAbertas||0; falhasResolvidas+=t.falhasResolvidas||0;
+      planosConcluidos+=t.planosConcluidos||0; totalEventos+=(r._historicoPeriodo&&r._historicoPeriodo.eventos.length)||0;
+    });
+    kpiEl.innerHTML=dsKpiStrip([
+      ['Lojas/Áreas encontradas',total,''],
+      ['Testes executados (período)',testes,''],
+      ['Falhas abertas (período)',falhasAbertas,falhasAbertas>0?'bad':'ok'],
+      ['Falhas resolvidas (período)',falhasResolvidas,'ok'],
+      ['Planos concluídos (período)',planosConcluidos,'ok'],
+      ['Total de eventos (período)',totalEventos,'']
+    ]);
+  }else{
+    // Sem período selecionado: KPIs gerais de sempre + 1 KPI extra de testes do mês atual, com
+    // legenda deixando claro que não é um total do período (item 6 da especificação).
+    const hojeStr=isoNow().slice(0,10);
+    const inicioMes=hojeStr.slice(0,7)+'-01';
+    let testesMes=0;
+    db.locais.forEach(l=>(l.inspecoes||[]).forEach(insp=>{
+      const d=String(dataEventoPorTipo('Teste',insp)||'').slice(0,10);
+      if(d&&d>=inicioMes&&d<=hojeStr)testesMes++;
+    }));
+    kpiEl.innerHTML=dsKpiStrip([
+      ['Lojas / Áreas',total,''],
+      ['Em operação',emOp,'ok'],
+      ['Com falha',comFalha,comFalha>0?'bad':'ok'],
+      ['Testes executados (mês atual)',testesMes,'']
+    ]);
+  }
+  if(theadEl){
+    theadEl.innerHTML=periodoAtivo
+      ? `<tr><th>Loja / Área</th><th>Localização</th><th style="text-align:center">Equipamentos</th><th>Status</th><th style="text-align:center">Eventos</th><th style="text-align:center">Testes</th><th style="text-align:center">Falhas abertas</th><th style="text-align:center">Falhas concluídas</th><th>Último evento</th><th>Ações</th></tr>`
+      : `<tr><th>Loja / Área</th><th>Localização</th><th style="text-align:center">Equipamentos</th><th>Status</th><th>Ações</th></tr>`;
+  }
   const trs=rows.map(r=>{
     const loc=dsLocHtml({painel:r.painel,piso:r.piso,laco:r.laco,tipo:r.flmEndereco?'Módulo '+r.flmEndereco:'',porta:r.portaNum});
+    const colunasPeriodo=periodoAtivo?(()=>{
+      const h=r._historicoPeriodo||{eventos:[],totais:{}};
+      const ultimo=h.eventos.length?h.eventos[h.eventos.length-1]:null;
+      const ultimoTxt=ultimo?(typeof fmtDataHoraTexto==='function'?fmtDataHoraTexto(ultimo.data):ultimo.data):'—';
+      return `<td style="text-align:center">${h.eventos.length}</td>
+      <td style="text-align:center">${h.totais.testes||0}</td>
+      <td style="text-align:center">${h.totais.falhasAbertas||0}</td>
+      <td style="text-align:center">${h.totais.falhasResolvidas||0}</td>
+      <td style="font-size:12px">${esc(ultimoTxt)}</td>`;
+    })():'';
     return `<tr>
       <td><div style="font-weight:700;font-size:13.5px">${esc(r.nome)}</div><div style="font-size:11px;color:var(--l3a-text-muted)">${esc(r.tipo||'—')}</div></td>
       <td>${loc}</td>
       <td style="font-size:12.5px;text-align:center">${r.qtd}</td>
       <td>${dsBadgeHtml(r.status)}</td>
+      ${colunasPeriodo}
       <td><div class="dsIcoGroup">
         <button class="dsIco" onclick="openLocal('${r.id}')" title="Histórico">🕒</button>
+        ${periodoAtivo?`<button class="btn small secondary" onclick="abrirHistoricoPeriodoLocal('${r.id}')" title="Ver histórico do período">Ver histórico do período</button>`:''}
         <button class="btn small secondary" onclick="formInspecao('${r.id}')" title="Executar Teste">Executar Teste</button>
         <button class="dsIco" onclick="formLocal('${r.id}')" title="Editar">✏️</button>
         <button class="dsIco del" onclick="del('locais','${r.id}')" title="Excluir">🗑</button>
       </div></td>
     </tr>`;
   }).join('');
-  tbodyEl.innerHTML=trs||`<tr><td colspan="5"><div class="emptyState">Nenhuma loja/área cadastrada.</div></td></tr>`;
+  const colspan=periodoAtivo?10:5;
+  tbodyEl.innerHTML=trs||`<tr><td colspan="${colspan}"><div class="emptyState">${periodoAtivo?'Nenhuma loja/área com eventos no período selecionado.':'Nenhuma loja/área cadastrada.'}</div></td></tr>`;
+}
+// abrirHistoricoPeriodoLocal(): abre o modal/aba de Histórico já existente da ficha da loja
+// (openLocal) restrito ao mesmo período selecionado nos filtros da tabela (reaproveita
+// localModalHistoricoHtml, que já sabe filtrar por _localModalState.periodoIni/periodoFim).
+function abrirHistoricoPeriodoLocal(localId){
+  const f=filters.locaisF||{};
+  _localModalState={id:localId,tab:'historico',periodoIni:f.periodoIni||'',periodoFim:f.periodoFim||''};
+  openLocal(localId);
 }
 // atualizarBuscaLocais(): chamada pelo listener 'input' do campo de busca de Lojas/Áreas. Só
 // atualiza o estado do filtro e, após um debounce curto (280ms), recalcula e repinta SOMENTE os
@@ -1527,6 +1711,14 @@ function atualizarBuscaLocais(valor){
   filters.locaisQ=valor;
   clearTimeout(searchRenderTimer);
   searchRenderTimer=setTimeout(renderLocaisResultado,280);
+}
+// atualizarPeriodoLocais(): chamada pelo evento 'change' dos inputs de Período inicial/final da
+// aba Lojas/Áreas. Por especificação (item 10 - performance), NUNCA chama render() completo: só
+// atualiza o estado do filtro e repinta KPIs + thead + tbody via renderLocaisResultado(), sem
+// recriar o campo de busca, o painel "Mais filtros" ou qualquer outra parte da tela.
+function atualizarPeriodoLocais(campo,valor){
+  filters.locaisF={...filters.locaisF,[campo]:valor};
+  renderLocaisResultado();
 }
 function renderLocais(){
   let q=filters.locaisQ||'';
@@ -1546,6 +1738,8 @@ function renderLocais(){
       <div class="field"><label>Piso</label><select onchange="filters.locaisF={...filters.locaisF,piso:this.value};render()">${selectOpts(pisosOpts,f.piso)}</select></div>
       <div class="field"><label>Painel</label><select onchange="filters.locaisF={...filters.locaisF,painel:this.value};render()">${selectOpts(paineisOpts,f.painel)}</select></div>
       <div class="field"><label>Laço</label><select onchange="filters.locaisF={...filters.locaisF,laco:this.value};render()">${selectOpts(lacosOpts,f.laco)}</select></div>
+      <div class="field"><label>Período inicial</label><input type="date" value="${esc(f.periodoIni||'')}" onchange="atualizarPeriodoLocais('periodoIni',this.value)"></div>
+      <div class="field"><label>Período final</label><input type="date" value="${esc(f.periodoFim||'')}" onchange="atualizarPeriodoLocais('periodoFim',this.value)"></div>
       <div class="dsFilterActions"><button class="btn small secondary" onclick="formLocal()">+ Nova loja/área</button></div>
     </div>
     <details class="card" style="padding:10px 14px" ${_locaisMaisFiltrosOpen?'open':''} ontoggle="_locaisMaisFiltrosOpen=this.open">
@@ -1561,7 +1755,7 @@ function renderLocais(){
     </details>
     <div class="dsTableWrap">
       <table class="dsTable">
-        <thead><tr><th>Loja / Área</th><th>Localização</th><th style="text-align:center">Equipamentos</th><th>Status</th><th>Ações</th></tr></thead>
+        <thead id="locaisThead"><tr><th>Loja / Área</th><th>Localização</th><th style="text-align:center">Equipamentos</th><th>Status</th><th>Ações</th></tr></thead>
         <tbody id="locaisTbody"></tbody>
       </table>
     </div>`;
@@ -4083,15 +4277,32 @@ function localModalHistoricoHtml(l){
     resumo:`${f.status}${f.motivo?' — '+f.motivo:''}`,ref:f.id}));
   const planos=(db.planos||[]).filter(p=>falhas.some(f=>f.ref===p.falhaId)).map(p=>({tipo:'Plano de Ação',data:p.criadoEm,
     responsavel:p.responsavel,resumo:`${p.situacao} — ${p.categoria||''}`,ref:p.id}));
-  const eventos=insp.concat(falhas,planos).sort((a,b)=>String(b.data||'').localeCompare(String(a.data||'')));
-  if(!eventos.length)return '<p class="msg warn">Sem eventos registrados.</p>';
-  return `<div class="timeline">${eventos.map(ev=>`<div class="tl"><b>${esc(ev.tipo)}</b> • <small>${esc(ev.data||'')} • ${esc(ev.responsavel||'—')}</small><p>${esc(ev.resumo)}</p>${ev.tipo==='Inspeção/Teste'?`<button class="btn small secondary" onclick="verInspecao('${l.id}','${ev.ref}')">Ver detalhes</button>`:''}</div>`).join('')}</div>`;
+  let eventos=insp.concat(falhas,planos).sort((a,b)=>String(b.data||'').localeCompare(String(a.data||'')));
+  // Filtro de período (item 5 da especificação: "Ver histórico do período" reaproveita esta aba,
+  // passando o intervalo de datas via _localModalState.periodoIni/periodoFim). Sem período
+  // selecionado, o comportamento é exatamente o de antes (histórico completo).
+  const periodoIni=_localModalState.periodoIni||'';
+  const periodoFim=_localModalState.periodoFim||'';
+  const periodoAtivo=!!(periodoIni||periodoFim);
+  let banner='';
+  if(periodoAtivo){
+    eventos=eventos.filter(ev=>{
+      const d=String(ev.data||'').slice(0,10);
+      if(!d)return false;
+      if(periodoIni&&d<periodoIni)return false;
+      if(periodoFim&&d>periodoFim)return false;
+      return true;
+    });
+    banner=`<p class="msg warn">Histórico filtrado do período de ${esc(periodoIni||'—')} até ${esc(periodoFim||'—')}. <button class="btn small secondary" onclick="_localModalState.periodoIni='';_localModalState.periodoFim='';openLocal('${l.id}')">Ver histórico completo</button></p>`;
+  }
+  if(!eventos.length)return banner+`<p class="msg warn">Sem eventos registrados${periodoAtivo?' no período selecionado.':'.'}</p>`;
+  return banner+`<div class="timeline">${eventos.map(ev=>`<div class="tl"><b>${esc(ev.tipo)}</b> • <small>${esc(ev.data||'')} • ${esc(ev.responsavel||'—')}</small><p>${esc(ev.resumo)}</p>${ev.tipo==='Inspeção/Teste'?`<button class="btn small secondary" onclick="verInspecao('${l.id}','${ev.ref}')">Ver detalhes</button>`:''}</div>`).join('')}</div>`;
 }
 function openLocal(i){
   ensureLucSchema();
   let l=db.locais.find(x=>x.id===i); if(!l)return;
   l.inspecoes=l.inspecoes||[];
-  _localModalState={id:i,tab:_localModalState.id===i?_localModalState.tab:'dados'};
+  _localModalState={id:i,tab:_localModalState.id===i?_localModalState.tab:'dados',periodoIni:_localModalState.id===i?(_localModalState.periodoIni||''):'',periodoFim:_localModalState.id===i?(_localModalState.periodoFim||''):''};
   const tab=_localModalState.tab;
   const tabs=[['dados','Dados'],['historico','Histórico']];
   const tabsHtml=tabs.map(([k,label])=>`<button class="btn small ${tab===k?'':'secondary'}" onclick="localModalSetTab('${k}')">${label}</button>`).join(' ');
