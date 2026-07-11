@@ -1,5 +1,6 @@
 <!doctype html>
-<!-- build: 2026-07-11 v6.33 - Multi-clientes (cada cliente base independente), seletor de cliente na sidebar, subsistemas CFTV / Controle de Acesso / Ambiente por cliente + tudo da v6.32 -->
+<!-- build: 2026-07-11 v6.38 - Estabilização final para produção: separação operacional/histórico documentada e confirmada sem mistura de fonte (dashStatusBucket = status atual; isFalhaStatus/db.falhas = eventos); falhaDeveTerPlano() centraliza a ÚNICA decisão de criar plano automático nos 4 pontos existentes (import, status-change, nova falha, sincronizarPlanosFalhas) sem alterar o comportamento já pedido; apiPost tenta ler a resposta real do Code.gs (sem no-cors) para exibir em tempo real "Outro usuário alterou esta base" em caso de conflito de revisão, com fallback automático e silencioso para o no-cors antigo se o navegador/deployment bloquear leitura cross-origin (não testado contra deployment real — validar antes de confiar); auditoriaSanearFalhasPlanos agora também detecta (sem remover) planos órfãos; comentário de trade-off do limite de 1000 no histórico. -->
+<!-- build anterior: 2026-07-11 v6.37 - Soft-delete de falha, KPIs de Visão Geral unificados, revision guard no Code.gs, checksum expandido, usuários fora do localStorage por cliente. -->
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
@@ -850,6 +851,36 @@ tbody tr:last-child td{border-bottom:0}
 .clienteModPill.ambiente{background:#fce7f3;color:#9d174d}
 .clienteModPill.som{background:#ede9fe;color:#5b21b6}
 .clientesGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;margin-top:16px}
+.moduloTag{display:inline-block;vertical-align:middle;margin-left:8px;font-size:10.5px;font-weight:800;letter-spacing:.02em;text-transform:uppercase;padding:3px 9px;border-radius:var(--l3a-radius-pill);background:var(--l3a-warning-bg);color:var(--l3a-warning);border:1px solid var(--l3a-warning-line);white-space:nowrap}
+
+/* ---- Accordion Nav Tree ---- */
+.navTree{display:flex;flex-direction:column;gap:1px;padding:8px 0;overflow-y:auto;flex:1;min-height:0}
+.navSectionLabel{font-size:9.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.38);padding:10px 14px 4px;user-select:none}
+.navFlatItem{display:flex;align-items:center;gap:8px;background:none;border:none;color:#c3d4ea;font-size:13px;padding:7px 14px;cursor:pointer;border-radius:6px;text-align:left;width:100%;transition:background .15s,color .15s}
+.navFlatItem:hover{background:rgba(255,255,255,.07);color:#fff}
+.navFlatItem.active{background:linear-gradient(120deg,var(--l3a-primary-600),var(--l3a-primary));color:#fff;font-weight:600;box-shadow:0 4px 12px rgba(11,95,173,.3)}
+.navFlatItem svg{flex-shrink:0;opacity:.7}
+.navSubsysBlock{display:flex;flex-direction:column}
+.navSubsysHead{display:flex;align-items:center;justify-content:space-between;background:none;border:none;color:#9cb3cc;font-size:12.5px;font-weight:700;padding:8px 14px;cursor:pointer;border-radius:6px;text-align:left;width:100%;transition:background .15s,color .15s;letter-spacing:.03em;text-transform:uppercase}
+.navSubsysHead:hover{background:rgba(255,255,255,.07);color:#e5e7eb}
+.navSubsysHead.open{color:#c7d2fe}
+.navSubsysBody{display:none;flex-direction:column;gap:1px;padding-left:10px}
+.navSubsysBody.open{display:flex}
+.navGrpBlock{display:flex;flex-direction:column}
+.navGrpHead{display:flex;align-items:center;justify-content:space-between;background:none;border:none;color:rgba(255,255,255,.38);font-size:10.5px;font-weight:700;padding:6px 10px;cursor:pointer;border-radius:5px;text-align:left;width:100%;transition:background .15s,color .15s;letter-spacing:.07em;text-transform:uppercase}
+.navGrpHead:hover{background:rgba(255,255,255,.04);color:#9ca3af}
+.navGrpHead.open{color:#a5b4fc}
+.navGrpBody{display:none;flex-direction:column;gap:1px;padding-left:8px}
+.navGrpBody.open{display:flex}
+.navLeaf{background:none;border:none;color:#c3d4ea;font-size:12.5px;padding:6px 10px;cursor:pointer;border-radius:5px;text-align:left;width:100%;transition:background .15s,color .15s;position:relative;padding-left:18px}
+.navLeaf::before{content:'';position:absolute;left:7px;top:50%;transform:translateY(-50%);width:4px;height:4px;border-radius:50%;background:currentColor;opacity:.35;transition:opacity .15s}
+.navLeaf:hover{background:rgba(255,255,255,.06);color:#e5e7eb}
+.navLeaf:hover::before{opacity:.7}
+.navLeaf.active{background:rgba(99,102,241,.18);color:#a5b4fc;font-weight:600}
+.navLeaf.active::before{opacity:1;background:#818cf8}
+.navChevron{font-size:11px;transition:transform .2s;display:inline-block;opacity:.55}
+.navSubsysHead:not(.open) .navChevron,.navGrpHead:not(.open) .navChevron{transform:rotate(-90deg)}
+@media(max-width:768px){.navTree{overflow-y:auto;-webkit-overflow-scrolling:touch}}
 </style>
 </head>
 <body>
@@ -858,42 +889,13 @@ tbody tr:last-child td{border-bottom:0}
     <div class="brand"><div class="logo" id="brandLogo">L3A</div><div><b id="brandName">Contratos L3A</b><span id="brandSub">Gestão operacional • SDAI • Contratos</span></div></div><button class="sideToggle" id="sideCollapseBtn"><i><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6.5h16M4 12h16M4 17.5h16"/></svg></i><span> Recolher menu</span></button>
     <div class="clienteSelector"><select id="clienteSideSelect" onchange="switchClienteSide(this.value)"><option value="">— Selecionar cliente —</option></select></div>
     <div class="profileBadge" id="profileBadge"><b>Usuário</b><span>Administrador</span></div>
-    <div class="nav">
-      <div class="navTitle">Gestão</div>
-      <button class="active" data-view="dashboard"><i><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="1.6" fill="currentColor" fill-opacity=".15"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6" fill="currentColor" fill-opacity=".15"/></svg></i><span>Dashboard</span></button>
-      <div class="navTitle">Base técnica</div>
-      <button data-view="paineis"><i><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="12" rx="2" fill="currentColor" fill-opacity=".12"/><path d="M8.5 20.5h7M12 16.5v4"/></svg></i><span>Painéis</span></button>
-      <button data-view="lacos"><i><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 0 1 13.3-6M20 12a8 8 0 0 1-13.3 6"/><path d="M17 3v4h-4M7 21v-4h4"/></svg></i><span>Laços</span></button>
-      <button data-view="flms"><i><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6.5" y="6.5" width="11" height="11" rx="2" fill="currentColor" fill-opacity=".14"/><path d="M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3"/></svg></i><span>Módulos</span></button>
-      <button data-view="equipamentos"><i><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-6.1 7-11.5A7 7 0 0 0 5 9.5C5 14.9 12 21 12 21Z" fill="currentColor" fill-opacity=".14"/><circle cx="12" cy="9.5" r="2.4"/></svg></i><span>Detectores / Acionadores</span></button>
-      <div class="navTitle">Operação</div>
-      <button data-view="locais"><i><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5 5 4h14l1 5.5"/><path d="M4 9.5a2.3 2.3 0 0 0 4.4 1 2.3 2.3 0 0 0 4.4 0 2.3 2.3 0 0 0 4.4 0 2.3 2.3 0 0 0 4.4-1" fill="currentColor" fill-opacity=".12"/><path d="M5.5 10.5V20h13v-9.5"/><path d="M10 20v-5h4v5"/></svg></i><span>Lojas / Áreas</span></button>
-      <button data-view="falhas"><i><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 21.5 20h-19L12 3.5Z" fill="currentColor" fill-opacity=".14"/><path d="M12 9.5v4.2"/><circle cx="12" cy="17" r=".9" fill="currentColor" stroke="none"/></svg></i><span>Falhas</span></button>
-      <button data-view="plano"><i><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4.5" width="14" height="16" rx="2" fill="currentColor" fill-opacity=".1"/><path d="M9 4.5V3h6v1.5"/><path d="M9 12.5l2 2 4-4.2"/></svg></i><span>Plano de Ação</span></button>
-      <button data-view="plantas"><i><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="17" height="17" rx="2" fill="currentColor" fill-opacity=".1"/><path d="M3.5 9h7v11.5M10.5 9V3.5M10.5 15h10"/><circle cx="16" cy="11.5" r="1.4" fill="currentColor" stroke="none"/></svg></i><span>Plantas</span></button>
-      <div class="navTitle">Dados</div>
-      <button data-view="relatorios"><i><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3.5h7l4 4V20a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1Z" fill="currentColor" fill-opacity=".1"/><path d="M14 3.5V8h4"/><path d="M9 13h6M9 16.5h6"/></svg></i><span>Relatórios</span></button>
-      <button data-view="importacao"><i><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4M8 8l4-4 4 4"/><path d="M4 15v3.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V15" fill="currentColor" fill-opacity=".1"/></svg></i><span>Importação</span></button>
-      <button data-view="exportacao"><i><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M8 11l4 4 4-4"/><path d="M4 15v3.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V15" fill="currentColor" fill-opacity=".1"/></svg></i><span>Exportação</span></button>
-      <div class="navTitle" id="navSubsisTitle" style="display:none">Subsistemas</div>
-      <button data-view="cftv" id="navBtnCftv" style="display:none"><i><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8h14l5 4-5 4H2V8Z" fill="currentColor" fill-opacity=".13"/><circle cx="7.5" cy="12" r="1.5" fill="currentColor" fill-opacity=".5" stroke="none"/><path d="M2 12h2"/></svg></i><span>CFTV</span></button>
-      <button data-view="acesso" id="navBtnAcesso" style="display:none"><i><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="11" width="15" height="10" rx="2" fill="currentColor" fill-opacity=".12"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/><circle cx="12" cy="16" r="1.5" fill="currentColor" stroke="none"/></svg></i><span>Controle de Acesso</span></button>
-      <button data-view="ambiente" id="navBtnAmbiente" style="display:none"><i><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6l2 5H7L9 3Z" fill="currentColor" fill-opacity=".12"/><path d="M7 8v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V8"/><path d="M9 12h6M9 15.5h4"/></svg></i><span>Ambiente / Som</span></button>
-      <div class="navTitle">Sistema</div>
-      <button data-view="clientes"><i><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8.5" r="3" fill="currentColor" fill-opacity=".15"/><circle cx="16" cy="8.5" r="3" fill="currentColor" fill-opacity=".15"/><path d="M2 20c1-3.3 3.3-5 6-5s5 1.7 6 5"/><path d="M18 15c2 0 4 1.2 4 5"/></svg></i><span>Clientes</span></button>
-      <button data-view="sistema"><i><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5.5" rx="7.5" ry="2.5" fill="currentColor" fill-opacity=".14"/><path d="M4.5 5.5V18c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5V5.5"/><path d="M4.5 12c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5"/></svg></i><span>Banco de Dados</span></button>
-      <button data-view="usuarios"><i><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.6" fill="currentColor" fill-opacity=".16"/><path d="M4.5 20c1-4 4.2-6 7.5-6s6.5 2 7.5 6"/></svg></i><span>Usuários e Acessos</span></button>
-      <button data-view="configuracoes"><i><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2" fill="currentColor" fill-opacity=".16"/><path d="M12 3.5v2M12 18.5v2M20.5 12h-2M5.5 12h-2M17.7 6.3l-1.4 1.4M7.7 16.3l-1.4 1.4M17.7 17.7l-1.4-1.4M7.7 7.7 6.3 6.3"/></svg></i><span>Configurações</span></button>
-      <button data-view="backup"><i><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18.5a4.2 4.2 0 0 1-1-8.3 5.4 5.4 0 0 1 10.4-1.6A4 4 0 0 1 17 18.5H7Z" fill="currentColor" fill-opacity=".12"/><path d="M12 10.5v6M9.3 14l2.7 2.7 2.7-2.7"/></svg></i><span>Backup</span></button>
-      <button data-view="logs"><i><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12.5" r="8" fill="currentColor" fill-opacity=".12"/><path d="M12 8.5v4.3l3 2"/><path d="M6.4 4.9 4.8 3.3"/></svg></i><span>Logs</span></button>
-      <button data-view="sobre"><i><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5" fill="currentColor" fill-opacity=".12"/><path d="M12 11v5.5"/><circle cx="12" cy="8" r=".9" fill="currentColor" stroke="none"/></svg></i><span>Sobre</span></button>
-    </div>
+    <div class="navTree" id="navTree"></div>
   </aside>
   <main class="main">
     <header class="top">
       <div class="pageHead">
         <button class="menuToggle" id="mobileMenuBtn" aria-label="Abrir menu"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6.5h16M4 12h16M4 17.5h16"/></svg></button>
-        <div class="pageTitleWrap"><h1 id="pageTitle">Dashboard</h1><p>Gestão técnica SDAI • Bosch FPA/AVENAR • Shopping Pantanal</p></div>
+        <div class="pageTitleWrap"><h1 id="pageTitle">Dashboard</h1><p id="breadcrumb">Gestão técnica SDAI • Bosch FPA/AVENAR</p></div>
       </div>
       <div class="topMeta">
         <div class="syncFooter" id="syncFooter"><span class="syncDot warn" id="syncDot"></span><span id="syncText">Banco local</span></div>
@@ -929,6 +931,7 @@ tbody tr:last-child td{border-bottom:0}
       <section id="cftv" class="view"></section>
       <section id="acesso" class="view"></section>
       <section id="ambiente" class="view"></section>
+      <section id="visaoGeral" class="view"></section>
     </div>
   </main>
 </div>
@@ -957,9 +960,123 @@ tbody tr:last-child td{border-bottom:0}
 const KEY='sdai_bosch_manager_v4_flm_portas';
 const KEY_CLIENTES='sdai_l3a_clientes_v1';
 const KEY_CLIENTE_ATIVO='sdai_l3a_cliente_ativo';
+
+/* =========================================================================
+   MENU TREE — navegação em árvore
+   ========================================================================= */
+const MENU_TREE_SUBSYS = [
+  { key:'sdai', label:'SDAI', modulo:'sdai',
+    groups:[
+      {key:'gestao',label:'Gestão',items:[{view:'dashboard',label:'Dashboard SDAI'}]},
+      {key:'baseTecnica',label:'Base Técnica',items:[
+        {view:'paineis',label:'Painéis'},{view:'lacos',label:'Laços'},
+        {view:'flms',label:'Módulos'},{view:'equipamentos',label:'Detectores / Acionadores'}
+      ]},
+      {key:'operacao',label:'Operação',items:[
+        {view:'locais',label:'Lojas / Áreas'},{view:'falhas',label:'Falhas'},
+        {view:'plano',label:'Plano de Ação'},{view:'plantas',label:'Plantas'}
+      ]},
+      {key:'dados',label:'Dados',items:[
+        {view:'relatorios',label:'Relatórios SDAI'},{view:'importacao',label:'Importação SDAI'},
+        {view:'exportacao',label:'Exportação SDAI'}
+      ]}
+    ]
+  },
+  { key:'cftv', label:'CFTV', modulo:'cftv',
+    groups:[
+      {key:'gestao',label:'Gestão',items:[{view:'cftvDashboard',label:'Dashboard CFTV'}]},
+      {key:'baseTecnica',label:'Base Técnica',items:[
+        {view:'cftvCameras',label:'Câmeras'},{view:'cftvGravadores',label:'Gravadores'},
+        {view:'cftvSwitches',label:'Switches'},{view:'cftvRede',label:'Pontos de rede'}
+      ]},
+      {key:'operacao',label:'Operação',items:[
+        {view:'cftvLocais',label:'Locais'},{view:'cftvOcorrencias',label:'Ocorrências'},
+        {view:'cftvPlano',label:'Plano de Ação'},{view:'cftvTestes',label:'Testes'},
+        {view:'cftvPlantas',label:'Plantas'}
+      ]},
+      {key:'dados',label:'Dados',items:[
+        {view:'cftvRelatorios',label:'Relatórios CFTV'},{view:'cftvImportacao',label:'Importação CFTV'},
+        {view:'cftvExportacao',label:'Exportação CFTV'}
+      ]}
+    ]
+  },
+  { key:'acesso', label:'Controle de Acesso', modulo:'acesso',
+    groups:[
+      {key:'gestao',label:'Gestão',items:[{view:'acessoDashboard',label:'Dashboard de Acesso'}]},
+      {key:'baseTecnica',label:'Base Técnica',items:[
+        {view:'acessoPortas',label:'Portas'},{view:'acessoCatracas',label:'Catracas'},
+        {view:'acessoLeitores',label:'Leitores'},{view:'acessoControladoras',label:'Controladoras'}
+      ]},
+      {key:'operacao',label:'Operação',items:[
+        {view:'acessoOcorrencias',label:'Ocorrências'},{view:'acessoPlano',label:'Plano de Ação'},
+        {view:'acessoTestes',label:'Testes'},{view:'acessoPlantas',label:'Plantas'}
+      ]},
+      {key:'dados',label:'Dados',items:[
+        {view:'acessoRelatorios',label:'Relatórios de Acesso'},
+        {view:'acessoImportacao',label:'Importação de Acesso'},
+        {view:'acessoExportacao',label:'Exportação de Acesso'}
+      ]}
+    ]
+  },
+  { key:'ambiente', label:'Ambiente / Som', modulo:'ambiente',
+    groups:[
+      {key:'gestao',label:'Gestão',items:[{view:'ambienteDashboard',label:'Dashboard Ambiente / Som'}]},
+      {key:'baseTecnica',label:'Base Técnica',items:[
+        {view:'ambienteSensores',label:'Sensores'},{view:'ambienteAmplificadores',label:'Amplificadores'},
+        {view:'ambienteAltfalantes',label:'Alto-falantes'},{view:'ambienteControladores',label:'Controladores'},
+        {view:'ambienteEquipamentos',label:'Equip. Ambientais'}
+      ]},
+      {key:'operacao',label:'Operação',items:[
+        {view:'ambienteAmbientes',label:'Ambientes'},{view:'ambienteOcorrencias',label:'Ocorrências'},
+        {view:'ambientePlano',label:'Plano de Ação'},{view:'ambienteTestes',label:'Testes'},
+        {view:'ambientePlantas',label:'Plantas'}
+      ]},
+      {key:'dados',label:'Dados',items:[
+        {view:'ambienteRelatorios',label:'Relatórios Ambiente'},
+        {view:'ambienteImportacao',label:'Importação Ambiente'},
+        {view:'ambienteExportacao',label:'Exportação Ambiente'}
+      ]}
+    ]
+  }
+];
+const MENU_SISTEMA_ITEMS=[
+  {view:'clientes',label:'Clientes'},{view:'sistema',label:'Banco de Dados'},
+  {view:'usuarios',label:'Usuários e Acessos'},{view:'configuracoes',label:'Configurações'},
+  {view:'backup',label:'Backup'},{view:'logs',label:'Logs'},{view:'sobre',label:'Sobre'}
+];
+const VIEW_TO_SECTION={
+  visaoGeral:'visaoGeral',
+  dashboard:'dashboard',paineis:'paineis',lacos:'lacos',flms:'flms',
+  locais:'locais',equipamentos:'equipamentos',falhas:'falhas',plano:'plano',
+  plantas:'plantas',relatorios:'relatorios',importacao:'importacao',exportacao:'exportacao',
+  cftv:'cftv',cftvDashboard:'cftv',cftvCameras:'cftv',cftvGravadores:'cftv',
+  cftvSwitches:'cftv',cftvRede:'cftv',cftvLocais:'cftv',cftvOcorrencias:'cftv',
+  cftvPlano:'cftv',cftvTestes:'cftv',cftvPlantas:'cftv',
+  cftvRelatorios:'cftv',cftvImportacao:'cftv',cftvExportacao:'cftv',
+  acesso:'acesso',acessoDashboard:'acesso',acessoPortas:'acesso',acessoCatracas:'acesso',
+  acessoLeitores:'acesso',acessoControladoras:'acesso',acessoOcorrencias:'acesso',
+  acessoPlano:'acesso',acessoTestes:'acesso',acessoPlantas:'acesso',
+  acessoRelatorios:'acesso',acessoImportacao:'acesso',acessoExportacao:'acesso',
+  ambiente:'ambiente',ambienteDashboard:'ambiente',ambienteSensores:'ambiente',
+  ambienteAmplificadores:'ambiente',ambienteAltfalantes:'ambiente',ambienteControladores:'ambiente',
+  ambienteEquipamentos:'ambiente',ambienteAmbientes:'ambiente',ambienteOcorrencias:'ambiente',
+  ambientePlano:'ambiente',ambienteTestes:'ambiente',ambientePlantas:'ambiente',
+  ambienteRelatorios:'ambiente',ambienteImportacao:'ambiente',ambienteExportacao:'ambiente',
+  clientes:'clientes',sistema:'sistema',usuarios:'usuarios',
+  configuracoes:'configuracoes',backup:'backup',logs:'logs',sobre:'sobre'
+};
+function viewLocation(view){
+  for(const s of MENU_TREE_SUBSYS){
+    for(const g of s.groups){
+      if(g.items.some(i=>i.view===view))return{subsys:s.key,group:g.key};
+    }
+  }
+  return null;
+}
+
 const API_URL='https://script.google.com/macros/s/AKfycby45dTdw4g-pkcvY9sys3_gmvVcmnSyf6PZzJbRsbSFjhtuWbV1D5XSBEc-J1UtOBYftA/exec';
 const SYNC_KEY=KEY+':syncConfig';
-const emptyDB=()=>({empreendimento:{nome:'Empreendimento',cliente:'Cliente'},config:{appName:'Contratos L3A',subtitle:'Gestão operacional • SDAI • Contratos',logoData:''},usuarios:[{id:'admin-default',nome:'Administrador',email:'admin@local',perfil:'Administrador',senha:'1234',ativo:'Sim',criadoEm:''}],paineis:[],lacos:[],flms:[],portas:[],locais:[],equipamentos:[],falhas:[],planos:[],inconsistencias:[],imports:[],plantas:[],notificacoes:[],cftv:[],acessoPontos:[],ambienteEquip:[]});
+const emptyDB=()=>({empreendimento:{nome:'Empreendimento',cliente:'Cliente'},config:{appName:'Contratos L3A',subtitle:'Gestão operacional • SDAI • Contratos',logoData:''},usuarios:[{id:'admin-default',nome:'Administrador',email:'admin@local',perfil:'Administrador',senha:'1234',ativo:'Sim',criadoEm:''}],paineis:[],lacos:[],flms:[],portas:[],locais:[],equipamentos:[],falhas:[],planos:[],testes:[],inconsistencias:[],imports:[],plantas:[],notificacoes:[],cftv:[],acessoPontos:[],ambienteEquip:[]});
 
 /* ── MULTI-CLIENTE ─────────────────────────────────────────────────────── */
 const MODULOS_DISPONIVEIS=['sdai','cftv','acesso','ambiente'];
@@ -996,18 +1113,193 @@ function persistClienteDb(cid){
   try{
     // Salva usuários de volta no global antes de gravar o cliente
     saveUsuariosGlobais(db.usuarios||[]);
-    localStorage.setItem(clienteDbKey(cid),JSON.stringify(db));
+    // Item 7 (isolamento): usuários NUNCA ficam gravados dentro do blob localStorage do cliente —
+    // eles já vivem exclusivamente na chave global (acima) e são reinjetados em memória por
+    // loadClienteDb() a cada carregamento. Gravá-los aqui também duplicaria dados sensíveis (hash de
+    // senha) em toda base de cliente sem necessidade.
+    const {usuarios,...dbSemUsuarios}=db;
+    localStorage.setItem(clienteDbKey(cid),JSON.stringify(dbSemUsuarios));
   }catch(e){console.warn('persist cliente',e)}}
 
-/* Trocar cliente ativo */
+/* ---- Menu tree state ---- */
+/* Estado do menu POR CLIENTE: qual subsistema está aberto, qual grupo dentro de
+   cada subsistema, e a última tela acessada. Tudo persistido em
+   localStorage['sdai_menu_v1__<clienteId>'] — isolado por cliente. */
+let menuState={openSubsys:'sdai',openGroups:{},lastView:''};
+function menuStateKey(){return 'sdai_menu_v1__'+(clienteAtivo()||'global')}
+function loadMenuStateLocal(){try{return Object.assign({openSubsys:'sdai',openGroups:{},lastView:''},JSON.parse(localStorage.getItem(menuStateKey())||'{}'))}catch(e){return{openSubsys:'sdai',openGroups:{},lastView:''}}}
+function saveMenuStateLocal(){try{localStorage.setItem(menuStateKey(),JSON.stringify(menuState))}catch(e){}}
+
+/* Módulos habilitados do cliente ativo (SDAI por padrão quando não há cliente). */
+function modulosClienteAtivo(){const c=clienteAtivoObj();return c?(c.modulos&&c.modulos.length?c.modulos:['sdai']):['sdai'];}
+/* Uma view é válida para o cliente se:
+   - for tela de Sistema (clientes, banco, usuários…) ou Visão Geral → sempre válida;
+   - for de um subsistema cujo módulo está habilitado no cliente. */
+function viewValidaParaCliente(view){
+  if(view==='visaoGeral')return true;
+  if(MENU_SISTEMA_ITEMS.some(i=>i.view===view))return true;
+  const loc=viewLocation(view);
+  if(!loc)return false; // view desconhecida
+  return modulosClienteAtivo().includes(loc.subsys);
+}
+/* Primeira view disponível para o cliente: Visão Geral (sempre existe). */
+function primeiraViewCliente(){return 'visaoGeral';}
+/* Decide a view de entrada ao (re)abrir um cliente, na ordem de prioridade pedida:
+   1) última view salva daquele cliente, se ainda válida;
+   2) senão, Visão Geral;
+   3) nunca abre o Dashboard SDAI para cliente sem SDAI. */
+function viewInicialCliente(){
+  const st=loadMenuStateLocal();
+  const last=st.lastView;
+  if(last&&viewValidaParaCliente(last))return last;
+  return primeiraViewCliente();
+}
+function toggleSubsys(key){
+  if(menuState.openSubsys===key){menuState.openSubsys=null}else{menuState.openSubsys=key}
+  saveMenuStateLocal(); buildNavTree();
+}
+function toggleGrp(subsysKey,grpKey){
+  const cur=menuState.openGroups[subsysKey];
+  menuState.openGroups[subsysKey]=(cur===grpKey?null:grpKey);
+  saveMenuStateLocal(); buildNavTree();
+}
+function buildNavTree(){
+  const tree=document.getElementById('navTree'); if(!tree)return;
+  menuState=loadMenuStateLocal();
+  const c=clienteAtivoObj();
+  const modulos=c?(c.modulos||['sdai']):['sdai'];
+  const loc=viewLocation(currentView);
+  if(loc&&menuState.openSubsys!==loc.subsys){menuState.openSubsys=loc.subsys;saveMenuStateLocal();}
+  if(loc&&!menuState.openGroups[loc.subsys]){menuState.openGroups[loc.subsys]=loc.group;saveMenuStateLocal();}
+  const u=currentUserSafe();
+  const uvs=userViews(u);
+
+  let html='';
+  html+=`<div class="navSectionLabel">Gestão Geral</div>`;
+  html+=`<button class="navFlatItem${currentView==='visaoGeral'?' active':''}" onclick="navigate('visaoGeral')"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg><span>Visão Geral do Cliente</span></button>`;
+
+  html+=`<div class="navSectionLabel" style="margin-top:8px">Subsistemas</div>`;
+  for(const s of MENU_TREE_SUBSYS){
+    if(!modulos.includes(s.modulo))continue;
+    const isOpen=menuState.openSubsys===s.key;
+    html+=`<div class="navSubsysBlock">`;
+    html+=`<button class="navSubsysHead${isOpen?' open':''}" onclick="toggleSubsys('${s.key}')"><span>${s.label}</span><span class="navChevron">▾</span></button>`;
+    html+=`<div class="navSubsysBody${isOpen?' open':''}">`;
+    for(const g of s.groups){
+      const isGrpOpen=menuState.openGroups[s.key]===g.key;
+      const hasActive=g.items.some(i=>i.view===currentView);
+      const grpOpen=isGrpOpen||hasActive;
+      html+=`<div class="navGrpBlock">`;
+      html+=`<button class="navGrpHead${grpOpen?' open':''}" onclick="toggleGrp('${s.key}','${g.key}')">${g.label}<span class="navChevron">▾</span></button>`;
+      html+=`<div class="navGrpBody${grpOpen?' open':''}">`;
+      for(const item of g.items){
+        html+=`<button class="navLeaf${currentView===item.view?' active':''}" onclick="navigate('${item.view}')">${item.label}</button>`;
+      }
+      html+=`</div></div>`;
+    }
+    html+=`</div></div>`;
+  }
+
+  html+=`<div class="navSectionLabel" style="margin-top:8px">Sistema</div>`;
+  for(const item of MENU_SISTEMA_ITEMS){
+    if(!uvs.includes(item.view))continue;
+    html+=`<button class="navFlatItem${currentView===item.view?' active':''}" onclick="navigate('${item.view}')">${item.label}</button>`;
+  }
+  tree.innerHTML=html;
+}
+function navigate(view){
+  currentView=view;
+  // Persiste a última tela acessada para este cliente (exceto Clientes, que é
+  // ponto de partida quando ainda não há cliente selecionado).
+  try{menuState=loadMenuStateLocal();menuState.lastView=view;saveMenuStateLocal();}catch(e){}
+  render();
+  document.querySelector('.side')?.classList.remove('open');
+}
+function updateBreadcrumb(){
+  const el=document.getElementById('breadcrumb'); if(!el)return;
+  const c=clienteAtivoObj();
+  const cName=c?c.nome:'';
+  const loc=viewLocation(currentView);
+  const sysItem=MENU_SISTEMA_ITEMS.find(i=>i.view===currentView);
+  let path='';
+  if(loc){
+    const s=MENU_TREE_SUBSYS.find(x=>x.key===loc.subsys);
+    const g=s?.groups.find(x=>x.key===loc.group);
+    const item=g?.items.find(x=>x.view===currentView);
+    path=[s?.label,g?.label,item?.label].filter(Boolean).join(' › ');
+  } else if(currentView==='visaoGeral'){
+    path='Visão Geral do Cliente';
+  } else if(sysItem){
+    path='Sistema › '+sysItem.label;
+  } else {
+    path=L3A_VIEWS[currentView]||currentView;
+  }
+  el.textContent=cName?(cName+' • '+path):path;
+}
+function renderVisaoGeral(){
+  const el=document.getElementById('visaoGeral'); if(!el)return;
+  const c=clienteAtivoObj();
+  if(!c){el.innerHTML='<div class="premiumPanel"><p style="color:var(--l3a-text-muted)">Selecione um cliente para ver a visão geral.</p></div>';return;}
+  const mods=c.modulos||[];
+  const totalFalhas=(db.falhas||[]).filter(f=>isFalhaStatus(f.status)&&!f.resolvidaEm&&!f.excluida).length;
+  const planosAbertos=(db.planos||[]).filter(p=>p.situacao!=='Concluído'&&p.situacao!=='Cancelado').length;
+  el.innerHTML=`<div class="premiumPanel">
+    <div class="systemHeaderSlim">
+      <div class="titleBlock"><h3>Visão Geral — ${esc(c.nome)}</h3><p>Consolidado de todos os módulos ativos do cliente.</p></div>
+    </div>
+    <div class="premiumGrid">
+      <div class="premiumStat"><small>Módulos ativos</small><b>${mods.length}</b></div>
+      <div class="premiumStat"><small>Falhas abertas</small><b style="color:var(--l3a-danger)">${totalFalhas}</b></div>
+      <div class="premiumStat"><small>Planos pendentes</small><b style="color:var(--l3a-warning)">${planosAbertos}</b></div>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;margin-top:20px">
+    ${mods.includes('sdai')?`<div class="premiumPanel" style="cursor:pointer" onclick="navigate('dashboard')"><h4 style="margin-bottom:12px">SDAI — Detecção de Incêndio</h4><div class="premiumGrid" style="grid-template-columns:1fr 1fr">${premiumStat('Painéis',(db.paineis||[]).length)}${premiumStat('Falhas ativas',totalFalhas)}</div></div>`:''}
+    ${mods.includes('cftv')?`<div class="premiumPanel" style="cursor:pointer" onclick="navigate('cftvDashboard')"><h4 style="margin-bottom:12px">CFTV — Câmeras</h4><div class="premiumGrid" style="grid-template-columns:1fr 1fr">${premiumStat('Câmeras',(db.cftv||[]).length)}${premiumStat('Operando',(db.cftv||[]).filter(x=>x.status==='ok').length)}</div></div>`:''}
+    ${mods.includes('acesso')?`<div class="premiumPanel" style="cursor:pointer" onclick="navigate('acessoDashboard')"><h4 style="margin-bottom:12px">Controle de Acesso</h4><div class="premiumGrid" style="grid-template-columns:1fr 1fr">${premiumStat('Pontos',(db.acessoPontos||[]).length)}${premiumStat('Operando',(db.acessoPontos||[]).filter(x=>x.status==='ok').length)}</div></div>`:''}
+    ${mods.includes('ambiente')?`<div class="premiumPanel" style="cursor:pointer" onclick="navigate('ambienteDashboard')"><h4 style="margin-bottom:12px">Ambiente / Som</h4><div class="premiumGrid" style="grid-template-columns:1fr 1fr">${premiumStat('Equipamentos',(db.ambienteEquip||[]).length)}${premiumStat('Operando',(db.ambienteEquip||[]).filter(x=>x.status==='ok').length)}</div></div>`:''}
+  </div>`;
+}
+/* Etiqueta padrão para telas provisórias dos novos subsistemas (CFTV, Acesso,
+   Ambiente). Enquanto Gestão/Base Técnica/Operação/Dados forem stubs, o módulo
+   NÃO é considerado concluído e toda tela dele carrega esta marcação. */
+function moduloProvisorioBadge(){
+  return `<span class="moduloTag" title="Este módulo ainda está em construção">Módulo ainda não implementado</span>`;
+}
+function renderSubsisStub(titulo, subtitulo){
+  const sectionId=VIEW_TO_SECTION[currentView]||currentView;
+  const el=document.getElementById(sectionId); if(!el)return;
+  const c=clienteAtivoObj();
+  el.innerHTML=`<div class="premiumPanel">
+    <div class="systemHeaderSlim">
+      <div class="titleBlock"><h3>${esc(titulo)} ${moduloProvisorioBadge()}</h3><p>${esc(subtitulo)}${c?' — '+esc(c.nome):''}</p></div>
+    </div>
+    <div class="emptyState" style="margin-top:40px">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="12" cy="12" r="9"/><path d="M12 8v5l3 3"/></svg>
+      <b>Módulo ainda não implementado</b>
+      <p>As telas de Gestão, Base Técnica, Operação e Dados deste subsistema ainda estão em construção. Os dados do cliente permanecem preservados.</p>
+    </div>
+  </div>`;
+}
+
+/* Trocar cliente ativo.
+   Ao entrar em um cliente NÃO abre mais o Dashboard SDAI cegamente. Aplica a
+   prioridade: última view válida daquele cliente → senão Visão Geral. Se a última
+   view pertencer a um módulo agora desabilitado, cai para Visão Geral. */
 function switchCliente(cid,reload=true){
   const prevCid=clienteAtivo();
   if(prevCid)persistClienteDb(prevCid); // salva DB do cliente atual antes de trocar
   setClienteAtivo(cid);
   db=loadClienteDb(cid);
+  menuState=loadMenuStateLocal();
   updateClienteSideSelect();
-  updateNavSubsistemas();
-  if(reload){currentView='dashboard';render()}
+  if(reload){
+    currentView = cid ? viewInicialCliente() : 'clientes';
+    // Abre no menu o subsistema/grupo correspondente à view de entrada
+    const loc=viewLocation(currentView);
+    if(loc){menuState.openSubsys=loc.subsys;menuState.openGroups[loc.subsys]=loc.group;saveMenuStateLocal();}
+    render();
+  }
 }
 
 function switchClienteSide(cid){switchCliente(cid)}
@@ -1020,22 +1312,7 @@ function updateClienteSideSelect(){
 }
 
 /* Mostrar/ocultar botões de subsistemas conforme módulos do cliente ativo */
-function updateNavSubsistemas(){
-  const c=clienteAtivoObj();
-  const mods=c?c.modulos||[]:[];
-  const hasCftv=mods.includes('cftv');
-  const hasAcesso=mods.includes('acesso');
-  const hasAmb=mods.includes('ambiente');
-  const hasAny=hasCftv||hasAcesso||hasAmb;
-  const titleEl=document.getElementById('navSubsisTitle');
-  if(titleEl)titleEl.style.display=hasAny?'':'none';
-  const bCftv=document.getElementById('navBtnCftv');
-  const bAcesso=document.getElementById('navBtnAcesso');
-  const bAmb=document.getElementById('navBtnAmbiente');
-  if(bCftv)bCftv.style.display=hasCftv?'flex':'none';
-  if(bAcesso)bAcesso.style.display=hasAcesso?'flex':'none';
-  if(bAmb)bAmb.style.display=hasAmb?'flex':'none';
-}
+function updateNavSubsistemas(){try{buildNavTree()}catch(e){}}
 
 let db=load(); let currentView='dashboard'; let filters={};
 let searchRenderTimer=null;
@@ -1076,7 +1353,9 @@ function persistLocal(){
     const cid=clienteAtivo();
     if(cid){
       saveUsuariosGlobais(db.usuarios||[]); // usuários sempre salvos globalmente
-      localStorage.setItem(clienteDbKey(cid),JSON.stringify(db));
+      // Item 7 (isolamento): não duplicar usuários dentro do blob por-cliente (ver persistClienteDb).
+      const {usuarios,...dbSemUsuarios}=db;
+      localStorage.setItem(clienteDbKey(cid),JSON.stringify(dbSemUsuarios));
     }else{
       localStorage.setItem(KEY,JSON.stringify(db));
     }
@@ -1100,7 +1379,42 @@ window.addEventListener('beforeunload',()=>{if(_persistPendente)persistLocal()})
 // término de um envio antigo podia sobrescrever o indicador como sincronizado mesmo com edições
 // mais novas ainda não enviadas, dando a impressão de que a alteração "sumiu".
 let _dbVersion=0;
-function markDirty(reason='alteração'){persistLocalThrottled(); _dbVersion++; setSyncCfg({dirty:true,lastReason:reason}); scheduleAutoSync(1500)}
+/* =========================================================================
+   FUNDAÇÃO DE SINCRONIZAÇÃO MULTIUSUÁRIO (2026-07) — item 8/9 da auditoria.
+   Ainda não é resolução de conflito completa (isso exige merge de campo a
+   campo e UI dedicada), mas prepara a base: toda alteração local avança
+   `db._revision`, registra quem/quando (`_updatedAt`/`_updatedBy`), e o envio
+   ao Google carrega um checksum das coleções críticas — não apenas a
+   contagem — para detectar sobrescrita silenciosa entre clientes/usuários.
+   ========================================================================= */
+function bumpRevision(reason){
+  db._revision=(db._revision||0)+1;
+  db._updatedAt=isoNow();
+  try{db._updatedBy=(currentUser().email||currentUser().nome||'desconhecido');}catch(e){db._updatedBy=db._updatedBy||'desconhecido';}
+}
+/* Checksum simples (não-criptográfico) das coleções que definem a integridade
+   do negócio — falhas, planos, testes. Suficiente para detectar divergência
+   entre o que foi enviado e o que voltou do Google, sem exigir libs externas. */
+function checksumColecoes(d){
+  // Item 8 (cobertura de checksum): expandido para cobrir também os cadastros técnicos e demais
+  // coleções em array que hoje ficam fora da conferência pós-sync (antes só falhas/planos/testes/
+  // equipamentos/flms/locais eram cobertos — uma sobrescrita silenciosa em, por exemplo, painéis ou
+  // histórico não era detectada). O algoritmo de hash em si não foi alterado, só a lista de chaves.
+  const colecoes=['falhas','planos','testes','equipamentos','flms','locais','paineis','lacos','portas','historico','plantas','cftv','acessoPontos','ambienteEquip'];
+  let h=0;
+  colecoes.forEach(k=>{
+    const arr=d[k]||[];
+    if(!Array.isArray(arr))return; // defensivo: ignora chaves que não sejam array nesta base
+    h=(h*31 + arr.length) >>> 0;
+    arr.forEach(o=>{
+      const chave=String(o.id||'')+'|'+String(o.status||o.situacao||'')+'|'+String(o.atualizadoEm||o.data||o.criadoEm||'');
+      for(let c=0;c<chave.length;c++){h=((h<<5)-h+chave.charCodeAt(c))>>>0;}
+    });
+  });
+  if(d.config)h=(h*31+JSON.stringify(d.config).length)>>>0;
+  return h.toString(16);
+}
+function markDirty(reason='alteração'){bumpRevision(reason); persistLocalThrottled(); _dbVersion++; setSyncCfg({dirty:true,lastReason:reason}); scheduleAutoSync(1500)}
 function save(){markDirty('salvamento');render()}
 function updateSyncFooter(status){const c=syncCfg(); const dot=document.getElementById('syncDot'), txt=document.getElementById('syncText'); if(!dot||!txt)return; dot.className='syncDot '+(status==='saving'?'warn':status==='error'?'bad':(!c.configured?'warn':c.dirty?'warn':'ok')); txt.textContent=status==='saving'?'Sincronizando...':status==='error'?'Falha ao sincronizar':(!c.configured?'Banco Google não configurado':c.dirty?'Alterações pendentes':'Sincronizado '+(c.lastSync||''));}
 let autoSyncTimer=null; let _recuperandoBaseInicial=false; function scheduleAutoSync(ms){const c=syncCfg(); if(!c.configured||!c.auto||_recuperandoBaseInicial)return; clearTimeout(autoSyncTimer); autoSyncTimer=setTimeout(()=>syncNow(false),ms||((c.intervalSec||30)*1000));}
@@ -1118,8 +1432,41 @@ function setApiToken(t){localStorage.setItem(API_TOKEN_KEY,String(t||''))}
 function jsonp(action, params={}){return new Promise((resolve,reject)=>{const cb='cb_'+Date.now()+'_'+Math.random().toString(36).slice(2); window[cb]=(data)=>{delete window[cb]; s.remove(); resolve(data)}; const q=new URLSearchParams({action,callback:cb,token:getApiToken(),...params}); const s=document.createElement('script'); s.src=API_URL+'?'+q.toString(); s.onerror=()=>{delete window[cb]; s.remove(); reject(new Error('Falha de comunicação com Apps Script'))}; document.body.appendChild(s); setTimeout(()=>{if(window[cb]){delete window[cb]; try{s.remove()}catch(e){} reject(new Error('Tempo esgotado na API'))}},30000)})}
 async function apiPost(action,payload){
   const cid=clienteAtivo();
-  const body=Object.assign({action,payload,token:getApiToken()},cid?{clienteId:cid}:{});
-  return fetch(API_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)});
+  // Item 10 (usuários globais): usuários NUNCA viajam dentro da base de um cliente — eles são
+  // injetados em memória só para permissões locais (ver loadClienteDb/persistClienteDb) e devem
+  // ficar exclusivamente na base administrativa (master). Ao enviar saveClienteDb/save com um
+  // cliente ativo, removemos `usuarios` do payload antes de serializar, para nunca poluir a
+  // planilha do cliente nem depender de o backend simplesmente ignorar o campo.
+  let finalPayload=payload;
+  if(cid && payload && payload.db && Object.prototype.hasOwnProperty.call(payload.db,'usuarios')){
+    const {usuarios,...dbSemUsuarios}=payload.db;
+    finalPayload=Object.assign({},payload,{db:dbSemUsuarios});
+  }
+  const body=Object.assign({action,payload:finalPayload,token:getApiToken()},cid?{clienteId:cid}:{});
+  // Task 3 (estabilização 2026-07): antes, este fetch usava SEMPRE mode:'no-cors', o que torna a
+  // resposta opaca — o navegador nunca deixava o JS ler o corpo, então o frontend não conseguia
+  // saber, em tempo real, se o Code.gs rejeitou a gravação por conflito de revisão
+  // (revisaoConflita_/registrarRevisao_, já existentes no backend). Content-Type
+  // 'text/plain;charset=utf-8' já era usado (compatível com "simple request" do CORS — não dispara
+  // preflight OPTIONS, que o Apps Script não trata), então basta tentar sem no-cors primeiro.
+  // Se este deployment específico do Apps Script não permitir leitura cross-origin (comportamento
+  // pode variar por implantação/navegador — não há como testar isso a partir deste ambiente sandbox
+  // sem um deployment real), o fetch decolagem lança e caímos de volta no comportamento antigo
+  // (fire-and-forget com no-cors) — ou seja, no pior caso, o sistema volta a se comportar
+  // EXATAMENTE como antes desta mudança; a checagem pós-sync por checksum continua sendo a rede de
+  // segurança nesse caso.
+  try{
+    const res=await fetch(API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)});
+    let parsed=null;
+    try{parsed=await res.json();}catch(e){/* resposta não é JSON (ou vazia) — segue com parsed=null */}
+    return {httpOk:res.ok,data:parsed};
+  }catch(e){
+    console.warn('apiPost: fetch com CORS falhou, usando fallback no-cors (fire-and-forget). Detalhe:',e && e.message);
+    try{
+      await fetch(API_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)});
+    }catch(e2){console.warn('apiPost: fallback no-cors também falhou:',e2 && e2.message);}
+    return {httpOk:null,data:null};
+  }
 }
 /* Sincroniza a lista de clientes com o Google (chama saveClientes no backend) */
 async function syncClientesGoogle(){
@@ -1139,7 +1486,7 @@ async function ensureClienteSheet(cid,nomeCliente){
   }catch(e){console.warn('setupClienteDb falhou:',e.message)}
 }
 async function setupGoogle(){try{updateSyncFooter('saving'); const r=await jsonp('setup'); if(!r.ok)throw new Error(r.error||'Erro ao configurar banco'); setSyncCfg({configured:true,sheetUrl:r.sheetUrl||'',dirty:true}); renderSistema(); updateSyncFooter(); alert('Banco Google configurado/validado.');}catch(e){updateSyncFooter('error'); alert('Falha ao configurar banco: '+e.message)}}
-async function loadGoogle(){try{updateSyncFooter('saving'); const r=await jsonp('load'); if(!r.ok)throw new Error(r.error||'Erro ao carregar'); if(r.db && Object.keys(r.db).length){
+async function loadGoogle(){try{updateSyncFooter('saving'); const r=await jsonpDbAtual(); if(!r.ok)throw new Error(r.error||'Erro ao carregar'); if(r.db && Object.keys(r.db).length){
   const atual=lucContagemDB(db); const novo=lucContagemDB(r.db);
   const chaves=Object.keys(atual); const riscoPerda=chaves.some(k=>(atual[k]||0)>0 && (novo[k]||0) < (atual[k]||0));
   if(riscoPerda){
@@ -1148,11 +1495,46 @@ async function loadGoogle(){try{updateSyncFooter('saving'); const r=await jsonp(
       updateSyncFooter(); return;
     }
   }
+  // Item 8 (fundação multiusuário): se a base local tem alterações não sincronizadas (dirty) E a
+  // revisão remota já avançou por outro usuário/aba, isto é um conflito em potencial — ainda não
+  // fazemos merge automático de campo a campo (fora de escopo desta etapa), mas paramos e avisamos
+  // em vez de sobrescrever silenciosamente o trabalho de quem sincronizou por último.
+  const localDirty=!!syncCfg().dirty;
+  const revRemota=r.db._revision||0, revLocalConhecida=db._revision||0;
+  if(localDirty && revRemota>revLocalConhecida && (r.db._updatedBy||'')!==(db._updatedBy||'')){
+    if(!confirm(`ATENÇÃO: existem alterações locais ainda não sincronizadas, e a base do Google foi atualizada por outro usuário (${esc(r.db._updatedBy||'desconhecido')}) depois da sua última sincronização.\\n\\nCarregar agora vai SUBSTITUIR suas alterações locais pelas do Google — não há mesclagem automática de campo a campo nesta versão. Recomenda-se anotar suas alterações pendentes antes de continuar.\\n\\nDeseja continuar mesmo assim?`)){
+      updateSyncFooter(); return;
+    }
+  }
   db=normalizeAllStatuses(Object.assign(emptyDB(),r.db)); persistLocal(); setSyncCfg({configured:true,dirty:false,lastSync:new Date().toLocaleTimeString('pt-BR')}); render();
 } else { alert('Banco Google vazio. Dados locais preservados. Use Sincronizar agora para enviar sua base.'); setSyncCfg({configured:true}); renderSistema(); }}catch(e){updateSyncFooter('error'); alert('Falha ao carregar Google: '+e.message)}}
-function baseParecevazia(){return !(db.paineis||[]).length && !(db.equipamentos||[]).length && !(db.locais||[]).length && !(db.flms||[]).length}
+function baseParecevazia(){
+  const semSdai = !(db.paineis||[]).length && !(db.equipamentos||[]).length && !(db.locais||[]).length && !(db.flms||[]).length;
+  const c=typeof clienteAtivoObj==='function'?clienteAtivoObj():null;
+  const mods=c?(c.modulos||['sdai']):['sdai'];
+  if(mods.includes('cftv') && (db.cftv||[]).length) return false;
+  if(mods.includes('acesso') && (db.acessoPontos||[]).length) return false;
+  if(mods.includes('ambiente') && (db.ambienteEquip||[]).length) return false;
+  return semSdai;
+}
 function lucContagemDB(d){return {locais:(d?.locais||[]).length,paineis:(d?.paineis||[]).length,equipamentos:(d?.equipamentos||[]).length,baseLojas:(d?.baseLojas||[]).length,flms:(d?.flms||[]).length}}
-async function verificarSyncSalvou(esperado){try{const r=await jsonp('load'); if(!r.ok||!r.db)return {ok:false,motivo:r.error||'Resposta inválida do Google ao conferir'}; const atual=lucContagemDB(r.db); const chaves=Object.keys(esperado); for(const k of chaves){if((atual[k]||0)!==(esperado[k]||0))return {ok:false,motivo:`Divergência em "${k}": local tinha ${esperado[k]}, Google Sheets tem ${atual[k]}`}} return {ok:true}}catch(e){return {ok:false,motivo:'Não foi possível conferir: '+e.message}}}
+/* Lê a base do Google da FONTE CORRETA: se há cliente ativo, lê a planilha DELE
+   (loadClienteDb + clienteId); senão, a base legada (load). Sem isso, a conferência
+   pós-sync e o "Carregar base Google" de um cliente liam a planilha master errada,
+   gerando falso alarme de divergência e risco de sobrescrita entre clientes. */
+function jsonpDbAtual(){
+  const cid=clienteAtivo();
+  return cid ? jsonp('loadClienteDb',{clienteId:cid}) : jsonp('load');
+}
+async function verificarSyncSalvou(esperado,checksumEsperado){try{const r=await jsonpDbAtual(); if(!r.ok||!r.db)return {ok:false,motivo:r.error||'Resposta inválida do Google ao conferir'}; const atual=lucContagemDB(r.db); const chaves=Object.keys(esperado); for(const k of chaves){if((atual[k]||0)!==(esperado[k]||0))return {ok:false,motivo:`Divergência em "${k}": local tinha ${esperado[k]}, Google Sheets tem ${atual[k]}`}}
+  // Item 9 (checksum): contagem batendo não é garantia suficiente — dois registros podem ter sido
+  // trocados (ex.: falha A e falha B ambas "abertas" mas com status/local trocados entre si) sem
+  // alterar nenhuma contagem. O checksum cobre o conteúdo real (id+status+data), não só o total.
+  if(checksumEsperado){
+    const checksumAtual=checksumColecoes(r.db);
+    if(checksumAtual!==checksumEsperado)return {ok:false,motivo:`Checksum divergente (contagens batem, mas o conteúdo não é idêntico ao enviado) — local: ${checksumEsperado}, Google Sheets: ${checksumAtual}. Possível sobrescrita concorrente por outro usuário/cliente.`};
+  }
+  return {ok:true}}catch(e){return {ok:false,motivo:'Não foi possível conferir: '+e.message}}}
 async function syncNow(showAlert=true){
   const c=syncCfg();
   if(!c.configured){ if(showAlert) alert('Configure/valide o banco Google primeiro.'); return; }
@@ -1166,9 +1548,22 @@ async function syncNow(showAlert=true){
     updateSyncFooter('saving');
     persistLocal();
     const esperado=lucContagemDB(db);
+    const checksumEsperado=checksumColecoes(db);
     const cid=clienteAtivo();
-    if(cid){await apiPost('saveClienteDb',{db});}
-    else{await apiPost('save',{db});}
+    const resultadoEnvio=cid?await apiPost('saveClienteDb',{db}):await apiPost('save',{db});
+    // Task 3 (estabilização 2026-07): agora que apiPost pode retornar a resposta legível do
+    // Code.gs (quando o navegador/deployment permite — ver comentário em apiPost), checamos aqui se
+    // o servidor rejeitou a gravação por conflito de revisão (revisaoConflita_ no Code.gs). Se
+    // resultadoEnvio.data vier null (fallback opaco no-cors, ou resposta não-JSON) OU não tiver
+    // "conflict", seguimos o fluxo normal já existente (a checagem por checksum abaixo continua
+    // sendo a rede de segurança nesse caso — nada muda em relação ao comportamento anterior).
+    if(resultadoEnvio && resultadoEnvio.data && resultadoEnvio.data.conflict===true){
+      updateSyncFooter('error');
+      alert(resultadoEnvio.data.error||'Outro usuário alterou esta base. Atualize os dados antes de salvar.');
+      setSyncCfg({dirty:true,lastReason:'conflito de gravação detectado pelo servidor'});
+      renderSistema();
+      return;
+    }
     await new Promise(r=>setTimeout(r,1200));
     // PERFORMANCE (2026-07): a conferência relê a base INTEIRA do Google (download completo) a cada
     // sync. No sync MANUAL isso continua sempre (é o momento em que o usuário quer certeza). No sync
@@ -1176,7 +1571,7 @@ async function syncNow(showAlert=true){
     // detecção de problema no Apps Script (qualquer divergência ainda é pega em no máximo 3 ciclos).
     window._syncVerifContador=(window._syncVerifContador||0)+1;
     const deveConferir=showAlert||window._syncVerifContador%3===1;
-    const verif=deveConferir?await verificarSyncSalvou(esperado):{ok:true,pulada:true};
+    const verif=deveConferir?await verificarSyncSalvou(esperado,checksumEsperado):{ok:true,pulada:true};
     if(!verif.ok){
       updateSyncFooter('error');
       if(showAlert) alert('ATENÇÃO: o envio foi disparado, mas a conferência mostra que o Google Sheets NÃO foi atualizado corretamente.\n\nMotivo: '+verif.motivo+'\n\nIsso costuma indicar problema no deploy/permissão do Apps Script (Code.gs), não no app. Seus dados continuam salvos localmente neste navegador. Recomenda-se verificar a implantação do Apps Script antes de sair da página.');
@@ -1271,7 +1666,51 @@ function handleStatusSelectChange(sel,onConfirm){
   }
 }
 function normalizeStatus(st){const raw=n(st); const x=up(raw); if(!x||x==='ATIVO'||x==='OK'||x==='NORMAL'||x.includes('OPERACAO')||x.includes('FUNCION'))return 'Em operação'; if(x.includes('INCEND')||x.includes('DISPAR')||x.includes('ALARME'))return 'Incêndio disparado'; if((x.includes('MODULO')||x.includes('MÓDULO'))&&x.includes('CURTO'))return 'Módulo em curto'; if((x.includes('MODULO')||x.includes('MÓDULO'))&&x.includes('ABERT'))return 'Módulo aberto'; if(x.includes('CURTO'))return 'Módulo em curto'; if((x.includes('LACO')||x.includes('LAÇO'))&&x.includes('ABERT'))return 'Laço aberto'; if(x.includes('ABERT'))return 'Laço aberto'; if(x.includes('LOGISTA')||x.includes('SISTEMA')||x.includes('FALHA'))return 'Laço aberto'; if(x.includes('DESATIV')||x==='INATIVO')return 'Desativação'; if(x.includes('TESTE'))return 'Em teste'; return raw||'Em operação'}
-function normalizeAllStatuses(base){['equipamentos','flms','locais','falhas'].forEach(k=>(base[k]||[]).forEach(o=>{if(o.status)o.status=normalizeStatus(o.status)}));sincronizarPlanosFalhas(base);return base}
+function auditoriaSanearFalhasPlanos(base){
+  base=base||db;
+  base.falhas=base.falhas||[]; base.planos=base.planos||[]; base.historico=base.historico||[];
+  const backup=JSON.parse(JSON.stringify({falhas:base.falhas,planos:base.planos}));
+  const logSaneamento=(entidade,entidadeId,acao,descricao)=>{
+    base.historico.push({id:id(),data:isoNow(),usuario:(typeof currentUser==='function'?(currentUser().email||currentUser().nome||'sistema'):'sistema'),entidade,entidadeId,acao,descricao});
+    if(base.historico.length>1000)base.historico=base.historico.slice(-1000);
+  };
+  // 1) Falhas sintéticas criadas pelo antigo concluirPlano (assinatura exata, ver FIX 1).
+  let falhasSinteticasRemovidas=0;
+  const sinteticas=base.falhas.filter(f=>f&&f.origem==='Plano de Ação'&&f.status==='Em operação'&&f.motivo==='Plano de ação concluído');
+  if(sinteticas.length){
+    const idsSint=new Set(sinteticas.map(f=>f.id));
+    sinteticas.forEach(f=>logSaneamento('falha',f.id,'saneamento','Falha sintética removida (criada indevidamente pela conclusão de plano). Dados migrados para histórico.'));
+    base.falhas=base.falhas.filter(f=>!idsSint.has(f.id));
+    falhasSinteticasRemovidas=sinteticas.length;
+  }
+  // 2) Planos duplicados por falhaId — mantém o mais avançado (Concluído > Em andamento > Aberto).
+  let planosDuplicadosRemovidos=0;
+  const pesoSit=s=>({'Concluído':3,'Em andamento':2,'Aberto':1}[s]||0);
+  const porFalha={};
+  base.planos.forEach(p=>{if(p&&p.falhaId)(porFalha[p.falhaId]=porFalha[p.falhaId]||[]).push(p)});
+  const idsRemoverPlanos=new Set();
+  Object.values(porFalha).forEach(lista=>{
+    if(lista.length<=1)return;
+    lista.sort((a,b)=>pesoSit(b.situacao)-pesoSit(a.situacao)||String(a.criadoEm||'').localeCompare(String(b.criadoEm||'')));
+    lista.slice(1).forEach(p=>{logSaneamento('plano',p.id,'saneamento','Plano duplicado removido (mesma falha já possuía plano mais avançado).');idsRemoverPlanos.add(p.id)});
+  });
+  if(idsRemoverPlanos.size){base.planos=base.planos.filter(p=>!idsRemoverPlanos.has(p.id)); planosDuplicadosRemovidos=idsRemoverPlanos.size}
+  // 3) Planos órfãos (falhaId que não corresponde a nenhuma falha em base.falhas) — Task 4 da
+  //    auditoria de concorrência/estabilização 2026-07. Podem ter sobrado de bugs históricos (ex.:
+  //    falha removida por um caminho que não passou pelo soft-delete). Deliberadamente NÃO
+  //    removidos automaticamente aqui (risco de perda de dado real sem certeza da causa) — apenas
+  //    contados e logados no histórico para visibilidade, para uma decisão humana futura.
+  const falhaIdsValidos=new Set(base.falhas.map(f=>f&&f.id).filter(Boolean));
+  const planosOrfaos=base.planos.filter(p=>p&&p.falhaId&&!falhaIdsValidos.has(p.falhaId));
+  if(planosOrfaos.length){
+    logSaneamento('plano','','saneamento','Detectados '+planosOrfaos.length+' plano(s) órfão(s) (falhaId sem falha correspondente em db.falhas). Nenhum removido automaticamente — revisão manual recomendada. IDs: '+planosOrfaos.map(p=>p.id).slice(0,20).join(', '));
+    console.warn('[SDAI] Planos órfãos detectados (não removidos):', planosOrfaos.map(p=>({id:p.id,falhaId:p.falhaId})));
+  }
+  const resumo={falhasSinteticasRemovidas,planosDuplicadosRemovidos,planosOrfaosDetectados:planosOrfaos.length,backup};
+  console.log('[SDAI] Auditoria de saneamento (falhas sintéticas / planos duplicados / planos órfãos):',resumo);
+  return resumo;
+}
+function normalizeAllStatuses(base){['equipamentos','flms','locais','falhas'].forEach(k=>(base[k]||[]).forEach(o=>{if(o.status)o.status=normalizeStatus(o.status)}));sincronizarPlanosFalhas(base);if(!base._saneamento2026v1){auditoriaSanearFalhasPlanos(base);base._saneamento2026v1=true;}return base}
 
 /* =========================================================================
    AUDITORIA E SINCRONIZAÇÃO ESTRUTURAL: Falhas ⇄ Plano de Ação (2026-07)
@@ -1350,7 +1789,7 @@ function sincronizarPlanosFalhas(base){
   //    rodar esta rotina várias vezes seguidas NUNCA duplica.
   const comPlano=new Set(base.planos.map(p=>p&&p.falhaId).filter(Boolean));
   base.falhas.forEach(f=>{
-    if(!f||!f.id)return;
+    if(!falhaDeveTerPlano(f))return;
     if(comPlano.has(f.id))return;
     base.planos.push({
       id:id(),falhaId:f.id,criadoEm:f.data||isoNow(),
@@ -1711,7 +2150,9 @@ function renderFalhas(){
   // Agora resolve painel/laço/loja PRIMEIRO e só então filtra — a busca passa a considerar também
   // o nome da loja, não só os campos internos do lançamento.
   const situacaoFiltro=f.situacao||'Em aberto';
-  let baseRows=db.falhas
+  // Item 13 (soft-delete): falhas excluídas pela Auditoria (Master) somem da operação normal, mas
+  // continuam em db.falhas — só visíveis no painel de Auditoria.
+  let baseRows=(db.falhas||[]).filter(x=>!x.excluida)
    .map(x=>({...x,painel:paiName(x.painelId),laco:lacName(x.lacoId),loja:locName(x.localId)}))
    // PERFORMANCE: campo de busca pré-computado (antes era JSON.stringify da linha inteira a cada tecla)
    .map(x=>({...x,_q:up([x.loja,x.painel,x.laco,x.piso,x.tipo,x.itemNome,x.status,x.responsavel,x.origem,x.motivo,x.obs,x.data].filter(Boolean).join(' '))}))
@@ -1741,10 +2182,11 @@ function renderFalhas(){
       <td style="font-size:12px">${esc(r.responsavel||'—')}</td>
       <td><div class="dsIcoGroup">
         <button class="dsIco" onclick="formFalha('${r.id}')" title="Editar">✏️</button>
-        <button class="dsIco del" onclick="del('falhas','${r.id}')" title="Excluir">🗑</button>
       </div></td>
     </tr>`;
   }).join('');
+  // SEGURANÇA (2026-07): exclusão de falha removida desta aba. Falhas só podem ser
+  // excluídas em Sistema → Auditoria, por Master, com motivo obrigatório e log.
 
   document.getElementById('falhas').innerHTML=`
     ${dsKpiStrip([
@@ -1772,18 +2214,63 @@ function renderFalhas(){
     </div>`;
 }
 
-function planoCategorias(){return ['Substituição de material','Manutenção corretiva','Refazer teste','Reconfiguração de nome','Notificar logista']}
+function planoCategorias(){return ['Substituição de material','Manutenção corretiva','Refazer teste','Reconfiguração de nome','Notificar lojista']}
 function planoPrioridades(){return ['Crítica','Alta','Média','Baixa']}
 function planoResponsaveis(){
   // RESPONSÁVEIS (2026-07): a lista agora nasce do cadastro de usuários (ativos). As entidades
-  // fixas de apoio (Brigada, Logista etc.) continuam disponíveis no fim, porque nem todo
+  // fixas de apoio (Brigada, Lojista etc.) continuam disponíveis no fim, porque nem todo
   // responsável é um usuário do sistema — mas os usuários cadastrados vêm primeiro.
   const users=(db.usuarios||[]).filter(u=>u.ativo!=='Não'&&u.nome).map(u=>u.nome);
-  const fixos=['L3A Engenharia','Brigada','Logista','Shopping','Terceiro / Fornecedor'];
+  const fixos=['L3A Engenharia','Brigada','Lojista','Shopping','Terceiro / Fornecedor'];
   return [...new Set([...users,...fixos])];
 }
 function prioridadePeso(p){return {'Crítica':1,'Alta':2,'Média':3,'Baixa':4}[p]||9}
+// isFalhaStatus: predicado canônico "este STATUS TÉCNICO conta como falha real em aberto?" — usado
+// pelo lado HISTÓRICO (db.falhas) dos relatórios/KPIs. Ver bloco de comentário grande em
+// dashStatusBucket() (acima de sua definição) para a separação completa operacional × histórico.
 function isFalhaStatus(s){s=up(normalizeStatus(s));return s.includes('ABERT')||s.includes('CURTO')||s.includes('INCEND')||s.includes('DISPAR')}
+// GATE ÚNICO de criação automática de Plano de Ação (Task 2, estabilização 2026-07).
+// Antes desta consolidação, esta função só retornava true para isFalhaStatus(f.status) (ABERT/
+// CURTO/INCEND/DISPAR) — mas os 3 pontos de criação AUTOMÁTICA de plano (importação/desativação
+// ~2365, alteração de status ~2523, cadastro de nova falha ~2688) NUNCA checavam isFalhaStatus:
+// eles criavam plano para QUALQUER falha nova (inclusive "Em teste"/"Desativação"/"Em operação"),
+// só evitando duplicidade (`!db.planos.find(p=>p.falhaId===...)`). Ou seja, a regra real já em
+// produção sempre foi "toda falha nova, não excluída e não resolvida, ganha 1 plano" — não a regra
+// mais estreita que esta função tinha. Para não regredir esse comportamento (que foi pedido
+// explicitamente pelo usuário — ver comentário em ~2684), a função foi reescrita para refletir a
+// regra REAL, e os 3 pontos automáticos + sincronizarPlanosFalhas() agora chamam só esta função —
+// um único lugar decide "esta falha deve ter plano?". A checagem de duplicidade
+// (`!db.planos.find(...)`) continua separada, ao lado de cada chamada, porque depende de db.planos
+// no momento da chamada (não é uma propriedade da própria falha).
+function falhaDeveTerPlano(f){
+  if(!f||!f.id)return false;
+  if(f.excluida===true)return false; // item 13: falha excluída (soft-delete) nunca gera/mantém plano
+  if(f.resolvidaEm)return false; // já resolvida
+  return true;
+}
+// TODO (futuro): UI dedicada (ex.: renderSDAITestes) para listar/registrar testes formais de
+// SDAI/CO2 diretamente pela tela — por ora só a função de dados está disponível.
+// STATUS_TECNICO_VALIDOS: conjunto fechado de status técnicos aceitos para uma falha gerada a
+// partir de um teste Não Conforme — nunca um placeholder genérico como "Em Aberto".
+const STATUS_TECNICO_VALIDOS=['Laço aberto','Módulo aberto','Módulo em curto','Detector','Acionador','Incêndio disparado','Desativação'];
+function criarTeste({localId,itemId,responsavel,data,resultado,observacao,fotos,statusTecnico}){
+  db.testes=db.testes||[];
+  const novoTeste={id:id(),localId:localId||'',itemId:itemId||'',responsavel:responsavel||'',data:data||isoNow(),resultado:resultado||'Conforme',observacao:observacao||'',fotos:fotos||[],criadoEm:isoNow()};
+  db.testes.push(novoTeste);
+  logLocal('teste',novoTeste.id,'registrar','Teste registrado: '+(resultado||'Conforme')+' — '+(localId||itemId||''));
+  if(resultado==='Não Conforme'){
+    const item=String(itemId||'').startsWith('flm:')?flmById(String(itemId).slice(4)):db.equipamentos.find(e=>e.id===itemId);
+    const loc=localById(localId||'');
+    // Exige um Status Técnico real (nunca "Em Aberto" genérico). Aceita os valores fechados da lista
+    // ou qualquer valor customizado não vazio informado explicitamente pelo chamador ("outro").
+    const statusFinal=(statusTecnico&&String(statusTecnico).trim())||'Laço aberto';
+    const dataOcorrencia=data||isoNow();
+    const rec={id:id(),data:dataOcorrencia,dataAbertura:dataOcorrencia,painelId:(item&&item.painelId)||'',lacoId:(item&&item.lacoId)||'',piso:(item&&item.piso)||'',tipo:(item&&item.tipo)||'',itemId:itemId||'',itemNome:(item&&(item.endereco||item.modelo))||'',localId:localId||'',status:statusFinal,statusAnterior:(item&&item.status)||'',responsavel:responsavel||'',origem:'Teste',motivo:observacao||'Não conformidade identificada em teste',obs:observacao||'',resolvidaEm:''};
+    db.falhas.push(rec);
+    sincronizarPlanosFalhas(db);
+  }
+  return novoTeste;
+}
 // CORREÇÃO (bug reportado): esta era a definição de isFalhaStatus() que REALMENTE valia em todo o
 // sistema (a última declaração de uma função sobrepõe as anteriores em JavaScript), e ela incluía
 // erroneamente 'TESTE' e 'DESATIV' como falha. Por isso um lançamento em "Em teste" contabilizava
@@ -1800,7 +2287,7 @@ function itemInfoFromFalha(f){
   return {painel:paiName(f.painelId||item?.painelId),laco:lacName(lacoId),piso:pisoResolvido,tipo:f.tipo||(isFlm?'Módulo':item?.tipo)||'',itemNome:f.itemNome||(isFlm?'Módulo ':'')+(item?.endereco||item?.modelo||''),local:locName(localId),localId,itemId:f.itemId||item?.id||'',falhaId:f.id||''}
 }
 function falhasAtivasParaPlano(){
-  let map={}; db.falhas.slice().sort((a,b)=>String(a.data).localeCompare(String(b.data))).forEach(f=>{let k=f.itemId||f.localId||f.id; map[k]=f});
+  let map={}; (db.falhas||[]).filter(f=>!f.excluida).slice().sort((a,b)=>String(a.data).localeCompare(String(b.data))).forEach(f=>{let k=f.itemId||f.localId||f.id; map[k]=f});
   return Object.values(map).filter(f=>isFalhaStatus(f.status));
 }
 function planoForFalha(fid){return db.planos.find(p=>p.falhaId===fid)}
@@ -1809,7 +2296,7 @@ function planoForFalha(fid){return db.planos.find(p=>p.falhaId===fid)}
 /* [removido na limpeza 2026-07: versão antiga substituída pela declaração final desta função] */
 function lastImportHtml(){let r=db.imports.at(-1); if(!r)return '<p class="msg warn">Nenhuma importação executada.</p>'; let cards=Object.entries(r.stats).map(([k,v])=>`<div class="diagItem"><small>${esc(k)}</small><b>${esc(v)}</b></div>`).join(''); let rom=r.romannel?`<div class="msg ${r.romannel.ok?'ok':'err'}">ROMANNEL: ${esc(r.romannel.msg)}</div>`:''; return `${rom}<div class="diag">${cards}</div><h4>Erros / ignorados</h4>${table(r.errors||[],[['Linha','linha'],['Motivo','motivo'],['Registro','registro']])}`}
 function renderExportacao(){if(!isMaster(currentUserSafe())){document.getElementById('exportacao').innerHTML='<div class="card"><h3 class="sectionTitle">Acesso restrito</h3><p class="msg warn">Somente o perfil Master pode exportar a base.</p></div>';return}document.getElementById('exportacao').innerHTML=`<div class="card"><h3 class="sectionTitle">Exportações</h3><div class="toolbar"><button class="btn" onclick="exportJson()">Base completa JSON</button><button class="btn" onclick="exportAllCsv()">Base completa CSV</button><button class="btn secondary" onclick="exportEntity('locais')">Lojas / Áreas</button><button class="btn secondary" onclick="exportEntity('flms')">FLMs</button><button class="btn secondary" onclick="exportEntity('equipamentos')">Equipamentos</button><button class="btn secondary" onclick="exportEntity('planos')">Plano de ação</button><button class="btn secondary" onclick="exportEntity('inconsistencias')">Inconsistências</button><button class="btn danger" onclick="if(confirm('Apagar toda base local?'))clearAll()">Limpar base local</button></div></div>`}
-function reportData(){let ini=document.getElementById('repIni')?.value||'',fim=document.getElementById('repFim')?.value||'',painel=document.getElementById('repPainel')?.value||''; let fal=db.falhas.filter(f=>(!painel||paiName(f.painelId)===painel)&&(!ini||f.data>=ini)&&(!fim||f.data<=fim+'T23:59')); let lanc=fal.filter(f=>isFalhaStatus(f.status)).length; let resol=fal.filter(f=>up(f.status).includes('OPER')||f.resolvidaEm).length; let byPainel={}; db.paineis.filter(p=>!painel||p.nome===painel).forEach(p=>{byPainel[p.nome]={op:0,falha:0,tipos:{}}}); db.equipamentos.forEach(e=>{let pn=paiName(e.painelId); if(!byPainel[pn])return; let st=isFalhaStatus(e.status)?'falha':'op'; byPainel[pn][st]++; byPainel[pn].tipos[e.tipo]=(byPainel[pn].tipos[e.tipo]||{op:0,falha:0}); byPainel[pn].tipos[e.tipo][st]++}); db.flms.forEach(f=>{let pn=paiName(f.painelId); if(!byPainel[pn])return; let st=isFalhaStatus(f.status)?'falha':'op'; byPainel[pn][st]++; byPainel[pn].tipos['Módulo']=(byPainel[pn].tipos['Módulo']||{op:0,falha:0}); byPainel[pn].tipos['Módulo'][st]++}); return {ini,fim,painel,fal,lanc,resol,byPainel}}
+function reportData(){let ini=document.getElementById('repIni')?.value||'',fim=document.getElementById('repFim')?.value||'',painel=document.getElementById('repPainel')?.value||''; let fal=(db.falhas||[]).filter(f=>!f.excluida&&(!painel||paiName(f.painelId)===painel)&&(!ini||f.data>=ini)&&(!fim||f.data<=fim+'T23:59')); let lanc=fal.filter(f=>isFalhaStatus(f.status)).length; let resol=fal.filter(f=>up(f.status).includes('OPER')||f.resolvidaEm).length; let byPainel={}; db.paineis.filter(p=>!painel||p.nome===painel).forEach(p=>{byPainel[p.nome]={op:0,falha:0,tipos:{}}}); db.equipamentos.forEach(e=>{let pn=paiName(e.painelId); if(!byPainel[pn])return; let st=isFalhaStatus(e.status)?'falha':'op'; byPainel[pn][st]++; byPainel[pn].tipos[e.tipo]=(byPainel[pn].tipos[e.tipo]||{op:0,falha:0}); byPainel[pn].tipos[e.tipo][st]++}); db.flms.forEach(f=>{let pn=paiName(f.painelId); if(!byPainel[pn])return; let st=isFalhaStatus(f.status)?'falha':'op'; byPainel[pn][st]++; byPainel[pn].tipos['Módulo']=(byPainel[pn].tipos['Módulo']||{op:0,falha:0}); byPainel[pn].tipos['Módulo'][st]++}); return {ini,fim,painel,fal,lanc,resol,byPainel}}
 function renderRelatorios(){
   let pain=unique(db.paineis.map(p=>p.nome));
   // Preserva os valores dos filtros entre re-renders (a tela é recriada do zero a cada render()).
@@ -1864,6 +2351,13 @@ function openMeuPerfil(){const u=currentUser(); openModal(`<h2>Meu Perfil</h2><d
 function saveMeuPerfil(){let u=currentUser();u.nome=n(pfNome.value);u.email=n(pfEmail.value);closeModal();markDirty('perfil');render()}
 function openAlterarSenha(){openModal(`<h2>Alterar Senha</h2><div class="formGrid"><div class="field"><label>Senha atual</label><input id="pwOld" type="password"></div><div class="field"><label>Nova senha</label><input id="pwNew" type="password"></div><div class="field"><label>Confirmar nova senha</label><input id="pwNew2" type="password"></div></div><br><button class="btn" onclick="saveSenha()">Alterar senha</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`); document.getElementById('userMenu')?.classList.remove('show')}
 async function saveSenha(){let u=currentUser(); if(!(await senhaConfere(n(pwOld.value),u.senha))){alert('Senha atual inválida.');return} if(!n(pwNew.value)||n(pwNew.value)!==n(pwNew2.value)){alert('Confirmação de senha não confere.');return} u.senha=await sha256Hex(n(pwNew.value));closeModal();markDirty('senha');alert('Senha alterada.')}
+// TRADEOFF CONHECIDO E ACEITO (Task 4, auditoria de concorrência 2026-07): db.historico é limitado a
+// 1000 entradas (as mais antigas são descartadas, FIFO por ordem de inserção). Sob uso concorrente
+// pesado (vários usuários/abas gerando eventos ao mesmo tempo — soft-deletes, conflitos de
+// sincronização, saneamentos automáticos) isso pode, em tese, empurrar para fora entradas antigas
+// relevantes para auditoria antes de alguém revisá-las. Aceito propositalmente para não deixar o
+// localStorage crescer sem limite (risco de estourar cota do navegador) — não alterado nesta
+// estabilização por ser decisão de produto (quanto histórico reter), não bug de código.
 function logLocal(entidade,entidadeId,acao,descricao){db.historico=db.historico||[];db.historico.push({id:id(),data:isoNow(),usuario:(currentUser().email||currentUser().nome||'usuario'),entidade,entidadeId,acao,descricao}); if(db.historico.length>1000)db.historico=db.historico.slice(-1000); persistLocal()}
 /* =========================================================================
    PERFIS DE ACESSO v2 (2026-07) — 4 níveis
@@ -1923,7 +2417,7 @@ async function importFile(){try{let rows=await readRows(); let mode=document.get
         db.equipamentos.forEach(e=>{
           if(paineisTocados.has(e.painelId)&&!equipIdsTocados.has(e.id)&&!up(e.status||'').includes('DESATIV')){
             const statusAnterior=e.status; e.status='Desativação'; e.ultimaAlteracao=isoNow();
-            const recDesat={id:id(),data:isoNow(),painelId:e.painelId,lacoId:e.lacoId,piso:e.piso,tipo:e.tipo,itemId:e.id,itemNome:(e.tipo||'')+' '+(e.endereco||e.modelo||''),localId:e.localId,status:'Desativação',statusAnterior,responsavel:'',origem:'Importação',motivo:'Não encontrado na última importação técnica — pode ter sido removido fisicamente na central',obs:''};
+            const recDesat={id:id(),data:isoNow(),dataAbertura:isoNow(),painelId:e.painelId,lacoId:e.lacoId,piso:e.piso,tipo:e.tipo,itemId:e.id,itemNome:(e.tipo||'')+' '+(e.endereco||e.modelo||''),localId:e.localId,status:'Desativação',statusAnterior,responsavel:'',origem:'Importação',motivo:'Não encontrado na última importação técnica — pode ter sido removido fisicamente na central',obs:''};
             db.falhas.push(recDesat);
             stats.desativadosNaoEncontrados++;
             // Evita "arquivo morto": se havia Plano de Ação aberto ligado a este
@@ -1935,7 +2429,7 @@ async function importFile(){try{let rows=await readRows(); let mode=document.get
             // gerada pela importação ficava sem plano vinculado — mesma causa-raiz do caso reportado
             // (falha existe em db.falhas, sem registro correspondente em db.planos). Mantém 1 falha ⇄
             // 1 plano também nesta via.
-            if(!db.planos.find(p=>p.falhaId===recDesat.id)){db.planos.push({id:id(),falhaId:recDesat.id,criadoEm:isoNow(),categoria:'Manutenção corretiva',prioridade:'Média',responsavel:'L3A Engenharia',situacao:'Aberto',painel:paiName(recDesat.painelId),laco:lacName(recDesat.lacoId),piso:recDesat.piso,local:locName(recDesat.localId),item:recDesat.itemNome,statusFalha:recDesat.status,justificativa:recDesat.motivo,providencia:'',necessitaCompra:false});}
+            if(falhaDeveTerPlano(recDesat)&&!db.planos.find(p=>p.falhaId===recDesat.id)){db.planos.push({id:id(),falhaId:recDesat.id,criadoEm:isoNow(),categoria:'Manutenção corretiva',prioridade:'Média',responsavel:'L3A Engenharia',situacao:'Aberto',painel:paiName(recDesat.painelId),laco:lacName(recDesat.lacoId),piso:recDesat.piso,local:locName(recDesat.localId),item:recDesat.itemNome,statusFalha:recDesat.status,justificativa:recDesat.motivo,providencia:'',necessitaCompra:false});}
           }
         });
         db.flms.forEach(f=>{
@@ -2056,7 +2550,7 @@ function fmtDataHoraTexto(raw){
   const hh=String(d.getHours()).padStart(2,'0'),mi=String(d.getMinutes()).padStart(2,'0');
   return `${dd}/${mm}/${yy} ${hh}:${mi}`;
 }
-function findFalhaAbertaPorItem(itemId,ignoreId=''){return itemId?db.falhas.find(x=>x.itemId===itemId&&x.id!==ignoreId):null}
+function findFalhaAbertaPorItem(itemId,ignoreId=''){return itemId?(db.falhas||[]).find(x=>x.itemId===itemId&&x.id!==ignoreId&&!x.excluida):null}
 async function verDiagnosticoUpload(){
   const el=document.getElementById('mFotoDiag'); if(!el)return;
   el.style.display='block'; el.textContent='Buscando diagnóstico no Google...';
@@ -2091,9 +2585,9 @@ function quickStatusChange(itemSel,newStatus){
     const lacoId=isFlm?flm.lacoId:equip.lacoId;
     const piso=isFlm?flm.piso:equip.piso;
     const itemNome=isFlm?`Módulo ${flm.endereco||flm.modelo}${porta?' • Porta '+porta.numero:''}`:(equip.endereco||equip.modelo);
-    const rec={id:id(),data:isoNow(),painelId,lacoId,piso,tipo:isFlm?'Módulo':equip.tipo,itemId:itemSel,itemNome,localId,status:newStatus,statusAnterior,responsavel:'',origem:'Inspeção',motivo:'',obs:'',resolvidaEm:''};
+    const rec={id:id(),data:isoNow(),dataAbertura:isoNow(),painelId,lacoId,piso,tipo:isFlm?'Módulo':equip.tipo,itemId:itemSel,itemNome,localId,status:newStatus,statusAnterior,responsavel:'',origem:'Inspeção',motivo:'',obs:'',resolvidaEm:''};
     db.falhas.push(rec);
-    if(!db.planos.find(p=>p.falhaId===rec.id)){db.planos.push({id:id(),falhaId:rec.id,criadoEm:isoNow(),categoria:'Manutenção corretiva',prioridade:'Média',responsavel:'L3A Engenharia',situacao:'Aberto',painel:paiName(painelId),laco:lacName(lacoId),piso,local:locName(localId),item:itemNome,statusFalha:newStatus,justificativa:'',providencia:'',necessitaCompra:false})}
+    if(falhaDeveTerPlano(rec)&&!db.planos.find(p=>p.falhaId===rec.id)){db.planos.push({id:id(),falhaId:rec.id,criadoEm:isoNow(),categoria:'Manutenção corretiva',prioridade:'Média',responsavel:'L3A Engenharia',situacao:'Aberto',painel:paiName(painelId),laco:lacName(lacoId),piso,local:locName(localId),item:itemNome,statusFalha:newStatus,justificativa:'',providencia:'',necessitaCompra:false})}
     save();
     formFalha(rec.id);
   } else {
@@ -2246,13 +2740,19 @@ function saveFalha(i){
   if(porta&&isFlm)item.status=flmStatusAgregado(item.id);
   let loc=localById(localId); if(loc){loc.status=checked.value;loc.ultimaAlteracao=isoNow()}
   let rec=i?db.falhas.find(x=>x.id===i):{id:id()};
+  // CORREÇÃO (preservar data de abertura original): editar uma falha não deve sobrescrever a data em
+  // que ela foi originalmente aberta — só cria/mantém no cadastro novo, preserva em edição.
+  const preserveData=i?rec.data:isoNow();
+  const preserveAbertura=i?(rec.dataAbertura||rec.data):isoNow();
   Object.assign(rec,{data:isoNow(),painelId:item.painelId,lacoId:item.lacoId,piso:item.piso,tipo:isFlm?'Módulo':item.tipo,itemId:sel,itemNome:(isFlm?`Módulo ${item.endereco||item.modelo}${porta?' • Porta '+porta.numero:''}`:item.endereco||item.modelo),localId,status:checked.value,statusAnterior,responsavel:n(document.getElementById('mResp')?.value),origem:document.getElementById('mOrigem')?.value,motivo:n(document.getElementById('mMotivo')?.value),obs:n(document.getElementById('mObs')?.value),resolvidaEm:up(checked.value).includes('OPER')?isoNow():''});
+  rec.data=preserveData; rec.dataAbertura=preserveAbertura;
+  if(i)rec.atualizadoEm=isoNow();
   if(!i){db.falhas.push(rec);
     // REGRA (item 1 do pedido do usuário, 2026-07): toda NOVA falha deve gerar automaticamente um
     // Plano de Ação com Situação = Aberto, independentemente do Status Técnico selecionado (antes só
     // criava plano se isFalhaStatus(rec.status) fosse verdadeiro, então "Em teste"/"Desativação"/
     // "Em operação" nunca geravam plano). Nada mais do fluxo de cadastro de falha foi alterado.
-    if(!db.planos.find(p=>p.falhaId===rec.id)){
+    if(falhaDeveTerPlano(rec)&&!db.planos.find(p=>p.falhaId===rec.id)){
       // Se o cadastro veio de "Duplicar" (aba Plano de Ação), aplica o molde copiado do plano de
       // origem — só nos campos descritivos, nunca na Situação (que é sempre "Aberto" para plano novo).
       const tpl=window._planoTemplate||null;
@@ -2523,18 +3023,70 @@ function duplicarPlano(planoId){
   alert('Dados do plano copiados (categoria, prioridade, responsável, material). Registre a nova falha em Falhas → "+ Registrar" — o plano gerado automaticamente já virá preenchido com os mesmos dados.');
   formFalha();
 }
-function concluirPlano(i){if(!requireAccess('editarFalhaPlano','Seu perfil não pode concluir planos.'))return; let o=db.planos.find(x=>x.id===i); if(!o)return; criarNotificacao(o.responsavel,`Plano de ação concluído: ${o.local||''} — ${o.item||''}`.trim(),'plano'); o.situacao='Concluído'; o.concluidoEm=isoNow(); let f=db.falhas.find(x=>x.id===o.falhaId); if(f){
-    // CORREÇÃO (item 5/6 do pedido do usuário, 2026-07): antes só a falha SINTÉTICA "Em operação"
-    // criada abaixo recebia resolvidaEm — a falha original permanecia com resolvidaEm vazio e por
-    // isso continuava aparecendo como "Em aberto" na aba Falhas mesmo com o plano concluído. Agora a
-    // falha original também é marcada como resolvida, então ela some da aba Falhas Ativas assim que
-    // o Plano de Ação é concluído, sem precisar recarregar a página (render() já roda via save()).
-    f.resolvidaEm=f.resolvidaEm||isoNow();
-    let itemId=f.itemId||'';let isFlm=String(itemId).startsWith('flm:');let item=isFlm?flmById(String(itemId).slice(4)):db.equipamentos.find(e=>e.id===itemId);let loc=localById(f.localId||'');let statusAnterior=(item&&item.status)||f.status||'Falha'; if(item){item.status='Em operação';item.ultimaAlteracao=isoNow()} if(loc){loc.status='Em operação';loc.ultimaAlteracao=isoNow()} if(item||loc){db.falhas.push({id:id(),data:isoNow(),painelId:(item&&item.painelId)||f.painelId,lacoId:(item&&item.lacoId)||f.lacoId,piso:(item&&item.piso)||f.piso,tipo:isFlm?'Módulo':((item&&item.tipo)||f.tipo),itemId:f.itemId,itemNome:f.itemNome,localId:f.localId,status:'Em operação',statusAnterior,responsavel:o.responsavel,origem:'Plano de Ação',motivo:'Plano de ação concluído',obs:o.providencia,resolvidaEm:isoNow()});alert('Plano concluído. Status do equipamento e da loja atualizado para Em operação.')}else{alert('Plano concluído.')}} save()}
+function abrirResultadoPlano(i){
+  if(!requireAccess('editarFalhaPlano','Seu perfil não pode concluir planos.'))return;
+  let o=db.planos.find(x=>x.id===i); if(!o)return;
+  const agora=isoNow();
+  openModal(`<h2>Resultado do plano de ação</h2><p class="msg warn">${esc(o.local||'')} — ${esc(o.item||'')}</p><div class="formGrid">
+    <div class="field"><label>Data</label><input id="mrData" type="datetime-local" value="${esc((agora||'').slice(0,16))}"></div>
+    <div class="field"><label>Responsável</label><input id="mrResp" value="${esc(o.responsavel||'')}"></div>
+    <div class="field" style="grid-column:1/-1"><label>Resultado</label>
+      <label style="font-weight:400;margin-right:16px"><input type="radio" name="mrResultado" value="Conforme" checked> Conforme</label>
+      <label style="font-weight:400"><input type="radio" name="mrResultado" value="Não Conforme"> Não Conforme</label>
+    </div>
+    <div class="field" style="grid-column:1/-1"><label>Execução realizada</label><textarea id="mrExecucao" placeholder="Descreva o que foi executado">${esc(o.providencia||'')}</textarea></div>
+    <div class="field" style="grid-column:1/-1"><label>Observação técnica</label><textarea id="mrObs" placeholder="Observações adicionais"></textarea></div>
+    <div class="field" style="grid-column:1/-1"><label>Fotos do serviço <small style="font-weight:400;color:var(--l3a-text-muted)">(vídeos/documentos: TODO — pipeline de upload atual só suporta imagens)</small></label><input type="file" id="mrFotoInput" accept="image/*" multiple onchange="queueFotoUploads('${o.id}',this.files);this.value=''"><small id="mFotoStatus" class="note"></small><small id="mFotoConta" class="note"></small><div id="mFotoGrid" style="margin-top:8px">${fotosThumbsHtml(o.fotos,72,o.id)}</div></div>
+  </div><br><button class="btn" onclick="confirmarResultadoPlano('${o.id}')">Confirmar</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`);
+}
+function confirmarResultadoPlano(i){
+  if(!requireAccess('editarFalhaPlano','Seu perfil não pode concluir planos.'))return;
+  let o=db.planos.find(x=>x.id===i); if(!o)return;
+  const val=id=>document.getElementById(id)?.value ?? '';
+  const resultado=document.querySelector('input[name="mrResultado"]:checked')?.value||'Conforme';
+  const dataInformada=val('mrData'); const respInformado=n(val('mrResp'))||o.responsavel;
+  const execucao=n(val('mrExecucao')); const obsTecnica=n(val('mrObs'));
+  criarNotificacao(respInformado,`Plano de ação concluído: ${o.local||''} — ${o.item||''}`.trim(),'plano');
+  // Data informada pelo técnico no modal (input datetime-local) é usada verbatim quando presente;
+  // só cai para isoNow() se o campo veio vazio.
+  const dataConclusao=(dataInformada&&dataInformada.trim())?dataInformada.trim():isoNow();
+  o.situacao='Concluído'; o.concluidoEm=dataConclusao; o.resultado=resultado; o.responsavel=respInformado;
+  o.execucaoRealizada=execucao; o.observacaoTecnica=obsTecnica; o.providencia=execucao||o.providencia;
+  o.fotos=normalizeFotos(o.fotos);
+  let f=db.falhas.find(x=>x.id===o.falhaId);
+  if(resultado==='Conforme'){
+    if(f){
+      // Falha original marcada como resolvida em Em operação — evita duplicar registro em db.falhas.
+      f.status='Em operação'; f.resolvidaEm=dataConclusao; f.atualizadoEm=dataConclusao;
+      let itemId=f.itemId||'';let isFlm=String(itemId).startsWith('flm:');let item=isFlm?flmById(String(itemId).slice(4)):db.equipamentos.find(e=>e.id===itemId);let loc=localById(f.localId||'');
+      if(item){item.status='Em operação';item.ultimaAlteracao=dataConclusao} if(loc){loc.status='Em operação';loc.ultimaAlteracao=dataConclusao}
+    }
+    logLocal('plano',o.id,'concluir_conforme','Plano de ação concluído (Conforme): '+(o.local||'')+' — '+(o.item||''));
+    closeModal(); save(); render();
+    alert('Plano concluído. Status do equipamento e da loja atualizado para Em operação.');
+  } else {
+    if(f){f.atualizadoEm=dataConclusao}
+    if(!o.direcionamento||!/notificar lojista/i.test(o.direcionamento)){
+      o.direcionamento=o.direcionamento?(o.direcionamento+' | Notificar lojista'):'Notificar lojista';
+    }
+    // Campos estruturados (além do direcionamento em texto livre, mantido por compatibilidade de
+    // exibição): permitem consultar/filtrar sem depender de regex sobre texto livre.
+    o.falhaPermaneceAtiva=true;
+    o.statusTecnicoFinal=(f&&f.status)||o.statusFalha||'';
+    o.encaminhamento='Notificar lojista';
+    o.conclusaoTecnica=execucao||obsTecnica||'';
+    logLocal('plano',o.id,'concluir_nao_conforme','Plano de ação concluído (Não Conforme): '+(o.local||'')+' — '+(o.item||''));
+    closeModal(); save(); render();
+    alert('Plano concluído como Não Conforme. A falha permanece ativa e o lojista será notificado.');
+  }
+}
 
 function openEquip(i){let e=db.equipamentos.find(x=>x.id===i);let hist=db.falhas.filter(f=>f.itemId===i||f.localId===e.localId).sort((a,b)=>b.data.localeCompare(a.data));openModal(`<h2>${esc(e.tipo)} ${esc(e.endereco)}</h2><p><b>Loja:</b> ${esc(locName(e.localId))} • <b>Painel:</b> ${esc(paiName(e.painelId))} • <b>Laço:</b> ${esc(lacName(e.lacoId))}</p><h3>Histórico</h3><div class="timeline">${hist.map(h=>`<div class="tl"><b>${esc(h.status)}</b><br><small>${esc(h.data)} • ${esc(h.origem||'')}</small><p>${esc(h.motivo||h.obs||'Sem observação')}</p></div>`).join('')||'<p class="msg warn">Sem histórico.</p>'}</div>`)}
 /* [removido na limpeza 2026-07: versão antiga substituída pela declaração final desta função] */
 function del(ent,i){
+  // SEGURANÇA (2026-07): falhas NUNCA são excluídas por aqui — só via Sistema → Auditoria
+  // → excluirFalhaAuditoria(), restrito a Master, com motivo obrigatório e log.
+  if(ent==='falhas'){alert('Falhas não podem ser excluídas na tela de operação. Use Sistema → Auditoria (acesso Master) para excluir com motivo e log obrigatórios.');return}
   // PERFIS v2: excluir plano/falha = Gestor+; excluir cadastro técnico = só Master.
   if(ent==='planos'){if(!requireAccess('excluirFalhaPlano','Somente Gestor ou Master podem excluir planos de ação.'))return}
   else if(['paineis','lacos','flms','portas','locais','equipamentos'].includes(ent)&&!requireAccess('cadastro','Somente o Master pode excluir cadastros técnicos.'))return; if(!confirm('Excluir registro?'))return;
@@ -2598,16 +3150,16 @@ function applyRoleUI(){applyNavPermissions();const p=perfilAtual(); document.que
 
 
 /* === V6.2 HOTFIX FUNCTIONS: Sistema, usuários, permissões e telas vazias === */
-const L3A_VIEWS = {dashboard:'Dashboard',paineis:'Painéis',lacos:'Laços',flms:'Módulos',locais:'Lojas / Áreas',equipamentos:'Detectores / Acionadores',falhas:'Falhas',plano:'Plano de Ação',plantas:'Plantas',relatorios:'Relatórios',importacao:'Importação',exportacao:'Exportação',cftv:'CFTV',acesso:'Controle de Acesso',ambiente:'Ambiente / Som',clientes:'Clientes',sistema:'Banco de Dados',usuarios:'Usuários e Acessos',configuracoes:'Configurações',backup:'Backup',logs:'Logs',sobre:'Sobre'};
+const L3A_VIEWS = {visaoGeral:'Visão Geral do Cliente',dashboard:'Dashboard',paineis:'Painéis',lacos:'Laços',flms:'Módulos',locais:'Lojas / Áreas',equipamentos:'Detectores / Acionadores',falhas:'Falhas',plano:'Plano de Ação',plantas:'Plantas',relatorios:'Relatórios',importacao:'Importação',exportacao:'Exportação',cftv:'CFTV',cftvDashboard:'Dashboard CFTV',cftvCameras:'Câmeras',cftvGravadores:'Gravadores',cftvSwitches:'Switches',cftvRede:'Pontos de rede',cftvLocais:'Locais CFTV',cftvOcorrencias:'Ocorrências CFTV',cftvPlano:'Plano CFTV',cftvTestes:'Testes CFTV',cftvPlantas:'Plantas CFTV',cftvRelatorios:'Relatórios CFTV',cftvImportacao:'Importação CFTV',cftvExportacao:'Exportação CFTV',acesso:'Controle de Acesso',acessoDashboard:'Dashboard Acesso',acessoPortas:'Portas',acessoCatracas:'Catracas',acessoLeitores:'Leitores',acessoControladoras:'Controladoras',acessoOcorrencias:'Ocorrências Acesso',acessoPlano:'Plano Acesso',acessoTestes:'Testes Acesso',acessoPlantas:'Plantas Acesso',acessoRelatorios:'Relatórios Acesso',acessoImportacao:'Importação Acesso',acessoExportacao:'Exportação Acesso',ambiente:'Ambiente / Som',ambienteDashboard:'Dashboard Ambiente',ambienteSensores:'Sensores',ambienteAmplificadores:'Amplificadores',ambienteAltfalantes:'Alto-falantes',ambienteControladores:'Controladores',ambienteEquipamentos:'Equip. Ambientais',ambienteAmbientes:'Ambientes',ambienteOcorrencias:'Ocorrências Ambiente',ambientePlano:'Plano Ambiente',ambienteTestes:'Testes Ambiente',ambientePlantas:'Plantas Ambiente',ambienteRelatorios:'Relatórios Ambiente',ambienteImportacao:'Importação Ambiente',ambienteExportacao:'Exportação Ambiente',clientes:'Clientes',sistema:'Banco de Dados',usuarios:'Usuários e Acessos',configuracoes:'Configurações',backup:'Backup',logs:'Logs',sobre:'Sobre'};
 // PERFIS v2: Master tudo; Gestor sem sistema/backup/usuários/import/export; Operacional foca em
 // falhas+planos; Visualizador só leitura+relatórios. Chaves antigas mantidas como alias.
 const L3A_ROLE_VIEWS = {
   Master:Object.keys(L3A_VIEWS),
-  Gestor:['dashboard','paineis','lacos','flms','locais','equipamentos','falhas','plano','plantas','relatorios','cftv','acesso','ambiente','logs','sobre'],
-  Operacional:['dashboard','falhas','plano','plantas','relatorios','cftv','acesso','ambiente','sobre'],
-  Visualizador:['dashboard','falhas','plano','plantas','relatorios','cftv','acesso','ambiente','sobre'],
+  Gestor:['visaoGeral','dashboard','paineis','lacos','flms','locais','equipamentos','falhas','plano','plantas','relatorios','cftv','acesso','ambiente','logs','sobre'],
+  Operacional:['visaoGeral','dashboard','falhas','plano','plantas','relatorios','cftv','acesso','ambiente','sobre'],
+  Visualizador:['visaoGeral','dashboard','falhas','plano','plantas','relatorios','cftv','acesso','ambiente','sobre'],
   Administrador:Object.keys(L3A_VIEWS),
-  Supervisor:['dashboard','paineis','lacos','flms','locais','equipamentos','falhas','plano','plantas','relatorios','cftv','acesso','ambiente','logs','sobre']
+  Supervisor:['visaoGeral','dashboard','paineis','lacos','flms','locais','equipamentos','falhas','plano','plantas','relatorios','cftv','acesso','ambiente','logs','sobre']
 };
 function defaultViewsForProfile(profile){return (L3A_ROLE_VIEWS[profile]||L3A_ROLE_VIEWS.Operacional).slice()}
 function userViews(u){if(!u)return defaultViewsForProfile('Administrador'); if(Array.isArray(u.views)&&u.views.length)return u.views; return defaultViewsForProfile(u.perfil||'Administrador')}
@@ -2616,7 +3168,12 @@ function collectUserViews(){return [...document.querySelectorAll('.uView:checked
 function updateUserViewDefaults(){const box=document.getElementById('uPermissoes'); if(box)box.innerHTML=permissionChecks(defaultViewsForProfile(document.getElementById('uPerfil')?.value||'Operacional'))}
 function currentUserSafe(){try{return currentUser()}catch(e){return {id:'admin-default',nome:'Administrador',email:'admin@local',perfil:'Administrador',senha:'1234',ativo:'Sim'}}}
 function canView(view){const u=currentUserSafe(); return userViews(u).includes(view)}
-function applyNavPermissions(){const u=currentUserSafe(); document.querySelectorAll('.nav button[data-view]').forEach(btn=>{const show=userViews(u).includes(btn.dataset.view); btn.style.display=show?'flex':'none'}); if(!canView(currentView)){currentView=userViews(u)[0]||'dashboard'}}
+function applyNavPermissions(){
+  if(!canView(currentView)&&!['visaoGeral','sobre'].includes(currentView)){
+    const u=currentUserSafe();
+    currentView=userViews(u)[0]||'dashboard';
+  }
+}
 function addUser(){if(!isMaster(currentUserSafe())){alert('Somente administrador pode cadastrar usuários.');return} openModal(`<h2>Novo usuário</h2><p class="note">Crie login, senha e defina as abas liberadas para este usuário.</p><div class="formGrid"><div class="field"><label>Nome</label><input id="uNome"></div><div class="field"><label>E-mail / login</label><input id="uEmail" placeholder="nome@empresa.com"></div><div class="field"><label>Perfil</label><select id="uPerfil" onchange="updateUserViewDefaults()"><option>Master</option><option>Gestor</option><option>Operacional</option><option>Visualizador</option></select></div><div class="field"><label>Senha inicial</label><input id="uSenha" type="password" placeholder="Defina a senha"></div><div class="field"><label>Ativo</label><select id="uAtivo"><option>Sim</option><option>Não</option></select></div></div><h3 class="sectionTitle" style="margin-top:18px">Abas liberadas</h3><div id="uPermissoes" class="permGrid">${permissionChecks(defaultViewsForProfile('Administrador'),'Administrador')}</div><br><button class="btn" onclick="saveUser('')">Salvar usuário</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`)}
 function editUser(i){if(!isMaster(currentUserSafe())){alert('Somente administrador pode editar usuários.');return} let u=(db.usuarios||[]).find(x=>x.id===i)||{}; openModal(`<h2>Editar usuário</h2><p class="note">Além do perfil, você pode suspender ou liberar cada aba individualmente.</p><div class="formGrid"><div class="field"><label>Nome</label><input id="uNome" value="${esc(u.nome)}"></div><div class="field"><label>E-mail / login</label><input id="uEmail" value="${esc(u.email)}"></div><div class="field"><label>Perfil</label><select id="uPerfil" onchange="updateUserViewDefaults()">${['Master','Gestor','Operacional','Visualizador'].map(p=>`<option ${perfilNorm(u.perfil)===p?'selected':''}>${p}</option>`).join('')}</select></div><div class="field"><label>Nova senha</label><input id="uSenha" type="password" placeholder="Deixe em branco para manter"></div><div class="field"><label>Ativo</label><select id="uAtivo"><option ${u.ativo!=='Não'?'selected':''}>Sim</option><option ${u.ativo==='Não'?'selected':''}>Não</option></select></div></div><h3 class="sectionTitle" style="margin-top:18px">Abas liberadas</h3><div id="uPermissoes" class="permGrid">${permissionChecks(userViews(u),u.perfil)}</div><br><button class="btn" onclick="saveUser('${i}')">Salvar usuário</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`)}
 async function saveUser(i){let u=i?(db.usuarios||[]).find(x=>x.id===i):{id:id(),criadoEm:isoNow()}; if(!u){alert('Usuário não encontrado.');return} u.nome=n(document.getElementById('uNome').value);u.email=n(document.getElementById('uEmail').value).toLowerCase();u.perfil=document.getElementById('uPerfil').value;u.ativo=document.getElementById('uAtivo').value;u.views=collectUserViews(); if(!u.views.length)u.views=defaultViewsForProfile(u.perfil); const pass=n(document.getElementById('uSenha').value); if(pass)u.senha=await sha256Hex(pass); if(!u.senha)u.senha=await sha256Hex('1234'); if(!i){db.usuarios=db.usuarios||[];db.usuarios.push(u)} closeModal(); markDirty('usuarios'); render()}
@@ -2638,8 +3195,58 @@ function saveEmpresaCfg(){db.config=db.config||{}; db.config.cliente=n(document.
 // efetivamente navega até elas (a troca de aba já chama render() de novo, então nada fica
 // desatualizado — só deixa de ser recalculado enquanto está fora de vista). Nenhuma tela ou
 // funcionalidade foi removida, apenas deixou de ser recomputada sem necessidade.
-const RENDER_POR_TELA={dashboard:renderDashboard,paineis:renderPaineis,lacos:renderLacos,flms:renderFlms,locais:renderLocais,equipamentos:renderEquipamentos,falhas:renderFalhas,plano:renderPlano,plantas:(...a)=>renderPlantas(...a),importacao:renderImportacao,exportacao:renderExportacao,relatorios:renderRelatorios,cftv:renderCftv,acesso:renderAcesso,ambiente:renderAmbiente,clientes:renderClientes,sistema:renderSistema,usuarios:renderUsuarios,configuracoes:renderConfiguracoes,backup:renderBackup,logs:renderLogs,sobre:renderSobre};
-function render(){ensureDefaultUsers(); if(!isLoggedIn()){showLogin();return}else{hideLogin()} applyNavPermissions(); document.querySelectorAll('.view').forEach(v=>v.classList.remove('active')); document.getElementById(currentView)?.classList.add('active'); const t=document.getElementById('pageTitle'); if(t)t.textContent=L3A_VIEWS[currentView]||'Contratos L3A'; (RENDER_POR_TELA[currentView]||renderDashboard)();try{applyBrand()}catch(e){}try{applyRoleUI()}catch(e){}attachSearchInputs();restoreSearchFocus();updateSyncFooter();try{updateNotifBadge()}catch(e){}try{updateClienteSideSelect()}catch(e){}try{updateNavSubsistemas()}catch(e){}}
+const RENDER_POR_TELA={
+  visaoGeral:renderVisaoGeral,
+  dashboard:renderDashboard,paineis:renderPaineis,lacos:renderLacos,flms:renderFlms,
+  locais:renderLocais,equipamentos:renderEquipamentos,falhas:renderFalhas,plano:renderPlano,
+  plantas:(...a)=>renderPlantas(...a),importacao:renderImportacao,exportacao:renderExportacao,
+  relatorios:renderRelatorios,
+  // CFTV — só as telas com CRUD real (câmeras/gravadores) usam renderCftv; o
+  // restante ainda é provisório e mostra a etiqueta "Módulo ainda não implementado".
+  cftv:renderCftv,
+  cftvDashboard:()=>renderCftv(),cftvCameras:()=>renderCftv(),cftvGravadores:()=>renderCftv(),
+  cftvSwitches:()=>renderSubsisStub('CFTV › Switches','Base Técnica'),
+  cftvRede:()=>renderSubsisStub('CFTV › Pontos de rede','Base Técnica'),
+  cftvLocais:()=>renderSubsisStub('CFTV › Locais','Operação'),
+  cftvOcorrencias:()=>renderSubsisStub('CFTV › Ocorrências','Operação'),
+  cftvPlano:()=>renderSubsisStub('CFTV › Plano de Ação','Operação'),
+  cftvTestes:()=>renderSubsisStub('CFTV › Testes','Operação'),
+  cftvPlantas:()=>renderSubsisStub('CFTV › Plantas','Operação'),
+  cftvRelatorios:()=>renderSubsisStub('CFTV › Relatórios','Dados'),
+  cftvImportacao:()=>renderSubsisStub('CFTV › Importação','Dados'),
+  cftvExportacao:()=>renderSubsisStub('CFTV › Exportação','Dados'),
+  // Controle de Acesso — só a lista de pontos (Portas) usa renderAcesso.
+  acesso:renderAcesso,
+  acessoDashboard:()=>renderAcesso(),acessoPortas:()=>renderAcesso(),
+  acessoCatracas:()=>renderSubsisStub('Controle de Acesso › Catracas','Base Técnica'),
+  acessoLeitores:()=>renderSubsisStub('Controle de Acesso › Leitores','Base Técnica'),
+  acessoControladoras:()=>renderSubsisStub('Controle de Acesso › Controladoras','Base Técnica'),
+  acessoOcorrencias:()=>renderSubsisStub('Controle de Acesso › Ocorrências','Operação'),
+  acessoPlano:()=>renderSubsisStub('Controle de Acesso › Plano de Ação','Operação'),
+  acessoTestes:()=>renderSubsisStub('Controle de Acesso › Testes','Operação'),
+  acessoPlantas:()=>renderSubsisStub('Controle de Acesso › Plantas','Operação'),
+  acessoRelatorios:()=>renderSubsisStub('Controle de Acesso › Relatórios','Dados'),
+  acessoImportacao:()=>renderSubsisStub('Controle de Acesso › Importação','Dados'),
+  acessoExportacao:()=>renderSubsisStub('Controle de Acesso › Exportação','Dados'),
+  // Ambiente / Som — só a lista de equipamentos (Sensores) usa renderAmbiente.
+  ambiente:renderAmbiente,
+  ambienteDashboard:()=>renderAmbiente(),ambienteSensores:()=>renderAmbiente(),
+  ambienteAmplificadores:()=>renderSubsisStub('Ambiente / Som › Amplificadores','Base Técnica'),
+  ambienteAltfalantes:()=>renderSubsisStub('Ambiente / Som › Alto-falantes','Base Técnica'),
+  ambienteControladores:()=>renderSubsisStub('Ambiente / Som › Controladores','Base Técnica'),
+  ambienteEquipamentos:()=>renderSubsisStub('Ambiente / Som › Equip. Ambientais','Base Técnica'),
+  ambienteAmbientes:()=>renderSubsisStub('Ambiente / Som › Ambientes','Operação'),
+  ambienteOcorrencias:()=>renderSubsisStub('Ambiente / Som › Ocorrências','Operação'),
+  ambientePlano:()=>renderSubsisStub('Ambiente / Som › Plano de Ação','Operação'),
+  ambienteTestes:()=>renderSubsisStub('Ambiente / Som › Testes','Operação'),
+  ambientePlantas:()=>renderSubsisStub('Ambiente / Som › Plantas','Operação'),
+  ambienteRelatorios:()=>renderSubsisStub('Ambiente / Som › Relatórios','Dados'),
+  ambienteImportacao:()=>renderSubsisStub('Ambiente / Som › Importação','Dados'),
+  ambienteExportacao:()=>renderSubsisStub('Ambiente / Som › Exportação','Dados'),
+  clientes:renderClientes,sistema:renderSistema,usuarios:renderUsuarios,
+  configuracoes:renderConfiguracoes,backup:renderBackup,logs:renderLogs,sobre:renderSobre
+};
+function render(){ensureDefaultUsers(); if(!isLoggedIn()){showLogin();return}else{hideLogin()} applyNavPermissions(); document.querySelectorAll('.view').forEach(v=>v.classList.remove('active')); const _sectionId=VIEW_TO_SECTION[currentView]||currentView; document.getElementById(_sectionId)?.classList.add('active'); const t=document.getElementById('pageTitle'); if(t)t.textContent=L3A_VIEWS[currentView]||'Contratos L3A'; (RENDER_POR_TELA[currentView]||renderDashboard)();try{applyBrand()}catch(e){}try{applyRoleUI()}catch(e){}attachSearchInputs();restoreSearchFocus();updateSyncFooter();try{updateNotifBadge()}catch(e){}try{updateClienteSideSelect()}catch(e){}try{buildNavTree()}catch(e){}try{updateBreadcrumb()}catch(e){}}
 
 
 /* ===== Build 6.3 HOTFIX - Sistema não branco + UX premium ===== */
@@ -2678,7 +3285,7 @@ function refreshAccordionActive(){document.querySelectorAll('.navGroup').forEach
 /* [removido na limpeza 2026-07: versão antiga substituída pela declaração final desta função] */
 /* [removido na limpeza 2026-07: versão antiga substituída pela declaração final desta função] */
 const _render65 = render;
-render = function(){_render65();buildAccordionMenu();refreshAccordionActive();};
+render = function(){_render65();}; // buildAccordionMenu/refreshAccordionActive replaced by buildNavTree
 /* ===== Fim Build 6.5 ===== */
 
 
@@ -2733,7 +3340,63 @@ function renderConfiguracoes(){
  el.innerHTML=`<div class="premiumPanel"><div class="identityCard"><div class="logoPreviewBox">${cfg.logoData?`<img src="${cfg.logoData}" alt="Logo">`:'<span>L3A</span>'}</div><div><h3>Identidade visual</h3><p class="mutedLine">Padronize logotipo, nome do sistema e dados do contrato SDAI.</p><div class="formGrid" style="margin-top:14px"><div class="field"><label>Nome do sistema</label><input id="cfgAppName" value="${esc(cfg.appName||'Contratos L3A')}"></div><div class="field"><label>Subtítulo</label><input id="cfgSub" value="${esc(cfg.subtitle||'Gestão técnica SDAI • Bosch FPA/AVENAR')}"></div><div class="field"><label>Logo</label><input type="file" id="cfgLogo" accept="image/*"></div><div class="field"><label>&nbsp;</label><button class="btn" onclick="saveIdentity()">Aplicar</button></div></div></div></div></div><div class="premiumPanel"><h3>Dados corporativos</h3><div class="formGrid"><div class="field"><label>Cliente</label><input id="cfgCliente" value="${esc(cfg.cliente||'Shopping Pantanal')}"></div><div class="field"><label>Empreendimento</label><input id="cfgEmpreendimento" value="${esc(cfg.empreendimento||'Pantanal Shopping')}"></div><div class="field"><label>Responsável técnico</label><input id="cfgRespTecnico" value="${esc(cfg.responsavelTecnico||'Eng. Hélio Hayashida')}"></div><div class="field"><label>&nbsp;</label><button class="btn secondary" onclick="saveEmpresaCfg()">Salvar</button></div></div></div>`;
 }
 function renderBackup(){const el=document.getElementById('backup'); if(!el)return; el.innerHTML=`<div class="premiumPanel"><div class="systemHeaderSlim"><div class="titleBlock"><h3>Backup local</h3><p>Exportação e restauração de segurança.</p></div></div><div class="premiumGrid">${premiumStat('Painéis',db.paineis.length)}${premiumStat('Equipamentos',db.equipamentos.length)}${premiumStat('Falhas',db.falhas.length)}${premiumStat('Planos',db.planos.length)}</div><div class="premiumActions"><button class="btn" onclick="exportJson()">Exportar JSON</button><button class="btn secondary" onclick="exportAllCsv()">Exportar CSV</button><button class="btn secondary" onclick="document.getElementById('restoreJsonInput').click()">Restaurar JSON</button><input type="file" id="restoreJsonInput" accept="application/json,.json" style="display:none" onchange="restoreBackupFile(this.files[0])"></div></div>`}
-function renderLogs(){const el=document.getElementById('logs'); if(!el)return; const rows=(db.historico||[]).slice(-200).reverse(); el.innerHTML=`<div class="premiumPanel"><h3>Logs e auditoria</h3><p>Registro das ações operacionais e administrativas.</p>${rows.length?`<div class="softTable" style="margin-top:14px">${table(rows,[['Data','data'],['Usuário','usuario'],['Entidade','entidade'],['Ação','acao'],['Descrição','descricao']])}</div>`:'<div class="emptyState" style="margin-top:14px">Nenhum log registrado ainda.</div>'}</div>`}
+function renderLogs(){
+  const el=document.getElementById('logs'); if(!el)return;
+  const rows=(db.historico||[]).slice(-200).reverse();
+  const isMasterUser=isMaster(currentUserSafe());
+  el.innerHTML=`<div class="premiumPanel"><h3>Logs e auditoria</h3><p>Registro das ações operacionais e administrativas.</p>${rows.length?`<div class="softTable" style="margin-top:14px">${table(rows,[['Data','data',r=>dsDateHtml?dsDateHtml(r.data):esc(r.data||'')],['Usuário','usuario'],['Entidade','entidade'],['Ação','acao'],['Descrição','descricao']])}</div>`:'<div class="emptyState" style="margin-top:14px">Nenhum log registrado ainda.</div>'}</div>
+  ${isMasterUser?_auditoriaExclusaoFalhasPanel():`<div class="premiumPanel" style="margin-top:16px"><p style="color:var(--l3a-text-muted)">A exclusão de falhas é restrita ao perfil Master.</p></div>`}`;
+}
+/* SEGURANÇA (2026-07): único ponto do sistema autorizado a excluir uma falha.
+   Restrito a Master (renderLogs só monta este painel para Master), exige motivo
+   obrigatório e sempre grava log em db.historico antes de marcar o registro.
+   ITEM 13 (2026-07): a exclusão passou de HARD delete (remoção do array) para SOFT delete
+   (f.excluida=true + metadados) — o registro permanece em db.falhas para preservar histórico/
+   fotos/rastreabilidade, mas some de toda tela operacional (Falhas, Dashboard, Relatórios,
+   Plano). Este painel de Auditoria é o ÚNICO lugar (Master) que ainda enxerga os excluídos,
+   via o toggle "Ver falhas excluídas". */
+function _auditoriaExclusaoFalhasPanel(){
+  const verExcluidas=!!window._auditoriaVerExcluidas;
+  const todas=(db.falhas||[]).slice().sort((a,b)=>String(b.data||'').localeCompare(String(a.data||'')));
+  const falhas=verExcluidas?todas.filter(f=>f.excluida===true):todas.filter(f=>!f.excluida);
+  const rows=falhas.slice(0,100).map(f=>{
+    const acao=verExcluidas
+      ?`<div><small class="mutedLine">Excluída em ${esc(dsDateHtml?dsDateHtml(f.excluidaEm):(f.excluidaEm||''))} por ${esc(f.excluidaPor||'—')}<br>Motivo: ${esc(f.motivoExclusao||'—')}</small>${(f.fotos&&f.fotos.length)?fotosThumbsHtml(f.fotos,48):''}</div>`
+      :`<button class="btn small danger" onclick="excluirFalhaAuditoria('${f.id}')">Excluir com motivo</button>`;
+    return `<tr><td>${dsDateHtml?dsDateHtml(f.data):esc(f.data||'')}</td><td>${esc(f.itemNome||f.tipo||'—')}</td><td>${esc(localById?.(f.localId)?.nome||'—')}</td><td>${esc(f.status||'')}</td><td>${f.resolvidaEm?'Resolvida':'Ativa'}</td><td>${acao}</td></tr>`;
+  }).join('');
+  if(!falhas.length&&!verExcluidas)return `<div class="premiumPanel" style="margin-top:16px"><h3>Auditoria — Exclusão de falhas</h3><p class="mutedLine">Sem falhas ativas para exibir.</p><button class="btn secondary small" onclick="window._auditoriaVerExcluidas=true;renderLogs()">Ver falhas excluídas</button></div>`;
+  return `<div class="premiumPanel" style="margin-top:16px">
+    <h3>Auditoria — Exclusão de falhas</h3>
+    <p>Exclusão restrita ao perfil Master. Todo registro excluído aqui exige motivo obrigatório, gera log permanente em Histórico e é marcado como excluído (soft-delete) — não é apagado da base.</p>
+    <button class="btn secondary small" onclick="window._auditoriaVerExcluidas=${!verExcluidas};renderLogs()">${verExcluidas?'← Ver falhas ativas':'Ver falhas excluídas'}</button>
+    <div class="softTable" style="margin-top:14px"><table class="tbl"><thead><tr><th>Data</th><th>Item</th><th>Local</th><th>Status</th><th>Situação</th><th>${verExcluidas?'Exclusão':'Ação'}</th></tr></thead><tbody>${rows}</tbody></table></div>
+  </div>`;
+}
+function excluirFalhaAuditoria(id_){
+  if(!isMaster(currentUserSafe())){alert('Somente o perfil Master pode excluir falhas.');return}
+  const f=(db.falhas||[]).find(x=>x.id===id_); if(!f){alert('Falha não encontrada.');return}
+  const motivo=prompt('Motivo obrigatório da exclusão desta falha (será registrado permanentemente no histórico):');
+  if(motivo===null)return; // cancelado
+  if(!motivo.trim()){alert('Motivo é obrigatório. Exclusão cancelada.');return}
+  if(!confirm('Confirma a exclusão desta falha? Ela deixará de aparecer nas telas operacionais, mas o registro é preservado (soft-delete) e continua visível na Auditoria. Esta ação será registrada no histórico.'))return;
+  logLocal('falha',f.id,'excluir_auditoria','Falha excluída (soft-delete) por '+(currentUser().nome||currentUser().email||'Master')+'. Motivo: '+motivo.trim());
+  f.excluida=true;
+  f.excluidaEm=isoNow();
+  f.excluidaPor=(currentUser().email||currentUser().nome||'Master');
+  f.motivoExclusao=motivo.trim();
+  // Cascata: cancela (não apaga) o plano vinculado, se houver, registrando no histórico. O plano
+  // permanece na base para rastreabilidade, mas falhaDeveTerPlano() já não o recria.
+  const planoVinc=(db.planos||[]).find(p=>p.falhaId===id_);
+  if(planoVinc&&planoVinc.situacao!=='Concluído'&&planoVinc.situacao!=='Cancelado'){
+    logLocal('plano',planoVinc.id,'excluir_auditoria','Plano cancelado em cascata pela exclusão (soft-delete) da falha '+id_+' (auditoria Master).');
+    planoVinc.situacao='Cancelado';
+    planoVinc.providencia=(planoVinc.providencia?planoVinc.providencia+' | ':'')+'Cancelado automaticamente: falha de origem excluída na auditoria.';
+    planoVinc.atualizadoEm=isoNow();
+  }
+  save(); render();
+  alert('Falha excluída (soft-delete) e registrada no histórico de auditoria.');
+}
 function renderSobre(){const el=document.getElementById('sobre'); if(!el)return; const u=currentUserSafe(); const cfg=db.config||{}; el.innerHTML=`<div class="premiumPanel"><h3>${esc(cfg.appName||'Contratos L3A')}</h3><p>Módulo SDAI para cadastro técnico, histórico de falhas, plano de ação, relatórios e sincronização Google Sheets.</p><div class="premiumGrid" style="margin-top:14px">${premiumStat('Versão','6.33 Multi-cliente • 07/26')}${premiumStat('Usuário',u.nome||'Usuário')}${premiumStat('Perfil',u.perfil||'Administrador')}${premiumStat('Banco',syncCfg().configured?'Google Sheets':'Local')}</div></div><div class="premiumPanel"><h3>Arquitetura</h3><p>GitHub Pages + Google Apps Script + Google Sheets. Suporta múltiplos clientes com bases independentes e subsistemas configuráveis por cliente (SDAI, CFTV, Controle de Acesso, Ambiente).</p></div>`}
 
 /* =========================================================================
@@ -2790,21 +3453,21 @@ function clienteForm(c){
   </div>
 </div>`;
 }
-function salvarCliente(id){
+function salvarCliente(eid){
   const nome=(document.getElementById('cliNome').value||'').trim();
   if(!nome){alert('Informe o nome do cliente.');return}
   const mods=[...document.querySelectorAll('.cliMod:checked')].map(x=>x.value);
   const clientes=loadClientes();
-  if(id){
-    const idx=clientes.findIndex(x=>x.id===id);
+  if(eid){
+    const idx=clientes.findIndex(x=>x.id===eid);
     if(idx>=0)Object.assign(clientes[idx],{nome,cnpj:document.getElementById('cliCnpj').value.trim(),email:document.getElementById('cliEmail').value.trim(),tel:document.getElementById('cliTel').value.trim(),endereco:document.getElementById('cliEnd').value.trim(),obs:document.getElementById('cliObs').value.trim(),modulos:mods,atualizadoEm:isoNow()});
   }else{
-    clientes.push({id:uid(),nome,cnpj:document.getElementById('cliCnpj').value.trim(),email:document.getElementById('cliEmail').value.trim(),tel:document.getElementById('cliTel').value.trim(),endereco:document.getElementById('cliEnd').value.trim(),obs:document.getElementById('cliObs').value.trim(),modulos:mods,criadoEm:isoNow()});
+    clientes.push({id:id(),nome,cnpj:document.getElementById('cliCnpj').value.trim(),email:document.getElementById('cliEmail').value.trim(),tel:document.getElementById('cliTel').value.trim(),endereco:document.getElementById('cliEnd').value.trim(),obs:document.getElementById('cliObs').value.trim(),modulos:mods,criadoEm:isoNow()});
   }
   saveClientes(clientes);closeModal();renderClientes();updateClienteSideSelect();updateNavSubsistemas();
   // Sincroniza lista de clientes com Google e garante planilha do cliente
   try{syncClientesGoogle()}catch(e){}
-  const novoId=id?id:(clientes[clientes.length-1]||{}).id;
+  const novoId=eid||((clientes[clientes.length-1]||{}).id);
   if(novoId){try{ensureClienteSheet(novoId,nome)}catch(e){}}
 }
 function deleteCliente(id){
@@ -2829,7 +3492,7 @@ function renderCftv(){
   el.innerHTML=`
 <div class="premiumPanel">
   <div class="systemHeaderSlim">
-    <div class="titleBlock"><h3>CFTV — ${esc(c.nome)}</h3><p>Câmeras, gravadores e pontos de monitoramento.</p></div>
+    <div class="titleBlock"><h3>CFTV — ${esc(c.nome)} ${moduloProvisorioBadge()}</h3><p>Câmeras, gravadores e pontos de monitoramento.</p></div>
     ${can('editarFalhaPlano')?`<button class="btn" onclick="addCftvItem()">+ Nova câmera</button>`:''}
   </div>
   <div class="premiumGrid">${premiumStat('Total',total)}${premiumStat('Operando',ok)}${premiumStat('Em falha',falha)}${premiumStat('Offline',offline)}</div>
@@ -2859,8 +3522,8 @@ function _cftvFalhasLista(cams){
   if(!falhas.length)return `<div class="emptyState"><b>Nenhuma falha registrada</b><p>Todos os equipamentos CFTV estão operando normalmente.</p></div>`;
   return `<div class="softTable"><table class="tbl"><thead><tr><th>Câmera</th><th>Local</th><th>Status</th><th>Obs</th></tr></thead><tbody>${falhas.map(x=>`<tr><td>${esc(x.nome||'')}</td><td>${esc(x.local||'')}</td><td><span class="camStatus ${x.status}">${x.status}</span></td><td>${esc(x.obs||'')}</td></tr>`).join('')}</tbody></table></div>`;
 }
-function addCftvItem(){openModal(`<h3 style="margin:0 0 16px">Nova câmera / gravador</h3>${_cftvForm({})}`,'salvarCftvItem()')}
-function editCftvItem(id){const it=(db.cftv||[]).find(x=>x.id===id);if(!it)return;openModal(`<h3 style="margin:0 0 16px">Editar</h3>${_cftvForm(it)}`,'salvarCftvItem("'+id+'")')}
+function addCftvItem(){openModal(`<h3 style="margin:0 0 16px">Nova câmera / gravador</h3>${_cftvForm({})}<div style="display:flex;gap:8px;margin-top:18px;justify-content:flex-end"><button class="btn secondary" onclick="closeModal()">Cancelar</button><button class="btn" onclick="salvarCftvItem()">Salvar</button></div>`)}
+function editCftvItem(eid){const it=(db.cftv||[]).find(x=>x.id===eid);if(!it)return;openModal(`<h3 style="margin:0 0 16px">Editar</h3>${_cftvForm(it)}<div style="display:flex;gap:8px;margin-top:18px;justify-content:flex-end"><button class="btn secondary" onclick="closeModal()">Cancelar</button><button class="btn" onclick="salvarCftvItem('${eid}')">Salvar</button></div>`)}
 function _cftvForm(it){return `<div class="formGrid">
   <label>Nome / identificação *<input id="cfNome" class="inp" value="${esc(it.nome||'')}" placeholder="CAM-01, DVR Piso 1..."></label>
   <label>Tipo<select id="cfTipo" class="inp"><option ${(it.tipo||'')===''?'selected':''}>Câmera</option><option ${it.tipo==='Câmera Dome'?'selected':''}>Câmera Dome</option><option ${it.tipo==='Câmera Bullet'?'selected':''}>Câmera Bullet</option><option ${it.tipo==='Câmera PTZ'?'selected':''}>Câmera PTZ</option><option ${it.tipo==='Gravador'?'selected':''}>Gravador</option></select></label>
@@ -2871,12 +3534,12 @@ function _cftvForm(it){return `<div class="formGrid">
   <label>Status<select id="cfStatus" class="inp"><option value="ok" ${(it.status||'ok')==='ok'?'selected':''}>Operando</option><option value="falha" ${it.status==='falha'?'selected':''}>Em falha</option><option value="offline" ${it.status==='offline'?'selected':''}>Offline</option></select></label>
   <label style="grid-column:1/-1">Observações<textarea id="cfObs" class="inp" rows="2">${esc(it.obs||'')}</textarea></label>
 </div>`}
-function salvarCftvItem(id){
+function salvarCftvItem(eid){
   const nome=(document.getElementById('cfNome').value||'').trim();if(!nome){alert('Informe o nome.');return}
   const obj={nome,tipo:document.getElementById('cfTipo').value,local:document.getElementById('cfLocal').value.trim(),piso:document.getElementById('cfPiso').value.trim(),modelo:document.getElementById('cfModelo').value.trim(),ip:document.getElementById('cfIp').value.trim(),status:document.getElementById('cfStatus').value,obs:document.getElementById('cfObs').value.trim()};
   if(!db.cftv)db.cftv=[];
-  if(id){const idx=db.cftv.findIndex(x=>x.id===id);if(idx>=0)Object.assign(db.cftv[idx],obj);}
-  else{db.cftv.push({id:uid(),criadoEm:isoNow(),...obj});}
+  if(eid){const idx=db.cftv.findIndex(x=>x.id===eid);if(idx>=0)Object.assign(db.cftv[idx],obj);}
+  else{db.cftv.push({id:id(),criadoEm:isoNow(),...obj});}
   save();closeModal();renderCftv();
 }
 function deleteCftvItem(id){if(!confirm('Excluir este equipamento?'))return;db.cftv=(db.cftv||[]).filter(x=>x.id!==id);save();renderCftv()}
@@ -2895,7 +3558,7 @@ function renderAcesso(){
   el.innerHTML=`
 <div class="premiumPanel">
   <div class="systemHeaderSlim">
-    <div class="titleBlock"><h3>Controle de Acesso — ${esc(c.nome)}</h3><p>Portas, catracas, leitores e centrais de acesso.</p></div>
+    <div class="titleBlock"><h3>Controle de Acesso — ${esc(c.nome)} ${moduloProvisorioBadge()}</h3><p>Portas, catracas, leitores e centrais de acesso.</p></div>
     ${can('editarFalhaPlano')?`<button class="btn" onclick="addAcessoPonto()">+ Novo ponto</button>`:''}
   </div>
   <div class="premiumGrid">${premiumStat('Pontos',total)}${premiumStat('Operando',ok)}${premiumStat('Em falha',falha)}${premiumStat('Bloqueados',pts.filter(x=>x.status==='bloqueado').length)}</div>
@@ -2917,8 +3580,8 @@ function _acessoGrid(pts){
   </div>`).join('')}</div>`;
 }
 function _acessoFalhas(pts){const f=pts.filter(x=>x.status!=='ok');return f.length?`<div class="softTable"><table class="tbl"><thead><tr><th>Ponto</th><th>Tipo</th><th>Local</th><th>Status</th></tr></thead><tbody>${f.map(x=>`<tr><td>${esc(x.nome)}</td><td>${esc(x.tipo||'')}</td><td>${esc(x.local||'')}</td><td>${x.status}</td></tr>`).join('')}</tbody></table></div>`:`<div class="emptyState"><b>Sem falhas</b><p>Todos os pontos estão operando.</p></div>`}
-function addAcessoPonto(){openModal(`<h3 style="margin:0 0 16px">Novo ponto de acesso</h3>${_acessoForm({})}`,'salvarAcessoPonto()')}
-function editAcessoPonto(id){const it=(db.acessoPontos||[]).find(x=>x.id===id);if(!it)return;openModal(`<h3 style="margin:0 0 16px">Editar ponto</h3>${_acessoForm(it)}`,'salvarAcessoPonto("'+id+'")')}
+function addAcessoPonto(){openModal(`<h3 style="margin:0 0 16px">Novo ponto de acesso</h3>${_acessoForm({})}<div style="display:flex;gap:8px;margin-top:18px;justify-content:flex-end"><button class="btn secondary" onclick="closeModal()">Cancelar</button><button class="btn" onclick="salvarAcessoPonto()">Salvar</button></div>`)}
+function editAcessoPonto(eid){const it=(db.acessoPontos||[]).find(x=>x.id===eid);if(!it)return;openModal(`<h3 style="margin:0 0 16px">Editar ponto</h3>${_acessoForm(it)}<div style="display:flex;gap:8px;margin-top:18px;justify-content:flex-end"><button class="btn secondary" onclick="closeModal()">Cancelar</button><button class="btn" onclick="salvarAcessoPonto('${eid}')">Salvar</button></div>`)}
 function _acessoForm(it){return `<div class="formGrid">
   <label>Nome *<input id="apNome" class="inp" value="${esc(it.nome||'')}" placeholder="Porta entrada principal..."></label>
   <label>Tipo<select id="apTipo" class="inp"><option ${(it.tipo||'')==='Porta'?'selected':''}>Porta</option><option ${it.tipo==='Catraca'?'selected':''}>Catraca</option><option ${it.tipo==='Leitor'?'selected':''}>Leitor</option><option ${it.tipo==='Cancela'?'selected':''}>Cancela</option><option ${it.tipo==='Central'?'selected':''}>Central</option></select></label>
@@ -2928,12 +3591,12 @@ function _acessoForm(it){return `<div class="formGrid">
   <label>Status<select id="apStatus" class="inp"><option value="ok" ${(it.status||'ok')==='ok'?'selected':''}>Operando</option><option value="falha" ${it.status==='falha'?'selected':''}>Em falha</option><option value="bloqueado" ${it.status==='bloqueado'?'selected':''}>Bloqueado</option></select></label>
   <label style="grid-column:1/-1">Obs<textarea id="apObs" class="inp" rows="2">${esc(it.obs||'')}</textarea></label>
 </div>`}
-function salvarAcessoPonto(id){
+function salvarAcessoPonto(eid){
   const nome=(document.getElementById('apNome').value||'').trim();if(!nome){alert('Informe o nome.');return}
   const obj={nome,tipo:document.getElementById('apTipo').value,local:document.getElementById('apLocal').value.trim(),piso:document.getElementById('apPiso').value.trim(),modelo:document.getElementById('apModelo').value.trim(),status:document.getElementById('apStatus').value,obs:document.getElementById('apObs').value.trim()};
   if(!db.acessoPontos)db.acessoPontos=[];
-  if(id){const idx=db.acessoPontos.findIndex(x=>x.id===id);if(idx>=0)Object.assign(db.acessoPontos[idx],obj);}
-  else{db.acessoPontos.push({id:uid(),criadoEm:isoNow(),...obj});}
+  if(eid){const idx=db.acessoPontos.findIndex(x=>x.id===eid);if(idx>=0)Object.assign(db.acessoPontos[idx],obj);}
+  else{db.acessoPontos.push({id:id(),criadoEm:isoNow(),...obj});}
   save();closeModal();renderAcesso();
 }
 function deleteAcessoPonto(id){if(!confirm('Excluir este ponto?'))return;db.acessoPontos=(db.acessoPontos||[]).filter(x=>x.id!==id);save();renderAcesso()}
@@ -2951,7 +3614,7 @@ function renderAmbiente(){
   el.innerHTML=`
 <div class="premiumPanel">
   <div class="systemHeaderSlim">
-    <div class="titleBlock"><h3>Ambiente / Som — ${esc(c.nome)}</h3><p>Sensores de temperatura, CO₂, fumaça ambiental, sonorização e afins.</p></div>
+    <div class="titleBlock"><h3>Ambiente / Som — ${esc(c.nome)} ${moduloProvisorioBadge()}</h3><p>Sensores de temperatura, CO₂, fumaça ambiental, sonorização e afins.</p></div>
     ${can('editarFalhaPlano')?`<button class="btn" onclick="addAmbienteEquip()">+ Novo equipamento</button>`:''}
   </div>
   <div class="premiumGrid">${premiumStat('Total',equip.length)}${premiumStat('Operando',equip.filter(x=>x.status==='ok').length)}${premiumStat('Em falha',equip.filter(x=>x.status==='falha').length)}${premiumStat('Offline',equip.filter(x=>x.status==='offline').length)}</div>
@@ -2973,8 +3636,8 @@ function _ambienteGrid(equip){
   </div>`).join('')}</div>`;
 }
 function _ambienteFalhas(equip){const f=equip.filter(x=>x.status!=='ok');return f.length?`<div class="softTable"><table class="tbl"><thead><tr><th>Equipamento</th><th>Tipo</th><th>Local</th><th>Status</th></tr></thead><tbody>${f.map(x=>`<tr><td>${esc(x.nome)}</td><td>${esc(x.tipo||'')}</td><td>${esc(x.local||'')}</td><td>${x.status}</td></tr>`).join('')}</tbody></table></div>`:`<div class="emptyState"><b>Sem falhas</b><p>Todos os equipamentos estão operando.</p></div>`}
-function addAmbienteEquip(){openModal(`<h3 style="margin:0 0 16px">Novo equipamento</h3>${_ambienteForm({})}`,'salvarAmbienteEquip()')}
-function editAmbienteEquip(id){const it=(db.ambienteEquip||[]).find(x=>x.id===id);if(!it)return;openModal(`<h3 style="margin:0 0 16px">Editar equipamento</h3>${_ambienteForm(it)}`,'salvarAmbienteEquip("'+id+'")')}
+function addAmbienteEquip(){openModal(`<h3 style="margin:0 0 16px">Novo equipamento</h3>${_ambienteForm({})}<div style="display:flex;gap:8px;margin-top:18px;justify-content:flex-end"><button class="btn secondary" onclick="closeModal()">Cancelar</button><button class="btn" onclick="salvarAmbienteEquip()">Salvar</button></div>`)}
+function editAmbienteEquip(eid){const it=(db.ambienteEquip||[]).find(x=>x.id===eid);if(!it)return;openModal(`<h3 style="margin:0 0 16px">Editar equipamento</h3>${_ambienteForm(it)}<div style="display:flex;gap:8px;margin-top:18px;justify-content:flex-end"><button class="btn secondary" onclick="closeModal()">Cancelar</button><button class="btn" onclick="salvarAmbienteEquip('${eid}')">Salvar</button></div>`)}
 function _ambienteForm(it){return `<div class="formGrid">
   <label>Nome *<input id="amNome" class="inp" value="${esc(it.nome||'')}" placeholder="Sensor Temp. Corredor..."></label>
   <label>Tipo<select id="amTipo" class="inp"><option ${(it.tipo||'')==='Sensor de Temperatura'?'selected':''}>Sensor de Temperatura</option><option ${it.tipo==='Sensor CO₂'?'selected':''}>Sensor CO₂</option><option ${it.tipo==='Sensor de Fumaça'?'selected':''}>Sensor de Fumaça</option><option ${it.tipo==='Alto-falante'?'selected':''}>Alto-falante</option><option ${it.tipo==='Amplificador'?'selected':''}>Amplificador</option><option ${it.tipo==='Controlador'?'selected':''}>Controlador</option><option ${it.tipo==='Outro'?'selected':''}>Outro</option></select></label>
@@ -2984,12 +3647,12 @@ function _ambienteForm(it){return `<div class="formGrid">
   <label>Status<select id="amStatus" class="inp"><option value="ok" ${(it.status||'ok')==='ok'?'selected':''}>Operando</option><option value="falha" ${it.status==='falha'?'selected':''}>Em falha</option><option value="offline" ${it.status==='offline'?'selected':''}>Offline</option></select></label>
   <label style="grid-column:1/-1">Obs<textarea id="amObs" class="inp" rows="2">${esc(it.obs||'')}</textarea></label>
 </div>`}
-function salvarAmbienteEquip(id){
+function salvarAmbienteEquip(eid){
   const nome=(document.getElementById('amNome').value||'').trim();if(!nome){alert('Informe o nome.');return}
   const obj={nome,tipo:document.getElementById('amTipo').value,local:document.getElementById('amLocal').value.trim(),piso:document.getElementById('amPiso').value.trim(),modelo:document.getElementById('amModelo').value.trim(),status:document.getElementById('amStatus').value,obs:document.getElementById('amObs').value.trim()};
   if(!db.ambienteEquip)db.ambienteEquip=[];
-  if(id){const idx=db.ambienteEquip.findIndex(x=>x.id===id);if(idx>=0)Object.assign(db.ambienteEquip[idx],obj);}
-  else{db.ambienteEquip.push({id:uid(),criadoEm:isoNow(),...obj});}
+  if(eid){const idx=db.ambienteEquip.findIndex(x=>x.id===eid);if(idx>=0)Object.assign(db.ambienteEquip[idx],obj);}
+  else{db.ambienteEquip.push({id:id(),criadoEm:isoNow(),...obj});}
   save();closeModal();renderAmbiente();
 }
 function deleteAmbienteEquip(id){if(!confirm('Excluir?'))return;db.ambienteEquip=(db.ambienteEquip||[]).filter(x=>x.id!==id);save();renderAmbiente()}
@@ -3005,6 +3668,40 @@ function _subsisModuloInativo(modulo){return `<div class="subsisEmptyMsg"><svg w
    ultimaAlteracao) — nenhuma mudança de schema, nenhuma mudança no Code.gs.
    ========================================================================= */
 function pisoSortKey(p){const m=String(p||'').match(/\d+/);return m?parseInt(m[0],10):999}
+/* =========================================================================
+   TASK 1 (auditoria de estabilização 2026-07) — SEPARAÇÃO ARQUITETURAL:
+   INDICADOR OPERACIONAL (estado atual) × INDICADOR HISTÓRICO (eventos no tempo)
+   -------------------------------------------------------------------------
+   O cliente pediu explicitamente que Dashboard e Relatórios NÃO mostrem os
+   mesmos números — eles respondem perguntas diferentes:
+
+   • OPERACIONAL ("como está o sistema agora?"): Falhas Ativas, Equipamentos em
+     Teste, Equipamentos Desativados, Disponibilidade, Lojas Operacionais.
+     Fonte ÚNICA e obrigatória: o STATUS ATUAL gravado em db.equipamentos,
+     db.flms e db.locais, lido via dashStatusBucket()/normalizeStatus() (esta
+     função, logo abaixo). NUNCA deve ler db.falhas (log de eventos) — um
+     equipamento com status "Em operação" hoje conta como operacional mesmo
+     que tenha tido 10 falhas registradas no histórico.
+
+   • HISTÓRICO ("o que aconteceu no período?"): Falhas abertas no período,
+     Falhas resolvidas, Tempo médio de solução, SLA, Reincidência, Quantidade
+     de ocorrências. Fonte ÚNICA e obrigatória: os REGISTROS de db.falhas
+     (log de eventos), filtrados por isFalhaStatus() (ver definição abaixo) e
+     por período (relNoPeriodo()). NUNCA deve re-derivar do status atual do
+     equipamento — um evento de falha permanece no histórico mesmo depois do
+     equipamento voltar a "Em operação".
+
+   Por que a discrepância entre os dois números é ESPERADA e não é bug: um
+   equipamento pode estar operacional AGORA (bucket operacional) mas ter tido
+   3 falhas HISTÓRICAS no período filtrado (bucket histórico) — os dois
+   números corretos, ao mesmo tempo, por definição. Não "conserte" isso
+   tentando fazer os dois baterem — funções auditadas em 2026-07: renderDashboard,
+   dashPisoStats, dashLojasComFalha, dashPorLaco, dashPanoramaLacos,
+   renderVisaoGeral (operacionais, só status) e relFalhasResumo,
+   relTempoMedioFalhasHoras, relFalhasPorPrioridade, relPlanoResumo
+   (históricos, só db.falhas/db.planos) — todas já respeitavam esta separação
+   nesta auditoria; nenhuma mistura de fonte foi encontrada.
+   ========================================================================= */
 function dashStatusBucket(st){const s=up(normalizeStatus(st||''));if(s.includes('INCEND')||s.includes('DISPAR'))return 'falha';if(s.includes('ABERT')||s.includes('CURTO'))return 'falha';if(s.includes('TESTE'))return 'teste';if(s.includes('DESATIV'))return 'desativada';return 'operacao'}
 // Piso efetivo: o piso OFICIAL definido no Laço (tela Painéis → Piso por Laço) manda
 // mais que o piso gravado solto no próprio equipamento/loja/FLM — que pode estar
@@ -3312,7 +4009,7 @@ function renderPlano(){
     const acoes=`<div class="planoAcoes">
       ${r.planoId?`<button class="iconBtn" title="Editar" onclick="formPlano('${r.planoId}')">✏</button>`:`<button class="btn small" title="Criar plano" onclick="formPlano('','${r.falhaId}')" style="padding:3px 8px;font-size:11px">+ Plano</button>`}
       ${r.planoId?`<button class="iconBtn" title="Evidências (${r.fotoCount||0})" onclick="abrirEvidencias('${r.planoId}')">📷</button>`:''}
-      ${r.planoId&&r.situacao!=='Concluído'?`<button class="iconBtn" title="Concluir" onclick="concluirPlano('${r.planoId}')">✔</button>`:''}
+      ${r.planoId&&r.situacao!=='Concluído'?`<button class="iconBtn" title="Concluir" onclick="abrirResultadoPlano('${r.planoId}')">✔</button>`:''}
       ${r.planoId?`<button class="iconBtn" title="Mais opções" onclick="maisOpcoesPlano('${r.planoId}','${r.falhaId}')">⋮</button>`:''}
     </div>`;
     return `<tr style="font-size:12.5px">
@@ -3536,7 +4233,7 @@ function relResumoGeral(){
 function relTempoMedioFalhasHoras(){
   // CORREÇÃO: só considera lançamentos que são realmente falha — um "Em teste" aguardando
   // confirmação não é uma falha em aberto para efeito de tempo médio de atendimento.
-  const abertas=(db.falhas||[]).filter(f=>!f.resolvidaEm&&isFalhaStatus(f.status));
+  const abertas=(db.falhas||[]).filter(f=>!f.resolvidaEm&&!f.excluida&&isFalhaStatus(f.status));
   if(!abertas.length)return 0;
   const soma=abertas.reduce((a,f)=>{const t=new Date(f.data).getTime();return a+(isNaN(t)?0:Math.max(0,(Date.now()-t)/3600000))},0);
   return Math.round(soma/abertas.length);
@@ -3546,7 +4243,7 @@ function relFalhasPorPrioridade(){
   const map={'Crítica':0,'Alta':0,'Média':0,'Baixa':0,'Sem plano':0};
   // CORREÇÃO: só considera lançamentos que são realmente falha (isFalhaStatus) — antes contava
   // qualquer lançamento (inclusive "Em teste"/"Desativação") na prioridade do plano.
-  (db.falhas||[]).filter(f=>isFalhaStatus(f.status)).forEach(f=>{const p=planoForFalha(f.id);const k=p?(p.prioridade||'Sem plano'):'Sem plano';map[k]=(map[k]||0)+1});
+  (db.falhas||[]).filter(f=>!f.excluida&&isFalhaStatus(f.status)).forEach(f=>{const p=planoForFalha(f.id);const k=p?(p.prioridade||'Sem plano'):'Sem plano';map[k]=(map[k]||0)+1});
   return map;
 }
 function relPorCampoGenerico(arr,getter,fallback){
@@ -3566,7 +4263,7 @@ function relFalhasResumo(){
   // curto/Incêndio disparado). "Em teste" e "Desativação" são lançamentos válidos e continuam
   // aparecendo normalmente na tela de Falhas do sistema — só não entram mais nestes indicadores/
   // rankings de falha do relatório executivo.
-  const rows=(db.falhas||[]).filter(f=>isFalhaStatus(f.status)&&relNoPeriodo(f.data)).map(f=>({...f,painel:paiName(f.painelId),laco:lacName(f.lacoId),loja:locName(f.localId)}));
+  const rows=(db.falhas||[]).filter(f=>!f.excluida&&isFalhaStatus(f.status)&&relNoPeriodo(f.data)).map(f=>({...f,painel:paiName(f.painelId),laco:lacName(f.lacoId),loja:locName(f.localId)}));
   const abertas=rows.filter(r=>!r.resolvidaEm);
   return {
     total:rows.length,abertas:abertas.length,concluidas:rows.length-abertas.length,
@@ -3617,7 +4314,7 @@ function relLojasResumo(){
   // CORREÇÃO: ranking de "lojas com mais falhas" só conta lançamentos que são realmente falha —
   // antes contava também "Em teste"/"Desativação", fazendo lojas só testadas aparecerem como se
   // tivessem falha.
-  const rankingFalhas=(()=>{const map={};(db.falhas||[]).filter(f=>isFalhaStatus(f.status)).forEach(f=>{if(!f.localId)return;const nome=locName(f.localId)||'—';map[nome]=(map[nome]||0)+1});return Object.entries(map).map(([label,value])=>({label,value})).sort((a,b)=>b.value-a.value).slice(0,10)})();
+  const rankingFalhas=(()=>{const map={};(db.falhas||[]).filter(f=>!f.excluida&&isFalhaStatus(f.status)).forEach(f=>{if(!f.localId)return;const nome=locName(f.localId)||'—';map[nome]=(map[nome]||0)+1});return Object.entries(map).map(([label,value])=>({label,value})).sort((a,b)=>b.value-a.value).slice(0,10)})();
   return {
     total:locais.length,
     porPiso:relPorCampoGenerico(locais,l=>pisoEfetivo(l)||l.piso,'Sem piso').sort((a,b)=>pisoSortKey(a.label)-pisoSortKey(b.label)),
@@ -4337,7 +5034,7 @@ function statusAgregadoLoja(localId){
   if(stats.length&&stats.every(s=>isDesativadoStatus(s)))return {estado:'desativado',falhas:0};
   return {estado:'ok',falhas:0};
 }
-function plantaFalhasAbertasLoja(localId){return (db.falhas||[]).filter(f=>f.localId===localId&&!f.resolvidaEm&&isFalhaStatus(f.status)).length}
+function plantaFalhasAbertasLoja(localId){return (db.falhas||[]).filter(f=>f.localId===localId&&!f.resolvidaEm&&!f.excluida&&isFalhaStatus(f.status)).length}
 function plantaStatusClassEquip(st){st=normalizeStatus(st);if(isFalhaStatus(st))return 'st-bad';if(isTesteStatus(st))return 'st-warn';if(isDesativadoStatus(st))return 'st-off';return 'st-ok'}
 
 const PLANTA_ICONES={
@@ -4767,7 +5464,15 @@ function bootSDAIManager(){
     const cid=clienteAtivo();
     if(cid){
       const clienteExiste=loadClientes().find(c=>c.id===cid);
-      if(clienteExiste){db=loadClienteDb(cid);}
+      if(clienteExiste){
+        db=loadClienteDb(cid);
+        menuState=loadMenuStateLocal();
+        // Aplica a mesma prioridade de view do switchCliente ao abrir a página com
+        // um cliente já selecionado — evita abrir Dashboard SDAI para cliente sem SDAI.
+        currentView=viewInicialCliente();
+        const loc=viewLocation(currentView);
+        if(loc){menuState.openSubsys=loc.subsys;menuState.openGroups[loc.subsys]=loc.group;saveMenuStateLocal();}
+      }
       else{setClienteAtivo('');} // cliente foi excluído, limpa seleção
     }
     render();
