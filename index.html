@@ -982,6 +982,38 @@ function getDirecionamento(status){
   return DIRECIONAMENTO_TECNICO[norm]||DIRECIONAMENTO_TECNICO['__renomear__']||'';
 }
 const STATUS_SISTEMA_LABELS={__renomear__:'Renomear'};
+// BACKUP LÓGICA ANTERIOR: não existiam tipo/situação/criticidade dedicados nem opções de tipo de
+// falha para novo cadastro; o "status do sistema" fazia ao mesmo tempo o papel de status técnico,
+// tipo de falha e situação da ocorrência. O bloco abaixo dá suporte à separação Falha (ocorrência)
+// x Plano de Ação (execução) x Estado operacional do item (db.locais/equipamentos/flms/portas.status),
+// preservando 100% de compatibilidade com registros antigos via fallback quando o campo novo não existir.
+const TIPO_FALHA_OPTIONS=['Laço aberto','Módulo aberto','Módulo em curto','Incêndio disparado','Desativação indevida','Falha de comunicação','Falha de alimentação','Identificação incorreta','Outro'];
+const SITUACAO_FALHA_OPTIONS=['Em aberto','Em atendimento','Aguardando lojista','Aguardando material','Aguardando acesso','Resolvida','Cancelada','Não conforme atendida'];
+const CRITICIDADE_FALHA_OPTIONS=['Crítica','Alta','Média','Baixa'];
+const RESOLVER_RESULTADO_OPTIONS=['Conforme','Não conforme','Falha não confirmada','Item desativado autorizado','Ocorrência cancelada'];
+// interpretarStatusLegado(status): mapeia, SÓ PARA EXIBIÇÃO, valores antigos de status que não
+// fazem mais sentido como cadastro novo. Nunca altera o dado salvo em db.falhas.
+function interpretarStatusLegado(status){
+  const raw=n(status); const x=up(raw);
+  if(x==='EM TESTE')return 'Registro legado';
+  if(x==='EM OPERAÇÃO'||x==='EM OPERACAO')return 'Normalização registrada anteriormente';
+  if(x.includes('RENOME'))return 'Identificação incorreta (reclassificado)';
+  if(x==='DESATIVAÇÃO'||x==='DESATIVACAO')return 'Classificar posteriormente';
+  return raw||'—';
+}
+// tipoFalhaEfetivo/situacaoFalhaEfetiva/criticidadeFalhaEfetiva: leem os campos novos (tipo/situacao/
+// criticidade), com fallback total para registros antigos que só tinham "status". Nada é reescrito
+// no banco — só interpretado na hora de exibir/filtrar/pesquisar.
+function tipoFalhaEfetivo(f){ if(f&&f.tipo&&TIPO_FALHA_OPTIONS.includes(f.tipo))return f.tipo; const st=up(normalizeStatus(f&&f.status)); if(st.includes('LAÇO')||st.includes('LACO'))return 'Laço aberto'; if(st.includes('CURTO'))return 'Módulo em curto'; if(st.includes('MÓDULO')||st.includes('MODULO'))return 'Módulo aberto'; if(st.includes('INCÊND')||st.includes('INCEND')||st.includes('DISPAR'))return 'Incêndio disparado'; if(st.includes('DESATIV'))return 'Desativação indevida'; if(st.includes('RENOME'))return 'Identificação incorreta'; return (f&&f.tipo)||'Outro' }
+function situacaoFalhaEfetiva(f){ if(f&&f.situacao&&SITUACAO_FALHA_OPTIONS.includes(f.situacao))return f.situacao; if(f&&f.resolvidaEm)return 'Resolvida'; return 'Em aberto' }
+function criticidadeFalhaEfetiva(f){ return (f&&f.criticidade)||'Média' }
+function falhaSituacaoAtiva(f){ const s=situacaoFalhaEfetiva(f); return s!=='Resolvida'&&s!=='Cancelada' }
+// normalizeSearchText(): usada pela busca de Falhas — remove acento, uppercase, colapsa espaços.
+function normalizeSearchText(s){ return String(s??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().trim().replace(/\s+/g,' ') }
+// normalizePhysicalAddress(): "3.1.14.2" / "3-1-14-2" / "03.01.014.02" -> "3-1-14-2" (formato
+// canônico comparável: aceita ponto OU hífen como separador e remove zeros à esquerda de cada segmento).
+function normalizePhysicalAddress(s){ const raw=String(s??'').trim(); if(!raw)return ''; const partes=raw.split(/[.\-]/).filter(p=>p!==''); if(!partes.length)return normalizeSearchText(raw); return partes.map(p=>p.replace(/^0+(?=\d)/,'')).join('-') }
+
 function statusSistemaOption(val,selected){
   const label=STATUS_SISTEMA_LABELS[val]||val;
   const isSep=val==='__renomear__';
@@ -1869,74 +1901,187 @@ function renderEquipamentos(){
       </table>
     </div>`;
 }
-function renderFalhas(){
-  let f=filters.falhas||{};
-  // CORREÇÃO (busca não encontrava a loja): antes o filtro de busca rodava em cima do registro
-  // "cru" de Falha (que só tem localId, um id interno) e SÓ DEPOIS o .map() resolvia o nome da
-  // loja/painel/laço — ou seja, era estruturalmente impossível a busca por nome de loja encontrar
-  // qualquer coisa, porque o nome ainda não existia no objeto no momento em que o filtro rodava.
-  // Agora resolve painel/laço/loja PRIMEIRO e só então filtra — a busca passa a considerar também
-  // o nome da loja, não só os campos internos do lançamento.
-  const situacaoFiltro=f.situacao||'Em aberto';
-  let baseRows=db.falhas
-   .map(x=>({...x,painel:paiName(x.painelId),laco:lacName(x.lacoId),loja:locName(x.localId)}))
-   .filter(x=>
-    (!f.status||normalizeStatus(x.status)===f.status)&&
-    (!f.tipo||x.tipo===f.tipo)&&
-    (!f.q||JSON.stringify(x).toUpperCase().includes(up(f.q)))
-   )
-   .sort((a,b)=>String(b.data).localeCompare(String(a.data)));
-
-  let rows=baseRows.filter(x=>situacaoFiltro==='Todos'||(situacaoFiltro==='Resolvida'?!!x.resolvidaEm:!x.resolvidaEm));
-
-  const totalFalhas=baseRows.length;
-  const abertas=baseRows.filter(r=>!r.resolvidaEm).length;
-  const criticas=baseRows.filter(r=>isFalhaStatus(r.status)&&!r.resolvidaEm).length;
-  const hoje=baseRows.filter(r=>r.data&&r.data.startsWith(new Date().toISOString().slice(0,10))).length;
-
-  const trs=rows.map(r=>{
+// BACKUP LÓGICA ANTERIOR: renderFalhas() fazia um render() completo da tabela a cada tecla digitada
+// na busca (via data-filter-input genérico), filtrava só por tipo/status(bruto)/JSON.stringify(x)
+// e mostrava colunas Data/Loja/Localização/Status/Situação/Responsável/Ações sem paginação, sem
+// filtros de Painel/Laço/Piso/Loja/Período e sem separar Tipo/Criticidade/Situação da falha do
+// status técnico do item. Reescrita abaixo segue o MESMO padrão visual/estrutural já usado em
+// renderLocais()/renderLocaisResultado() (estrutura montada 1x, resultado recalculado via debounce,
+// nunca dispara render() completo ao digitar) e em renderPlano() (filtros compactos, cards de ação).
+let _falhasSearchIndex=null,_falhasSearchIndexVersion='';
+function falhasSearchIndexVersion(){
+  const fs=db.falhas||[];
+  return fs.length+':'+(fs[fs.length-1]||{}).id+':'+(db.locais||[]).length+':'+(db.equipamentos||[]).length+':'+(db.flms||[]).length+':'+(db.portas||[]).length;
+}
+function buildFalhasSearchIndex(){
+  const v=falhasSearchIndexVersion();
+  if(_falhasSearchIndex&&_falhasSearchIndexVersion===v)return _falhasSearchIndex;
+  const idx=new Map();
+  (db.falhas||[]).forEach(f=>{
+    const loc=localById(f.localId)||{};
+    const isFlm=String(f.itemId||'').startsWith('flm:');
+    const flm=isFlm?flmById(String(f.itemId).slice(4)):null;
+    const equip=!isFlm?(db.equipamentos||[]).find(e=>e.id===f.itemId):null;
+    const porta=(db.portas||[]).find(p=>p.id===loc.portaId)||null;
+    const enderecoRaw=f.itemNome||(flm&&flm.endereco)||(equip&&equip.endereco)||loc.endereco||'';
+    const partes=[
+      loc.nome,loc.nomeOriginalCadastro,loc.nomeOficial,loc.luc,loc.tipo,
+      paiName(f.painelId),lacName(f.lacoId),loc.piso,f.piso,
+      f.itemNome,flm&&flm.endereco,flm&&flm.modelo,equip&&equip.endereco,equip&&equip.modelo,
+      porta&&porta.numero,enderecoRaw,tipoFalhaEfetivo(f),f.motivo,f.responsavel
+    ];
+    const texto=normalizeSearchText(partes.filter(x=>x!==undefined&&x!==null&&x!=='').join(' | '));
+    const enderecoNorm=normalizePhysicalAddress(enderecoRaw);
+    idx.set(f.id,texto+' '+enderecoNorm+' '+enderecoNorm.replace(/-/g,''));
+  });
+  _falhasSearchIndex=idx;_falhasSearchIndexVersion=v;
+  return idx;
+}
+function falhasRowsFiltradas(){
+  const f=filters.falhas||{};
+  const idx=buildFalhasSearchIndex();
+  const termoBusca=normalizeSearchText(f.q||'');
+  const termoEndereco=termoBusca?normalizePhysicalAddress(f.q||''):'';
+  let rows=(db.falhas||[]).map(x=>({
+    ...x,
+    painel:paiName(x.painelId),laco:lacName(x.lacoId),loja:locName(x.localId),
+    piso:x.piso||'',
+    tipoEfetivo:tipoFalhaEfetivo(x),
+    situacaoEfetiva:situacaoFalhaEfetiva(x),
+    criticidadeEfetiva:criticidadeFalhaEfetiva(x),
+    planoVinculado:planoForFalha(x.id)
+  })).filter(r=>{
+    if(termoBusca){
+      const texto=idx.get(r.id)||'';
+      if(!texto.includes(termoBusca)&&!(termoEndereco&&texto.includes(termoEndereco)))return false;
+    }
+    if(f.painel&&r.painel!==f.painel)return false;
+    if(f.laco&&r.laco!==f.laco)return false;
+    if(f.piso&&(r.piso||'')!==f.piso)return false;
+    if(f.loja&&r.localId!==f.loja)return false;
+    if(f.tipo&&r.tipoEfetivo!==f.tipo)return false;
+    if(f.situacao&&r.situacaoEfetiva!==f.situacao)return false;
+    if(f.periodoDe&&String(r.data||'').slice(0,10)<f.periodoDe)return false;
+    if(f.periodoAte&&String(r.data||'').slice(0,10)>f.periodoAte)return false;
+    return true;
+  });
+  rows.sort((a,b)=>String(b.data||'').localeCompare(String(a.data||'')));
+  return rows;
+}
+function verFalha(i){
+  const f=(db.falhas||[]).find(x=>x.id===i); if(!f)return;
+  const plano=planoForFalha(i);
+  const legado=(up(f.status)==='EM TESTE'||up(f.status)==='EM OPERAÇÃO'||up(f.status)==='EM OPERACAO'||up(f.status).includes('RENOME')||up(f.status).includes('DESATIV'));
+  openModal(`<h2>Falha — ${esc(locName(f.localId)||'—')}</h2>
+  <p><b>Data:</b> ${esc(fmtDataHoraTexto(f.data))} • <b>Origem:</b> ${esc(f.origem||'—')} • <b>Responsável:</b> ${esc(f.responsavel||'—')}</p>
+  <p><b>Tipo:</b> ${esc(tipoFalhaEfetivo(f))} • <b>Criticidade:</b> ${esc(criticidadeFalhaEfetiva(f))} • <b>Situação:</b> ${esc(situacaoFalhaEfetiva(f))}</p>
+  <p><b>Painel:</b> ${esc(paiName(f.painelId)||'—')} • <b>Laço:</b> ${esc(lacName(f.lacoId)||'—')} • <b>Piso:</b> ${esc(f.piso||'—')} • <b>Item:</b> ${esc(f.itemNome||'—')}</p>
+  ${legado?`<p class="note"><b>Interpretação do status legado (${esc(f.status)}):</b> ${esc(interpretarStatusLegado(f.status))}</p>`:''}
+  <p><b>Motivo:</b> ${esc(f.motivo||'—')}</p>
+  <p><b>Observação:</b> ${esc(f.obs||'—')}</p>
+  ${plano?`<p><b>Plano de ação vinculado:</b> ${esc(plano.situacao||'Aberto')} — <button class="btn small secondary" onclick="formAtendimentoPlano('${plano.id}')">Abrir plano</button></p>`:'<p class="msg warn">Sem plano de ação vinculado.</p>'}
+  <br><button class="btn secondary" onclick="closeModal()">Fechar</button>`);
+}
+function irParaPlanoFalha(falhaId){
+  const p=planoForFalha(falhaId);
+  if(p){formAtendimentoPlano(p.id)} else {formPlano('',falhaId)}
+}
+function renderFalhasResultado(){
+  const kpiEl=document.getElementById('falhasKpis');
+  const tbodyEl=document.getElementById('falhasTbody');
+  const moreWrap=document.getElementById('falhasMoreWrap');
+  if(!kpiEl||!tbodyEl)return; // estrutura ainda não montada (aba não está ativa) - renderFalhas() cuida disso
+  const rows=falhasRowsFiltradas();
+  const total=rows.length;
+  const abertas=rows.filter(r=>falhaSituacaoAtiva(r)).length;
+  const criticas=rows.filter(r=>falhaSituacaoAtiva(r)&&r.criticidadeEfetiva==='Crítica').length;
+  const hoje=rows.filter(r=>r.data&&String(r.data).startsWith(new Date().toISOString().slice(0,10))).length;
+  kpiEl.innerHTML=dsKpiStrip([
+    ['Total de registros',total,''],
+    ['Em aberto',abertas,abertas>0?'warn':'ok'],
+    ['Críticas em aberto',criticas,criticas>0?'bad':'ok'],
+    ['Hoje',hoje,'info']
+  ]);
+  const pageSize=filters.falhasPageSize||50;
+  const visiveis=rows.slice(0,pageSize);
+  const trs=visiveis.map(r=>{
     const loc=dsLocHtml({painel:r.painel,piso:r.piso,laco:r.laco,tipo:r.tipo,endereco:r.itemNome});
-    const situacao=r.resolvidaEm?'Resolvida':'Em aberto';
+    const legado=(up(r.status)==='EM TESTE'||up(r.status)==='EM OPERAÇÃO'||up(r.status)==='EM OPERACAO')?`<div style="font-size:10.5px;color:var(--l3a-text-muted)">${esc(interpretarStatusLegado(r.status))}</div>`:'';
+    const plano=r.planoVinculado?`<span class="dsBadge ${r.planoVinculado.situacao==='Concluído'?'done':'open'}" style="cursor:pointer" onclick="formAtendimentoPlano('${r.planoVinculado.id}')" title="Abrir plano">${esc(r.planoVinculado.situacao||'Aberto')}</span>`:`<button class="btn small secondary" onclick="irParaPlanoFalha('${r.id}')" title="Criar plano de ação">+ Plano</button>`;
     return `<tr>
       <td>${dsDateHtml(r.data)}</td>
-      <td><div style="font-weight:700;font-size:13px">${esc(r.loja||'—')}</div></td>
+      <td><div style="font-weight:700;font-size:13px">${esc(r.loja||'—')}</div>${legado}</td>
       <td>${loc}</td>
-      <td>${dsBadgeHtml(r.status)}</td>
-      <td><span class="dsBadge ${r.resolvidaEm?'done':'open'}">${esc(situacao)}</span></td>
+      <td style="font-size:12.5px">${esc(r.tipoEfetivo)}</td>
+      <td><span class="dsBadge ${r.criticidadeEfetiva==='Crítica'?'bad':(r.criticidadeEfetiva==='Alta'?'warn':'')}">${esc(r.criticidadeEfetiva)}</span></td>
+      <td><span class="dsBadge ${falhaSituacaoAtiva(r)?'open':'done'}">${esc(r.situacaoEfetiva)}</span></td>
+      <td>${plano}</td>
       <td style="font-size:12px">${esc(r.responsavel||'—')}</td>
       <td><div class="dsIcoGroup">
+        <button class="dsIco" onclick="verFalha('${r.id}')" title="Visualizar">👁</button>
         <button class="dsIco" onclick="formFalha('${r.id}')" title="Editar">✏️</button>
+        <button class="dsIco" onclick="irParaPlanoFalha('${r.id}')" title="Plano de ação">📋</button>
+        <button class="dsIco" onclick="historicoPlano('${r.id}')" title="Histórico">🕒</button>
+        <button class="dsIco" onclick="resolverFalha('${r.id}')" title="Resolver">✅</button>
         <button class="dsIco del" onclick="del('falhas','${r.id}')" title="Excluir">🗑</button>
       </div></td>
     </tr>`;
   }).join('');
+  tbodyEl.innerHTML=trs||`<tr><td colspan="9"><div class="emptyState">Nenhuma falha encontrada com os filtros atuais.</div></td></tr>`;
+  if(moreWrap)moreWrap.innerHTML=rows.length>pageSize?`<button class="btn secondary" onclick="filters.falhasPageSize=(filters.falhasPageSize||50)+50;renderFalhasResultado()">Carregar mais (${rows.length-pageSize} restante(s))</button>`:'';
+}
+// atualizarBuscaFalhas(): mesmo padrão de atualizarBuscaLocais() — só atualiza o filtro e, após
+// debounce de 280ms, recalcula KPIs+tabela (renderFalhasResultado), nunca chama render() completo.
+function atualizarBuscaFalhas(valor){
+  filters.falhas={...filters.falhas,q:valor};
+  filters.falhasPageSize=50;
+  clearTimeout(searchRenderTimer);
+  searchRenderTimer=setTimeout(renderFalhasResultado,280);
+}
+function renderFalhas(){
+  const f=filters.falhas||{};
+  const paineisOpts=unique((db.falhas||[]).map(x=>paiName(x.painelId)).filter(Boolean));
+  const lacosOpts=unique((db.falhas||[]).map(x=>lacName(x.lacoId)).filter(Boolean));
+  const pisosOpts=unique((db.falhas||[]).map(x=>x.piso).filter(Boolean));
+  const lojaIds=unique((db.falhas||[]).map(x=>x.localId).filter(Boolean));
+  const lojaOpts=lojaIds.map(id2=>({id:id2,nome:locName(id2)})).filter(x=>x.nome).sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
 
   document.getElementById('falhas').innerHTML=`
-    ${dsKpiStrip([
-      ['Total de registros',totalFalhas,''],
-      ['Em aberto',abertas,abertas>0?'warn':'ok'],
-      ['Críticas (sem plano)',criticas,criticas>0?'bad':'ok'],
-      ['Hoje',hoje,'info']
-    ])}
+    <div id="falhasKpis"></div>
     <div class="dsFilters">
-      <div class="field"><label>Tipo</label><select onchange="filters.falhas={...filters.falhas,tipo:this.value};render()">${selectOpts(unique(db.falhas.map(x=>x.tipo)),f.tipo)}</select></div>
-      <div class="field"><label>Status</label><select onchange="filters.falhas={...filters.falhas,status:this.value};render()">${selectOpts(unique(db.falhas.map(x=>normalizeStatus(x.status))),f.status)}</select></div>
-      <div class="field"><label>Situação</label><select onchange="filters.falhas={...filters.falhas,situacao:this.value};render()">${['Em aberto','Resolvida','Todos'].map(v=>`<option value="${v}" ${v===situacaoFiltro?'selected':''}>${v}</option>`).join('')}</select></div>
-      <div class="field"><label>Busca</label><input value="${escAttrRaw(f.q)}" data-filter-input="1" data-filter-group="falhas" data-filter-key="q" data-focus-key="falhasBusca" placeholder="Loja, item, status..."></div>
-      <div class="dsFilterActions"><button class="dsIco prim" onclick="formFalha()">+ Registrar</button></div>
+      <div class="field"><label>Busca</label><input id="falhasBusca" value="${escAttrRaw(f.q)}" data-focus-key="falhasBusca" placeholder="Loja, LUC, endereço, módulo, porta..."></div>
+      <div class="field"><label>Painel</label><select onchange="filters.falhas={...filters.falhas,painel:this.value};render()">${selectOpts(paineisOpts,f.painel)}</select></div>
+      <div class="field"><label>Laço</label><select onchange="filters.falhas={...filters.falhas,laco:this.value};render()">${selectOpts(lacosOpts,f.laco)}</select></div>
+      <div class="field"><label>Piso</label><select onchange="filters.falhas={...filters.falhas,piso:this.value};render()">${selectOpts(pisosOpts,f.piso)}</select></div>
+      <div class="field"><label>Loja</label><select onchange="filters.falhas={...filters.falhas,loja:this.value};render()"><option value="">Todas</option>${lojaOpts.map(x=>`<option value="${x.id}" ${x.id===f.loja?'selected':''}>${esc(x.nome)}</option>`).join('')}</select></div>
+      <div class="field"><label>Tipo</label><select onchange="filters.falhas={...filters.falhas,tipo:this.value};render()">${selectOpts(TIPO_FALHA_OPTIONS,f.tipo)}</select></div>
+      <div class="field"><label>Situação</label><select onchange="filters.falhas={...filters.falhas,situacao:this.value};render()">${selectOpts(SITUACAO_FALHA_OPTIONS,f.situacao)}</select></div>
+      <div class="field"><label>Período inicial</label><input type="date" value="${esc(f.periodoDe||'')}" onchange="filters.falhas={...filters.falhas,periodoDe:this.value};renderFalhasResultado()"></div>
+      <div class="field"><label>Período final</label><input type="date" value="${esc(f.periodoAte||'')}" onchange="filters.falhas={...filters.falhas,periodoAte:this.value};renderFalhasResultado()"></div>
+      <div class="dsFilterActions">
+        <button class="btn small secondary" onclick="filters.falhas={};filters.falhasPageSize=50;render()">Limpar filtros</button>
+        <button class="dsIco prim" onclick="formFalha()">+ Registrar</button>
+      </div>
     </div>
-    ${situacaoFiltro==='Em aberto'&&(totalFalhas-abertas)>0?`<div class="emptyState" style="padding:10px 14px;font-size:12.5px;text-align:left">${totalFalhas-abertas} falha(s) já resolvida(s) (plano de ação concluído) estão ocultas. Use o filtro "Situação" para ver o histórico.</div>`:''}
     <div class="dsTableWrap">
       <table class="dsTable">
         <thead><tr>
-          <th>Data</th><th>Loja / Área</th><th>Localização</th>
-          <th>Status</th><th>Situação</th><th>Responsável</th><th>Ações</th>
+          <th>Data</th><th>Loja / Área</th><th>Localização</th><th>Tipo</th><th>Criticidade</th><th>Situação</th><th>Plano</th><th>Responsável</th><th>Ações</th>
         </tr></thead>
-        <tbody>${trs||`<tr><td colspan="7"><div class="emptyState">Nenhuma falha registrada.</div></td></tr>`}</tbody>
+        <tbody id="falhasTbody"></tbody>
       </table>
-    </div>`;
+    </div>
+    <div id="falhasMoreWrap" style="text-align:center;margin-top:10px"></div>`;
+  const buscaEl=document.getElementById('falhasBusca');
+  if(buscaEl){
+    buscaEl.addEventListener('input',function(){atualizarBuscaFalhas(this.value)});
+    if(lastSearchFocus&&lastSearchFocus.key==='falhasBusca'){
+      const pos=lastSearchFocus;
+      setTimeout(()=>{try{buscaEl.focus();buscaEl.setSelectionRange(pos.start,pos.end)}catch(e){}},0);
+    }
+  }
+  renderFalhasResultado();
 }
-
 function planoCategorias(){return ['Substituição de material','Manutenção corretiva','Refazer teste','Reconfiguração de nome','Notificar logista']}
 function planoPrioridades(){return ['Crítica','Alta','Média','Baixa']}
 function planoResponsaveis(){return ['L3A Engenharia','Brigada','Logista','Shopping','Terceiro / Fornecedor']}
@@ -2424,13 +2569,28 @@ function bindFalhaModal(){
   refreshFalhaFilters('painel');
 }
 function formFalha(i=''){
+  // BACKUP LÓGICA ANTERIOR: formFalha(i='') abria um único bloco "Registrar Falha / Operação" com
+  // busca + passo-a-passo sempre visíveis lado a lado, um checklist "Status do sistema" com TODAS
+  // as opções (inclusive "Em operação"/"Em teste"/"Renomear") disponíveis também para cadastro novo,
+  // sem campos de Tipo/Criticidade/Situação da ocorrência, e responsável em texto livre sem vínculo
+  // com o usuário logado. Mantida a MESMA assinatura formFalha(i) e os MESMOS ids usados por
+  // bindFalhaModal()/falhaSelectItem()/onFalhaSearchInput()/refreshFalhaFilters() para não quebrar
+  // nenhuma chamada existente (quickStatusChange, duplicarPlano, etc.).
   let o=db.falhas.find(x=>x.id===i)||{};
   const item=falhaItems().find(it=>it.id===o.itemId);
   const fp=item?paiName(item.painelId):''; const fl=item?lacName(item.lacoId):''; const fpi=item?item.piso:''; const flo=o.localId||item?.localId||'';
   const statusAtual=o.status||'Em operação';
-  openModal(`<h2>${i?'Editar lançamento':'Registrar Falha / Operação'}</h2>
+  let statusOptsFalha=STATUS_SISTEMA_OPTIONS.filter(s=>s!=='__renomear__');
+  if(!i)statusOptsFalha=statusOptsFalha.filter(s=>s!=='Em operação'&&s!=='Em teste');
+  if(i&&statusAtual&&!statusOptsFalha.includes(statusAtual))statusOptsFalha=[statusAtual,...statusOptsFalha];
+  const cu=currentUser(); const isAdmin=(cu.perfil==='Administrador');
+  const respPadrao=o.responsavel||cu.nome||'';
+  const origemOpts=['Painel Bosch','Inspeção técnica','Plano de ação','Comunicação do lojista','Teste programado','Outro'];
+  const origemAtual=o.origem||'';
+  openModal(`<h2>${i?'Editar ocorrência':'Registrar Falha'}</h2>
   <input type="hidden" id="mEditingId" value="${esc(i)}">
-  <div class="msg warn" style="margin-bottom:12px">Localize o item de duas formas: <b>digite o nome/endereço/loja</b> na busca abaixo, <b>ou</b> escolha em sequência Central → Laço → Dispositivo/Módulo → Porta. Se o item já tiver um lançamento em aberto, você só poderá editar o status dele — não é permitido duplicar.</div>
+  <h3 class="sectionTitle" style="margin-top:0">1. Buscar item</h3>
+  <div class="msg warn" style="margin-bottom:10px">Digite nome, endereço ou loja para localizar o item. Se já existir uma ocorrência ativa para ele, o sistema oferece abrir a existente em vez de duplicar.</div>
   <div class="formGrid">
     <div class="field" style="grid-column:1/-1">
       <label>Buscar por nome, endereço ou loja</label>
@@ -2439,41 +2599,49 @@ function formFalha(i=''){
       <small id="mFalhaHint" class="note"></small>
     </div>
     <div class="field" style="grid-column:1/-1"><div id="mItemConfirm" class="compactHelp"></div><input type="hidden" id="mItem" value="${esc(o.itemId||'')}"></div>
-    <div class="field" style="grid-column:1/-1">
-      <b style="font-size:12.5px;color:var(--l3a-text-soft)">— ou localize passo a passo —</b>
+  </div>
+  <details style="margin:6px 0 14px">
+    <summary style="cursor:pointer;font-weight:700;font-size:12.5px;color:var(--l3a-text-soft)">Localização manual (usar se a busca não encontrar o item certo)</summary>
+    <div class="formGrid" style="margin-top:10px">
+      <div class="field"><label>Central / Painel</label><select id="mFiltroPainel"><option value="${esc(fp)}" selected>${esc(fp||'Todas as centrais')}</option></select></div>
+      <div class="field"><label>Laço</label><select id="mFiltroLaco"><option value="${esc(fl)}" selected>${esc(fl||'Todos os laços')}</option></select></div>
+      <div class="field"><label>Dispositivo / Módulo</label><select id="mFiltroDispositivo"><option value="">Selecione o dispositivo/módulo...</option></select></div>
+      <div class="field" id="mFiltroPortaWrap" style="display:none"><label>Porta</label><select id="mFiltroPorta"><option value="">Selecione a porta...</option></select></div>
+      <div class="field"><label>Piso / Pavimento</label><select id="mFiltroPiso"><option value="${esc(fpi)}" selected>${esc(fpi||'Todos os pisos')}</option></select></div>
+      <div class="field"><label>Loja / Área</label><select id="mFiltroLocal"><option value="${esc(flo)}" selected>${esc(locName(flo)||'Todas as lojas/áreas')}</option></select></div>
     </div>
-    <div class="field"><label>1. Central / Painel</label><select id="mFiltroPainel"><option value="${esc(fp)}" selected>${esc(fp||'Todas as centrais')}</option></select></div>
-    <div class="field"><label>2. Laço</label><select id="mFiltroLaco"><option value="${esc(fl)}" selected>${esc(fl||'Todos os laços')}</option></select></div>
-    <div class="field"><label>3. Dispositivo / Módulo</label><select id="mFiltroDispositivo"><option value="">Selecione o dispositivo/módulo...</option></select></div>
-    <div class="field" id="mFiltroPortaWrap" style="display:none"><label>4. Porta</label><select id="mFiltroPorta"><option value="">Selecione a porta...</option></select></div>
-    <div class="field"><label>Piso / Pavimento (opcional)</label><select id="mFiltroPiso"><option value="${esc(fpi)}" selected>${esc(fpi||'Todos os pisos')}</option></select></div>
-    <div class="field"><label>Loja / Área (opcional)</label><select id="mFiltroLocal"><option value="${esc(flo)}" selected>${esc(locName(flo)||'Todas as lojas/áreas')}</option></select></div>
-    <div class="field"><label>Data/hora do lançamento</label><input value="${esc(i?fmtDataHoraTexto(o.data):now())}" disabled></div>
-    <div class="field"><label>Responsável pelo lançamento</label><input id="mResp" value="${esc(o.responsavel)}" placeholder="Ex.: Hélio / equipe técnica"></div>
-    <div class="field"><label>Origem</label><select id="mOrigem"><option ${o.origem==='Painel Bosch'?'selected':''}>Painel Bosch</option><option ${o.origem==='Teste em campo'?'selected':''}>Teste em campo</option><option ${o.origem==='Inspeção'?'selected':''}>Inspeção</option><option ${o.origem==='Importação'?'selected':''}>Importação</option></select></div>
-    <div class="field"><label>Motivo</label><input id="mMotivo" value="${esc(o.motivo)}" placeholder="Ex.: curto, aberto, acionamento, normalização"></div>
-    <div class="field" style="grid-column:1/-1"><label>Status do sistema</label><div class="toolbar statusChecks">
-      ${STATUS_SISTEMA_OPTIONS.map((st,idx)=>{
-        const label=STATUS_SISTEMA_LABELS[st]||st;
-        if(st==='__renomear__')return `<label class="check"><input type="checkbox" name="mStatusCheck" value="__renomear__"> ${label}</label>`;
-        return `<label class="check"><input type="checkbox" name="mStatusCheck" value="${st}" ${st===statusAtual?'checked':''}> ${st}</label>`;
-      }).join('')}
+  </details>
+  <h3 class="sectionTitle">2. Tipo da falha</h3>
+  <div class="formGrid">
+    <div class="field"><label>Tipo da falha</label><select id="mTipo">${TIPO_FALHA_OPTIONS.map(v=>`<option ${((o.tipo||tipoFalhaEfetivo(o))===v)?'selected':''}>${v}</option>`).join('')}</select></div>
+    <div class="field"><label>Criticidade</label><select id="mCriticidade">${CRITICIDADE_FALHA_OPTIONS.map(v=>`<option ${(criticidadeFalhaEfetiva(o)===v)?'selected':''}>${v}</option>`).join('')}</select></div>
+    ${i?`<div class="field"><label>Situação</label><select id="mSituacao">${SITUACAO_FALHA_OPTIONS.map(v=>`<option ${(situacaoFalhaEfetiva(o)===v)?'selected':''}>${v}</option>`).join('')}</select></div>`:''}
+    <div class="field" style="grid-column:1/-1"><label>Status técnico do item${!i?' (novos cadastros não usam mais "Em operação"/"Em teste" aqui — use Resolver/normalização)':''}</label><div class="toolbar statusChecks">
+      ${statusOptsFalha.map(st=>`<label class="check"><input type="checkbox" name="mStatusCheck" value="${st}" ${st===statusAtual?'checked':''}> ${st}</label>`).join('')}
     </div></div>
+    <div class="field" style="grid-column:1/-1"><label>Motivo</label><input id="mMotivo" value="${esc(o.motivo)}" placeholder="Ex.: curto, aberto, acionamento, normalização"></div>
     <div class="field" style="grid-column:1/-1"><label>Observação técnica</label><textarea id="mObs" placeholder="Detalhe técnico do lançamento">${esc(o.obs)}</textarea></div>
-  </div><br><button class="btn" onclick="saveFalha('${i}')">Salvar lançamento</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`);
+  </div>
+  <h3 class="sectionTitle">3. Origem, responsável e data</h3>
+  <div class="formGrid">
+    <div class="field"><label>Origem</label><select id="mOrigem">${origemOpts.map(v=>`<option ${origemAtual===v?'selected':''}>${v}</option>`).join('')}${origemAtual&&!origemOpts.includes(origemAtual)?`<option selected>${esc(origemAtual)}</option>`:''}</select></div>
+    <div class="field"><label>Responsável</label><input id="mResp" value="${esc(respPadrao)}" ${isAdmin?'':'readonly'} placeholder="Responsável pelo lançamento"></div>
+    <div class="field"><label>Data/hora do lançamento</label><input value="${esc(i?fmtDataHoraTexto(o.data):now())}" disabled></div>
+  </div>
+  <br><button class="btn" onclick="saveFalha('${i}')">Salvar</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`);
   bindFalhaModal();
   falhaSelectItem(o.itemId||'',i);
 }
 function saveFalha(i){
+  // BACKUP LÓGICA ANTERIOR: saveFalha(i) bloqueava duplicidade com alert() simples (sem opção de
+  // abrir a ocorrência existente) e não gravava tipo/criticidade/situacao — só status/motivo/obs.
   let sel=document.getElementById('mItem')?.value||''; if(!sel){alert('Busque e selecione um item antes de salvar. Se o item já tiver lançamento, abra o lançamento existente para editar o status.');return}
-  if(findFalhaAbertaPorItem(sel,i)){alert('Este item já tem um lançamento registrado. Não é permitido duplicar — abra o lançamento existente para editar o status.');return}
-  let checked=document.querySelector('input[name="mStatusCheck"]:checked'); if(!checked){alert('Marque um status do sistema.');return}
-  // Trata opção "Renomear (personalizado)..."
-  if(checked.value==='__renomear__'){
-    const custom=prompt('Digite o nome do status personalizado para este registro:','');
-    if(!custom||!custom.trim()){alert('Nome não informado. Selecione um status antes de salvar.');return}
-    checked={value:custom.trim()};
+  const dupExistente=findFalhaAbertaPorItem(sel,i);
+  if(dupExistente){
+    if(confirm('Este item já tem uma ocorrência ativa ('+interpretarStatusLegado(dupExistente.status)+' / '+situacaoFalhaEfetiva(dupExistente)+'). Deseja abrir a ocorrência existente em vez de criar uma duplicada?')){formFalha(dupExistente.id)}
+    return;
   }
+  let checked=document.querySelector('input[name="mStatusCheck"]:checked'); if(!checked){alert('Marque o status técnico do item.');return}
   let isFlm=sel.startsWith('flm:');
   let flmId=isFlm?sel.split(':')[1]:''; let portaId=isFlm&&sel.includes(':porta:')?sel.split(':porta:')[1]:'';
   let item=isFlm?flmById(flmId):db.equipamentos.find(x=>x.id===sel); if(!item)return;
@@ -2483,22 +2651,79 @@ function saveFalha(i){
   if(porta&&isFlm)item.status=flmStatusAgregado(item.id);
   let loc=localById(localId); if(loc){loc.status=checked.value;loc.ultimaAlteracao=isoNow()}
   let rec=i?db.falhas.find(x=>x.id===i):{id:id()};
-  Object.assign(rec,{data:isoNow(),painelId:item.painelId,lacoId:item.lacoId,piso:item.piso,tipo:isFlm?'Módulo':item.tipo,itemId:sel,itemNome:(isFlm?`Módulo ${item.endereco||item.modelo}${porta?' • Porta '+porta.numero:''}`:item.endereco||item.modelo),localId,status:checked.value,statusAnterior,responsavel:n(document.getElementById('mResp')?.value),origem:document.getElementById('mOrigem')?.value,motivo:n(document.getElementById('mMotivo')?.value),obs:n(document.getElementById('mObs')?.value),resolvidaEm:up(checked.value).includes('OPER')?isoNow():''});
+  const tipoSel=document.getElementById('mTipo')?.value||'Outro';
+  const criticidadeSel=document.getElementById('mCriticidade')?.value||'Média';
+  const situacaoSel=document.getElementById('mSituacao')?.value||(up(checked.value).includes('OPER')?'Resolvida':'Em aberto');
+  Object.assign(rec,{data:isoNow(),painelId:item.painelId,lacoId:item.lacoId,piso:item.piso,tipo:tipoSel,criticidade:criticidadeSel,situacao:situacaoSel,itemId:sel,itemNome:(isFlm?`Módulo ${item.endereco||item.modelo}${porta?' • Porta '+porta.numero:''}`:item.endereco||item.modelo),localId,status:checked.value,statusAnterior,responsavel:n(document.getElementById('mResp')?.value),origem:document.getElementById('mOrigem')?.value,motivo:n(document.getElementById('mMotivo')?.value),obs:n(document.getElementById('mObs')?.value),resolvidaEm:situacaoSel==='Resolvida'?(rec.resolvidaEm||isoNow()):''});
   if(!i){db.falhas.push(rec);
+    logLocal('Falha',rec.id,'Falha criada',`${tipoSel} — ${rec.itemNome} (${locName(localId)||'—'})`);
     // REGRA (item 1 do pedido do usuário, 2026-07): toda NOVA falha deve gerar automaticamente um
-    // Plano de Ação com Situação = Aberto, independentemente do Status Técnico selecionado (antes só
-    // criava plano se isFalhaStatus(rec.status) fosse verdadeiro, então "Em teste"/"Desativação"/
-    // "Em operação" nunca geravam plano). Nada mais do fluxo de cadastro de falha foi alterado.
+    // Plano de Ação com Situação = Aberto. Reaproveitado sem alteração de comportamento.
     if(!db.planos.find(p=>p.falhaId===rec.id)){
-      // Se o cadastro veio de "Duplicar" (aba Plano de Ação), aplica o molde copiado do plano de
-      // origem — só nos campos descritivos, nunca na Situação (que é sempre "Aberto" para plano novo).
       const tpl=window._planoTemplate||null;
-      db.planos.push({id:id(),falhaId:rec.id,criadoEm:isoNow(),categoria:tpl?.categoria||'Manutenção corretiva',prioridade:tpl?.prioridade||'Média',responsavel:tpl?.responsavel||'L3A Engenharia',situacao:'Aberto',painel:paiName(rec.painelId),laco:lacName(rec.lacoId),piso:rec.piso,local:locName(rec.localId),item:rec.itemNome,statusFalha:rec.status,justificativa:rec.motivo||rec.obs||'',providencia:'',necessitaCompra:tpl?.necessitaCompra||false,material:tpl?.material||'',direcionamento:tpl?.direcionamento||undefined});
+      db.planos.push({id:id(),falhaId:rec.id,criadoEm:isoNow(),categoria:tpl?.categoria||'Manutenção corretiva',prioridade:tpl?.prioridade||criticidadeSel||'Média',responsavel:tpl?.responsavel||'L3A Engenharia',situacao:'Aberto',painel:paiName(rec.painelId),laco:lacName(rec.lacoId),piso:rec.piso,local:locName(rec.localId),item:rec.itemNome,statusFalha:rec.status,justificativa:rec.motivo||rec.obs||'',providencia:'',necessitaCompra:tpl?.necessitaCompra||false,material:tpl?.material||'',direcionamento:tpl?.direcionamento||undefined});
       if(tpl)window._planoTemplate=null;
     }
-  } closeModal(); save()
+  } else {
+    logLocal('Falha',rec.id,'Falha atualizada',`Situação: ${situacaoSel}`);
+  }
+  closeModal(); save()
 }
-
+// resolverFalha(falhaId): ação DIRETA de resolução de falha (item 15/16), separada de qualquer
+// "cadastro manual de Em operação". Se já existe Plano de Ação em andamento para a falha, reaproveita
+// o atendimento do plano (formAtendimentoPlano) em vez de duplicar a lógica de Conforme/Não conforme.
+function resolverFalha(falhaId){
+  const f=(db.falhas||[]).find(x=>x.id===falhaId); if(!f)return;
+  const plano=planoForFalha(falhaId);
+  if(plano&&plano.situacao!=='Concluído'&&plano.situacao!=='Cancelado'){
+    formAtendimentoPlano(plano.id);
+    return;
+  }
+  const isAdmin=perfilAtual()==='Administrador';
+  const respAtual=f.responsavel||currentUser().nome||'';
+  openModal(`<h2>Resolver falha</h2>
+  <p class="note">Ação direta na falha (sem Plano de Ação formal aberto). Se "Não conforme", a falha permanece ativa e é registrada a tratativa "Notificar lojista".</p>
+  <div class="formGrid">
+    <div class="field"><label>Responsável</label><input id="rfResp" value="${esc(respAtual)}" ${isAdmin?'':'readonly'}></div>
+    <div class="field"><label>Resultado</label><select id="rfResultado">${RESOLVER_RESULTADO_OPTIONS.map(v=>`<option ${v==='Conforme'?'selected':''}>${v}</option>`).join('')}</select></div>
+    <div class="field" style="grid-column:1/-1"><label>Conclusão</label><textarea id="rfConclusao" placeholder="Descreva o que foi feito/constatado"></textarea></div>
+    <div class="field" style="grid-column:1/-1"><label>Evidências (descrição)</label><input id="rfEvidencias" placeholder="Ex.: foto anexada no plano X, laudo, etc."></div>
+  </div><br>
+  <button class="btn" onclick="salvarResolverFalha('${falhaId}')">Confirmar</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`);
+}
+function salvarResolverFalha(falhaId){
+  const f=(db.falhas||[]).find(x=>x.id===falhaId); if(!f)return;
+  const responsavel=n(document.getElementById('rfResp')?.value)||f.responsavel;
+  const resultado=document.getElementById('rfResultado')?.value||'Conforme';
+  const conclusao=n(document.getElementById('rfConclusao')?.value);
+  const evidencias=n(document.getElementById('rfEvidencias')?.value);
+  const statusAnterior=f.status;
+  db.eventosOperacionais=db.eventosOperacionais||[];
+  if(resultado==='Conforme'){
+    f.situacao='Resolvida'; f.resolvidaEm=isoNow(); f.status='Em operação';
+    const isFlm=String(f.itemId||'').startsWith('flm:');
+    const flmIdR=isFlm?String(f.itemId).slice(4):'';
+    const itemR=isFlm?flmById(flmIdR):(db.equipamentos||[]).find(e=>e.id===f.itemId);
+    const portaR=(db.portas||[]).find(p=>p.localId===f.localId)||null;
+    if(itemR){itemR.status='Em operação';itemR.ultimaAlteracao=isoNow()}
+    if(portaR){portaR.status='Em operação';portaR.ultimaAlteracao=isoNow()}
+    const locR=localById(f.localId); if(locR){locR.status='Em operação';locR.ultimaAlteracao=isoNow()}
+    db.eventosOperacionais.push({id:id(),data:isoNow(),tipoEvento:'Atendimento direto de Falha — Conforme',falhaId:f.id,planoId:'',localId:f.localId,itemId:f.itemId,painelId:f.painelId,lacoId:f.lacoId,statusAnterior,statusFinal:'Em operação',responsavel,resultado,observacao:conclusao,evidencias,encaminhamento:''});
+    logLocal('Falha',f.id,'Resolver (Conforme)',`Falha marcada como resolvida por ${responsavel}. ${conclusao}`);
+  } else if(resultado==='Não conforme'){
+    f.situacao='Em atendimento';
+    db.eventosOperacionais.push({id:id(),data:isoNow(),tipoEvento:'Atendimento direto de Falha — Não Conforme',falhaId:f.id,planoId:'',localId:f.localId,itemId:f.itemId,painelId:f.painelId,lacoId:f.lacoId,statusAnterior,statusFinal:statusAnterior,responsavel,resultado,observacao:conclusao,evidencias,encaminhamento:'Notificar lojista'});
+    logLocal('Falha',f.id,'Tratativa (Não conforme)',`Notificar lojista. ${conclusao}`);
+  } else {
+    if(resultado==='Ocorrência cancelada'){f.situacao='Cancelada';f.resolvidaEm=isoNow()}
+    else if(resultado==='Item desativado autorizado'){f.situacao='Resolvida';f.resolvidaEm=isoNow();f.status='Desativação'}
+    else {f.situacao='Em atendimento'}
+    db.eventosOperacionais.push({id:id(),data:isoNow(),tipoEvento:'Atendimento direto de Falha — '+resultado,falhaId:f.id,planoId:'',localId:f.localId,itemId:f.itemId,painelId:f.painelId,lacoId:f.lacoId,statusAnterior,statusFinal:f.status,responsavel,resultado,observacao:conclusao,evidencias,encaminhamento:''});
+    logLocal('Falha',f.id,'Resolver ('+resultado+')',conclusao);
+  }
+  f.responsavel=responsavel;
+  closeModal(); save();
+}
 function normalizeFotoUrl(u){
   if(!u)return '';
   const s=String(u);
