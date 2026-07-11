@@ -991,6 +991,13 @@ const TIPO_FALHA_OPTIONS=['Laço aberto','Módulo aberto','Módulo em curto','In
 const SITUACAO_FALHA_OPTIONS=['Em aberto','Em atendimento','Aguardando lojista','Aguardando material','Aguardando acesso','Resolvida','Cancelada','Não conforme atendida'];
 const CRITICIDADE_FALHA_OPTIONS=['Crítica','Alta','Média','Baixa'];
 const RESOLVER_RESULTADO_OPTIONS=['Conforme','Não conforme','Falha não confirmada','Item desativado autorizado','Ocorrência cancelada'];
+// Reestruturação do Plano de Ação em 5 blocos (2026-07): opções fixas do Bloco 3 (Intervenção),
+// Bloco 4 (Resultado da visita) e Bloco 5 (Próxima ação). Cada visita registrada acumula em
+// plano.visitas[] — nada aqui sobrescreve nomes de campos já lidos pelo Dashboard/relatórios
+// (p.resultado/p.encaminhamento continuam sendo preenchidos como fallback a partir da última visita).
+const INTERVENCAO_PLANO_OPTIONS=['Nenhuma intervenção','Inspeção','Teste','Reparo','Substituição','Reconfiguração','Limpeza','Outro'];
+const RESULTADO_VISITA_OPTIONS=['Normalizado','Permanece com falha','Sem acesso','Atendimento parcial','Não executado'];
+const PROXIMA_ACAO_OPTIONS=['Nenhuma','Notificar lojista','Solicitar material','Retornar ao local','Solicitar brigada','Encaminhar fabricante','Reprogramação necessária','Outro'];
 // interpretarStatusLegado(status): mapeia, SÓ PARA EXIBIÇÃO, valores antigos de status que não
 // fazem mais sentido como cadastro novo. Nunca altera o dado salvo em db.falhas.
 function interpretarStatusLegado(status){
@@ -2903,32 +2910,90 @@ function handleFotoUploadResult(data){
   updateFotoUploadStatus();
   processFotoQueue();
 }
+function planoVisitasEfetivas(p){
+  // Compatibiliza planos antigos (um único atendimento gravado direto no objeto plano) com o novo
+  // modelo de histórico acumulativo (plano.visitas[]). Nunca modifica o registro antigo — apenas
+  // apresenta o atendimento legado como "primeira visita" quando plano.visitas ainda não existe ou
+  // quando existem dados de atendimento anteriores à introdução do array.
+  const visitas=(p.visitas||[]).slice();
+  if(p.atendidoEm&&!visitas.some(v=>v.legado)){
+    visitas.push({id:'legado-'+p.id,legado:true,data:p.atendidoEm,responsavel:p.responsavel||'',intervencao:'',observacao:p.providencia||'',resultado:p.resultado==='Conforme'?'Normalizado':(p.resultado?'Permanece com falha':''),proximaAcao:p.encaminhamento||'Nenhuma',fotos:p.atendimentoFotos||[],videos:p.atendimentoVideos||[],documentos:p.atendimentoDocumentos||[]});
+  }
+  return visitas.sort((a,b)=>String(b.data||'').localeCompare(String(a.data||'')));
+}
+function visitaEvidenciasHtml(v){
+  const fotos=(v.fotos||[]).filter(a=>a&&a.dataUrl);
+  const fotosJson=escAttrRaw(JSON.stringify(fotos.map(a=>({url:a.dataUrl,nome:a.name}))));
+  let out='';
+  if(fotos.length)out+=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${fotos.map((f,idx)=>`<img src="${escAttrRaw(f.dataUrl)}" title="${esc(f.name)}" onclick='abrirGaleriaFoto(${idx},${fotosJson})' style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--l3a-border);cursor:pointer">`).join('')}</div>`;
+  out+=inspAnexosHtml(v.videos,'Vídeos');
+  out+=inspAnexosHtml(v.documentos,'Documentos/anexos');
+  return out||'<p class="mutedLine" style="margin:4px 0 0">Nenhuma evidência anexada nesta visita.</p>';
+}
+function historicoVisitasHtml(p){
+  const visitas=planoVisitasEfetivas(p);
+  if(!visitas.length)return '<p class="mutedLine">Nenhuma visita registrada ainda.</p>';
+  return visitas.map(v=>`<div class="tl" style="margin-bottom:10px"><b>${esc(v.resultado||'Sem resultado informado')}</b> ${v.intervencao?`<span class="pill neutral" style="font-size:10px">${esc(v.intervencao)}</span>`:''}<br><small>${v.data?dsDateHtml(v.data):'Não informado'} • ${esc(v.responsavel||'Não informado')}${v.legado?' • (registro anterior à reestruturação)':''}</small>${v.observacao?`<p style="margin:4px 0">${esc(v.observacao)}</p>`:''}${v.proximaAcao&&v.proximaAcao!=='Nenhuma'?`<p class="mutedLine">Próxima ação: ${esc(v.proximaAcao)}</p>`:''}${visitaEvidenciasHtml(v)}</div>`).join('');
+}
 function formPlano(i='',falhaId=''){
+  // BACKUP LÓGICA ANTERIOR: formPlano(i,falhaId) misturava planejamento (categoria/prioridade/
+  // responsável/situação/prazo/compra/material), diagnóstico da falha, direcionamento, exibição do
+  // "último atendimento" e um campo livre "Execução realizada" + upload de fotos do serviço, tudo no
+  // mesmo formulário de cadastro/edição do plano — sem separar "abertura do plano" de "atendimento
+  // de campo". Isso duplicava informação com a aba Falhas e obrigava reabrir o mesmo modal para
+  // registrar cada visita, sobrescrevendo o atendimento anterior em vez de acumular histórico.
+  // NOVA LÓGICA: formPlano vira só os Blocos 1 (Identificação, somente leitura) e 2 (Planejamento).
+  // Toda intervenção/resultado/próxima ação/evidências passou para formAtendimentoPlano (Blocos
+  // 3, 4 e 5), registrada por visita em plano.visitas[] (ver planoVisitasEfetivas/saveAtendimentoPlano).
   let o=db.planos.find(x=>x.id===i)||{}; let f=db.falhas.find(x=>x.id===(falhaId||o.falhaId))||{}; let inf=f.id?itemInfoFromFalha(f):{};
-  openModal(`<h2>${i?'Editar':'Criar'} plano de ação</h2><p class="msg warn">Base: ${esc(inf.painel||'')} • ${esc(inf.laco||'')} • ${esc(inf.local||'')} • ${esc(inf.itemNome||'')}</p><div class="formGrid">
+  const loc=inf.localId?localById(inf.localId):null;
+  const isFlm=String(f.itemId||'').startsWith('flm:');
+  const itemEquip=!isFlm&&f.itemId?db.equipamentos.find(e=>e.id===f.itemId):null;
+  const porta=itemEquip&&itemEquip.portaId?db.portas.find(pt=>pt.id===itemEquip.portaId):null;
+  const ocorrenciaRef=f.id?('#'+String(f.id).slice(-6).toUpperCase()):'—';
+  openModal(`<h2>${i?'Plano de ação':'Criar plano de ação'}</h2>
+  <h3 class="sectionTitle" style="margin-top:0">1. Identificação (somente leitura)</h3>
+  <div class="msg warn" style="line-height:1.7">
+    <b>Ocorrência:</b> ${esc(ocorrenciaRef)} • <b>Data:</b> ${f.data?dsDateHtml(f.data):'Não informado'}<br>
+    <b>Loja:</b> ${esc(inf.local||'Não informado')} • <b>LUC:</b> ${esc(loc?lucDisplayLocal(loc):'Não informado')}<br>
+    <b>Painel:</b> ${esc(inf.painel||'Não informado')} • <b>Laço:</b> ${esc(inf.laco||'Não informado')} • <b>Piso:</b> ${esc(inf.piso||'Não informado')}<br>
+    <b>Módulo:</b> ${esc(isFlm?(inf.itemNome||'Não informado'):(itemEquip?'—':'Não informado'))} • <b>Porta:</b> ${esc(porta?porta.numero:'Não informado')}<br>
+    <b>Endereço:</b> ${esc(itemEquip?.endereco||inf.itemNome||'Não informado')} • <b>Equipamento:</b> ${esc(inf.itemNome||'Não informado')}<br>
+    <b>Falha registrada:</b> ${esc((f.tipo||'Não informado')+(f.motivo?' — '+f.motivo:''))}<br>
+    <b>Responsável pela abertura:</b> ${esc(f.responsavel||'Não informado')}
+  </div>
+  <h3 class="sectionTitle">2. Planejamento</h3>
+  <div class="formGrid">
     <div class="field"><label>Categoria</label><select id="mCategoria">${planoCategorias().map(c=>`<option ${c===(o.categoria||'Manutenção corretiva')?'selected':''}>${c}</option>`).join('')}</select></div>
     <div class="field"><label>Prioridade</label><select id="mPrioridade">${planoPrioridades().map(c=>`<option ${c===(o.prioridade||'Média')?'selected':''}>${c}</option>`).join('')}</select></div>
     <div class="field"><label>Responsável</label><select id="mRespPlano">${planoResponsaveis().map(c=>`<option ${c===(o.responsavel||'L3A Engenharia')?'selected':''}>${c}</option>`).join('')}</select></div>
-    <div class="field"><label>Situação</label><select id="mSituacao"><option ${o.situacao==='Aberto'?'selected':''}>Aberto</option><option ${o.situacao==='Em andamento'?'selected':''}>Em andamento</option><option ${o.situacao==='Concluído'?'selected':''}>Concluído</option></select></div>
-    <div class="field"><label>Previsão</label><input id="mPrazo" type="date" value="${esc(o.prazo)}"></div>
-    <div class="field"><label>Necessita compra?</label><select id="mCompra"><option value="Não" ${!o.necessitaCompra?'selected':''}>Não</option><option value="Sim" ${o.necessitaCompra?'selected':''}>Sim</option></select></div>
-    <div class="field" style="grid-column:1/-1"><label>Material necessário / quantidade</label><input id="mMaterial" value="${esc(o.material)}" placeholder="Ex.: FLM-420/4-CON-S/D - 01 unidade"></div>
-    <div class="field" style="grid-column:1/-1"><label>Diagnóstico da falha <small style="font-weight:400;color:var(--l3a-text-muted)">(registrado na aba Falhas)</small></label><div style="background:var(--l3a-neutral-bg,#f4f5f7);border:1px solid var(--l3a-border);border-radius:var(--l3a-radius-md);padding:10px 12px;font-size:13.5px;color:var(--l3a-text);min-height:36px;white-space:pre-wrap">${esc(f.obs||f.motivo||'Nenhuma observação técnica registrada na falha.')}</div></div>
-    <div class="field" style="grid-column:1/-1"><label>Direcionamento técnico <small style="font-weight:400;color:var(--l3a-text-muted)">(orientação operacional — gerado automaticamente pelo status da falha)</small></label><div style="background:var(--l3a-neutral-bg,#f4f5f7);border:1px solid var(--l3a-border);border-radius:var(--l3a-radius-md);padding:10px 12px;font-size:13.5px;color:var(--l3a-text);min-height:36px;white-space:pre-wrap">${esc(o.direcionamento||getDirecionamento(f.status||o.statusFalha))}</div></div>
-    ${i?`<div class="field" style="grid-column:1/-1"><label>Atendimento registrado</label><div style="background:var(--l3a-neutral-bg,#f4f5f7);border:1px solid var(--l3a-border);border-radius:var(--l3a-radius-md);padding:10px 12px;font-size:13.5px;color:var(--l3a-text)"><p><b>Resultado:</b> ${esc(o.resultado||'Não informado')} • <b>Encaminhamento:</b> ${esc(o.encaminhamento||'Não informado')} • <b>Atendido em:</b> ${o.atendidoEm?dsDateHtml(o.atendidoEm):'Não informado'}</p>${inspAnexosHtml(o.atendimentoFotos,'Fotos do atendimento')}${inspAnexosHtml(o.atendimentoVideos,'Vídeos do atendimento')}${inspAnexosHtml(o.atendimentoDocumentos,'Documentos do atendimento')}${(!o.atendimentoFotos||!o.atendimentoFotos.length)&&(!o.atendimentoVideos||!o.atendimentoVideos.length)&&(!o.atendimentoDocumentos||!o.atendimentoDocumentos.length)?'<p class="mutedLine">Nenhuma evidência de atendimento anexada.</p>':''}</div></div>`:''}
-    <div class="field" style="grid-column:1/-1"><label>Execução realizada <small style="font-weight:400;color:var(--l3a-text-muted)">(registro do técnico em campo)</small></label><textarea id="mProv" placeholder="Ex.: Substituído módulo FLM. Refeito cabeamento. Identificado curto causado por infiltração.">${esc(o.providencia)}</textarea></div>
-    ${i?`<div class="field" style="grid-column:1/-1"><label>Fotos do serviço (galeria do dispositivo, sem limite de quantidade)</label><input type="file" id="mFotoInput" accept="image/*" multiple onchange="queueFotoUploads('${i}',this.files);this.value=''"><small id="mFotoStatus" class="note"></small><small id="mFotoConta" class="note"></small><div id="mFotoGrid" style="margin-top:8px">${fotosThumbsHtml(o.fotos,72,i)}</div><br><button type="button" class="btn small secondary" onclick="verDiagnosticoUpload()">Ver diagnóstico do último upload</button><pre id="mFotoDiag" style="white-space:pre-wrap;font-size:11px;margin-top:8px;display:none;background:var(--l3a-neutral-bg,#f4f5f7);padding:10px;border-radius:8px;max-height:200px;overflow:auto"></pre></div>`:`<div class="field" style="grid-column:1/-1"><p class="mutedLine">Salve o plano primeiro para poder anexar fotos.</p></div>`}
-  </div><br><button class="btn" onclick="savePlano('${i}','${falhaId||o.falhaId||''}')">Salvar plano</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`)
+    <div class="field"><label>Prazo</label><input id="mPrazo" type="date" value="${esc(o.prazo)}"></div>
+  </div>
+  ${i?`<h3 class="sectionTitle">Histórico de visitas / atendimentos</h3><div class="timeline">${historicoVisitasHtml(o)}</div><br><button type="button" class="btn secondary" onclick="closeModal();formAtendimentoPlano('${i}')">📝 Registrar nova visita</button>`:'<p class="mutedLine" style="margin-top:8px">Salve o plano primeiro para poder registrar visitas/atendimentos.</p>'}
+  <br><br><button class="btn" onclick="savePlano('${i}','${falhaId||o.falhaId||''}')">Salvar plano</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`)
 }
 function savePlano(i,falhaId=''){
+  // BACKUP LÓGICA ANTERIOR: savePlano gravava também situacao, necessitaCompra, material e
+  // providencia lidos do formulário unificado. Situação passou a ser controlada automaticamente
+  // pelas visitas (saveAtendimentoPlano) e por concluirPlano(); necessitaCompra/material continuam
+  // preservados no objeto (compatibilidade com dados antigos e com a lógica de "Solicitar material"),
+  // apenas deixaram de ter campo próprio neste formulário simplificado.
   const val=id=>document.getElementById(id)?.value ?? '';
-  let f=db.falhas.find(x=>x.id===falhaId)||{}; let inf=f.id?itemInfoFromFalha(f):{}; let o=i?db.planos.find(x=>x.id===i):{id:id(),criadoEm:isoNow(),falhaId};
+  let f=db.falhas.find(x=>x.id===falhaId)||{}; let inf=f.id?itemInfoFromFalha(f):{}; let o=i?db.planos.find(x=>x.id===i):{id:id(),criadoEm:isoNow(),falhaId,situacao:'Aberto'};
   if(!o){alert('Plano não encontrado — feche e tente editar novamente.');return}
   const prioridadeNova=val('mPrioridade')||o.prioridade||'Média';
-  Object.assign(o,{falhaId:falhaId||o.falhaId,categoria:val('mCategoria')||o.categoria,prioridade:prioridadeNova,responsavel:val('mRespPlano')||o.responsavel,situacao:val('mSituacao')||o.situacao,prazo:val('mPrazo'),necessitaCompra:val('mCompra')==='Sim',material:n(val('mMaterial')),justificativa:f.obs||f.motivo||o.justificativa||'',direcionamento:o.direcionamento||getDirecionamento(f.status||o.statusFalha),providencia:n(val('mProv')),painel:inf.painel||o.painel,laco:inf.laco||o.laco,piso:inf.piso||o.piso,local:inf.local||o.local,item:inf.itemNome||o.item,statusFalha:f.status||o.statusFalha,atualizadoEm:isoNow()});
-  if(o.situacao==='Concluído'&&!o.concluidoEm)o.concluidoEm=isoNow(); if(!i)db.planos.push(o); closeModal(); save()
+  Object.assign(o,{falhaId:falhaId||o.falhaId,categoria:val('mCategoria')||o.categoria,prioridade:prioridadeNova,responsavel:val('mRespPlano')||o.responsavel,situacao:o.situacao||'Aberto',prazo:val('mPrazo'),necessitaCompra:!!o.necessitaCompra,material:o.material||'',justificativa:f.obs||f.motivo||o.justificativa||'',direcionamento:o.direcionamento||getDirecionamento(f.status||o.statusFalha),painel:inf.painel||o.painel,laco:inf.laco||o.laco,piso:inf.piso||o.piso,local:inf.local||o.local,item:inf.itemNome||o.item,statusFalha:f.status||o.statusFalha,atualizadoEm:isoNow()});
+  if(!i){db.planos.push(o); logLocal('Plano de Ação',o.id,'Plano criado',`${o.categoria} — ${o.item||''} (${o.local||'—'})`);}
+  else{logLocal('Plano de Ação',o.id,'Plano atualizado',`Categoria: ${o.categoria} • Prioridade: ${o.prioridade} • Responsável: ${o.responsavel}`);}
+  closeModal(); save()
 }
 function formAtendimentoPlano(planoId){
+  // BACKUP LÓGICA ANTERIOR: formAtendimentoPlano tinha um único campo "Resultado" (Conforme/Não
+  // Conforme) misturando intervenção técnica, resultado da visita e encaminhamento, sobrescrevendo
+  // o atendimento anterior a cada novo registro.
+  // NOVA LÓGICA: 3 blocos — Intervenção realizada (Bloco 3, com observação opcional nunca
+  // obrigatória), Resultado da visita (Bloco 4, obrigatório) e Próxima ação (Bloco 5). Cada
+  // submissão é uma nova visita empilhada em plano.visitas[] (ver saveAtendimentoPlano).
   if(!requireAccess('cadastro','Seu perfil não pode registrar atendimentos de plano de ação.'))return;
   const p=db.planos.find(x=>x.id===planoId); if(!p){alert('Plano não encontrado.');return}
   const f=db.falhas.find(x=>x.id===p.falhaId)||{};
@@ -2936,50 +3001,76 @@ function formAtendimentoPlano(planoId){
   const itemEquip=f.itemId&&!String(f.itemId).startsWith('flm:')?db.equipamentos.find(e=>e.id===f.itemId):null;
   const porta=itemEquip&&itemEquip.portaId?db.portas.find(pt=>pt.id===itemEquip.portaId):null;
   const statusAtual=normalizeStatus(f.status||p.statusFalha||'');
-  openModal(`<h2>Executar atendimento — Plano de Ação</h2>
+  openModal(`<h2>Registrar visita — Plano de Ação</h2>
   <p class="msg warn" style="line-height:1.6"><b>Painel:</b> ${esc(inf.painel||'—')} • <b>Laço:</b> ${esc(inf.laco||'—')} • <b>Piso:</b> ${esc(inf.piso||'—')} • <b>Loja:</b> ${esc(inf.local||'—')} • <b>Módulo/Item:</b> ${esc(inf.itemNome||'—')}${porta?` • <b>Porta:</b> ${esc(porta.numero)}`:''} • <b>Status técnico atual:</b> ${esc(statusAtual||'—')}</p>
   <input type="hidden" id="mAtdPlanoId" value="${esc(planoId)}">
   <div class="formGrid">
     <div class="field"><label>Data e hora</label><input id="mAtdData" type="datetime-local" value="${isoNow().slice(0,16)}"></div>
     <div class="field"><label>Responsável</label><input id="mAtdResp" list="mAtdRespList" value="${esc(p.responsavel||'')}" placeholder="Nome do técnico responsável"><datalist id="mAtdRespList">${locaisResponsaveisDisponiveis().map(r=>`<option value="${esc(r)}">`).join('')}</datalist></div>
-    <div class="field"><label>Resultado</label><select id="mAtdResultado" onchange="atualizarAvisoAtendimento()"><option value="Conforme">Conforme</option><option value="Não Conforme">Não Conforme</option></select></div>
+  </div>
+  <h3 class="sectionTitle">3. Intervenção</h3>
+  <div class="formGrid">
+    <div class="field"><label>Intervenção realizada</label><select id="mAtdIntervencao">${INTERVENCAO_PLANO_OPTIONS.map(v=>`<option ${v==='Nenhuma intervenção'?'selected':''}>${v}</option>`).join('')}</select></div>
+    <div class="field" style="grid-column:1/-1"><label>Observação técnica <small style="font-weight:400;color:var(--l3a-text-muted)">(opcional)</small></label><textarea id="mAtdObs" maxlength="300" placeholder="Detalhe o que foi feito, se necessário"></textarea></div>
+  </div>
+  <h3 class="sectionTitle">4. Resultado da visita</h3>
+  <div class="formGrid">
+    <div class="field" style="grid-column:1/-1"><label>Resultado</label><select id="mAtdResultado" onchange="atualizarAvisoAtendimento()">${RESULTADO_VISITA_OPTIONS.map(v=>`<option>${v}</option>`).join('')}</select></div>
     <div class="field" style="grid-column:1/-1" id="mAtdAviso"></div>
-    <div class="field" style="grid-column:1/-1"><label>Observações técnicas / execução realizada</label><textarea id="mAtdObs" placeholder="Detalhe o serviço executado">${esc(p.providencia||'')}</textarea></div>
-    <div class="field"><label>Fotos</label><input type="file" id="mAtdFotos" accept="image/*" multiple></div>
+  </div>
+  <h3 class="sectionTitle">5. Próxima ação</h3>
+  <div class="formGrid">
+    <div class="field" style="grid-column:1/-1"><label>Próxima ação</label><select id="mAtdProximaAcao">${PROXIMA_ACAO_OPTIONS.map(v=>`<option>${v}</option>`).join('')}</select></div>
+  </div>
+  <h3 class="sectionTitle">Evidências desta visita</h3>
+  <div class="formGrid">
+    <div class="field"><label>Fotos</label><input type="file" id="mAtdFotos" accept="image/*" capture multiple></div>
     <div class="field"><label>Vídeos (opcional)</label><input type="file" id="mAtdVideos" accept="video/*" multiple></div>
-    <div class="field"><label>Documentos (opcional)</label><input type="file" id="mAtdDocs" multiple></div>
+    <div class="field"><label>Anexos / documentos (opcional)</label><input type="file" id="mAtdDocs" accept=".pdf,.doc,.docx,.xls,.xlsx,.dwg,.zip,.txt" multiple></div>
   </div><br>
-  <button class="btn" onclick="saveAtendimentoPlano('${planoId}')">Salvar atendimento</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`);
+  <button class="btn" onclick="saveAtendimentoPlano('${planoId}')">Salvar visita</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`);
   atualizarAvisoAtendimento();
 }
 function atualizarAvisoAtendimento(){
   const sel=document.getElementById('mAtdResultado'); const box=document.getElementById('mAtdAviso'); if(!sel||!box)return;
-  if(sel.value==='Não Conforme'){
-    box.innerHTML='<p class="msg warn">O Plano de Ação será concluído como atendimento executado, porém a falha permanecerá tecnicamente ativa e o encaminhamento será registrado como Notificar lojista.</p>';
+  if(sel.value==='Normalizado'){
+    box.innerHTML='<p class="msg ok">A ocorrência será encerrada: falha resolvida, plano concluído e status técnico atualizado para Em operação.</p>';
+  } else if(sel.value==='Permanece com falha'){
+    box.innerHTML='<p class="msg warn">A ocorrência continua ativa. Nenhuma alteração de status técnico será feita.</p>';
   } else {
-    box.innerHTML='<p class="msg ok">O Plano de Ação será concluído, a falha será resolvida e o status técnico será alterado para Em operação.</p>';
+    box.innerHTML='<p class="msg warn">Visita registrada como "'+sel.value+'". A ocorrência permanece ativa.</p>';
   }
 }
 async function saveAtendimentoPlano(planoId){
+  // BACKUP LÓGICA ANTERIOR: saveAtendimentoPlano concatenava fotos/vídeos/documentos direto nos
+  // campos plano.atendimentoFotos/atendimentoVideos/atendimentoDocumentos, sobrescrevia
+  // plano.providencia/resultado a cada chamada (sem separar por visita) e sempre concluía o plano,
+  // mesmo quando o resultado era "Não Conforme".
+  // NOVA LÓGICA: cada chamada empilha uma visita em plano.visitas[] (histórico acumulativo, nunca
+  // apaga visitas anteriores). Só encerra a ocorrência (falha resolvida + plano concluído + status
+  // técnico "Em operação") quando o resultado da visita for "Normalizado". Demais próximas ações
+  // ajustam a situação da falha reaproveitando os mesmos rótulos já usados em salvarResolverFalha.
   const p=db.planos.find(x=>x.id===planoId); if(!p){alert('Plano não encontrado.');return}
   const f=db.falhas.find(x=>x.id===p.falhaId);
   const dataVal=document.getElementById('mAtdData').value||isoNow();
   const responsavel=n(document.getElementById('mAtdResp').value);
-  const resultado=document.getElementById('mAtdResultado').value==='Não Conforme'?'Não Conforme':'Conforme';
+  const intervencao=document.getElementById('mAtdIntervencao').value||'Nenhuma intervenção';
   const observacoes=n(document.getElementById('mAtdObs').value);
+  const resultado=document.getElementById('mAtdResultado').value||'Permanece com falha';
+  const proximaAcao=document.getElementById('mAtdProximaAcao').value||'Nenhuma';
   const [fotos,videos,documentos]=await Promise.all([
     readFilesAsDataUrls(document.getElementById('mAtdFotos').files),
     readFilesAsDataUrls(document.getElementById('mAtdVideos').files),
     readFilesAsDataUrls(document.getElementById('mAtdDocs').files)
   ]);
-  p.atendimentoFotos=(p.atendimentoFotos||[]).concat(fotos);
-  p.atendimentoVideos=(p.atendimentoVideos||[]).concat(videos);
-  p.atendimentoDocumentos=(p.atendimentoDocumentos||[]).concat(documentos);
+  const visita={id:id(),data:dataVal,responsavel:responsavel||p.responsavel||'',intervencao,observacao:observacoes,resultado,proximaAcao,fotos,videos,documentos};
+  p.visitas=p.visitas||[];
+  p.visitas.push(visita);
   if(responsavel)p.responsavel=responsavel;
-  if(observacoes)p.providencia=observacoes;
-  p.resultado=resultado;
-  p.situacao='Concluído';
-  p.concluidoEm=dataVal;
+  // Fallback de compatibilidade: Dashboard/relatórios/exportação ainda leem p.resultado/p.encaminhamento
+  // (texto livre "Conforme"/"Não Conforme") — mantidos coerentes com o resultado da última visita.
+  p.resultado=resultado==='Normalizado'?'Conforme':'Não Conforme';
+  p.providencia=observacoes||p.providencia;
   p.atendidoEm=dataVal;
 
   const itemId=(f&&f.itemId)||'';
@@ -2989,21 +3080,31 @@ async function saveAtendimentoPlano(planoId){
   const statusAnterior=(item&&item.status)||(f&&f.status)||p.statusFalha||'Falha';
 
   db.eventosOperacionais=db.eventosOperacionais||[];
-  if(resultado==='Conforme'){
+  if(resultado==='Normalizado'){
     p.encaminhamento='';
+    p.situacao='Concluído';
+    p.concluidoEm=dataVal;
     if(f){
-      f.resolvidaEm=dataVal;
+      f.situacao='Resolvida'; f.resolvidaEm=dataVal; f.status='Em operação';
       if(item){item.status='Em operação';item.ultimaAlteracao=isoNow()}
       if(loc){loc.status='Em operação';loc.ultimaAlteracao=isoNow()}
     }
-    db.eventosOperacionais.push({id:id(),data:dataVal,tipoEvento:'Atendimento de Plano de Ação — Conforme',falhaId:p.falhaId,planoId:p.id,localId:f?f.localId:'',itemId:f?f.itemId:'',painelId:(item&&item.painelId)||(f&&f.painelId)||'',lacoId:(item&&item.lacoId)||(f&&f.lacoId)||'',statusAnterior,statusFinal:'Em operação',responsavel:p.responsavel,resultado,observacao:observacoes,encaminhamento:''});
-    logLocal('Plano de Ação',p.id,'Atendimento executado — Conforme',`Falha ${f?f.id:''} marcada como resolvida. Status ${statusAnterior} → Em operação.`);
-    alert('Atendimento salvo. Plano concluído, falha resolvida e status técnico atualizado para Em operação.');
+    db.eventosOperacionais.push({id:id(),data:dataVal,tipoEvento:'Atendimento de Plano de Ação — Normalizado',falhaId:p.falhaId,planoId:p.id,localId:f?f.localId:'',itemId:f?f.itemId:'',painelId:(item&&item.painelId)||(f&&f.painelId)||'',lacoId:(item&&item.lacoId)||(f&&f.lacoId)||'',statusAnterior,statusFinal:'Em operação',responsavel:p.responsavel,resultado,intervencao,observacao:observacoes,encaminhamento:''});
+    logLocal('Plano de Ação',p.id,'Visita registrada — Normalizado',`Falha ${f?f.id:''} marcada como resolvida. Status ${statusAnterior} → Em operação.`);
+    alert('Visita salva. Ocorrência encerrada: falha resolvida e status técnico atualizado para Em operação.');
   } else {
-    p.encaminhamento='Notificar lojista';
-    db.eventosOperacionais.push({id:id(),data:dataVal,tipoEvento:'Atendimento de Plano de Ação — Não Conforme',falhaId:p.falhaId,planoId:p.id,localId:f?f.localId:'',itemId:f?f.itemId:'',painelId:(item&&item.painelId)||(f&&f.painelId)||'',lacoId:(item&&item.lacoId)||(f&&f.lacoId)||'',statusAnterior,statusFinal:statusAnterior,responsavel:p.responsavel,resultado,observacao:observacoes,encaminhamento:'Notificar lojista'});
-    logLocal('Plano de Ação',p.id,'Atendimento executado — Não Conforme',`Falha ${f?f.id:''} permanece ativa (${statusAnterior}). Encaminhamento: Notificar lojista.`);
-    alert('Atendimento salvo. Plano concluído como atendimento executado; a falha permanece tecnicamente ativa e foi encaminhada para Notificar lojista.');
+    p.situacao='Em andamento';
+    let encaminhamentoTxt=proximaAcao!=='Nenhuma'?proximaAcao:'';
+    p.encaminhamento=encaminhamentoTxt;
+    if(f){
+      if(proximaAcao==='Notificar lojista')f.situacao='Aguardando lojista';
+      else if(proximaAcao==='Solicitar material')f.situacao='Aguardando material';
+      else if(resultado==='Sem acesso')f.situacao='Aguardando acesso';
+      else f.situacao='Em atendimento';
+    }
+    db.eventosOperacionais.push({id:id(),data:dataVal,tipoEvento:'Atendimento de Plano de Ação — '+resultado,falhaId:p.falhaId,planoId:p.id,localId:f?f.localId:'',itemId:f?f.itemId:'',painelId:(item&&item.painelId)||(f&&f.painelId)||'',lacoId:(item&&item.lacoId)||(f&&f.lacoId)||'',statusAnterior,statusFinal:statusAnterior,responsavel:p.responsavel,resultado,intervencao,observacao:observacoes,encaminhamento:encaminhamentoTxt});
+    logLocal('Plano de Ação',p.id,'Visita registrada — '+resultado,`Falha ${f?f.id:''} permanece ativa (${statusAnterior}). Próxima ação: ${proximaAcao}.`);
+    alert('Visita salva. A ocorrência permanece ativa. Próxima ação: '+proximaAcao+'.');
   }
   closeModal(); save();
 }
@@ -3871,7 +3972,10 @@ function buildPlanoRowsBase(){
     let f=db.falhas.find(x=>x.id===p.falhaId)||{};
     let inf=f.id?itemInfoFromFalha(f):{};
     let fotos=normalizeFotos(p.fotos||[]);
-    rows.push({origemLinha:'Plano',falhaId:p.falhaId||'',planoId:p.id,itemId:f.itemId||'',prioridade:p.prioridade||'Média',painel:inf.painel||p.painel||'',laco:inf.laco||p.laco||'',piso:inf.piso||p.piso||'',local:inf.local||p.local||'',itemNome:inf.itemNome||p.item||'',statusFalha:f.status||p.statusFalha||'',categoria:p.categoria||'',responsavel:p.responsavel||'',desde:f.data||p.criadoEm||'',criadoEm:p.criadoEm||'',concluidoEm:p.concluidoEm||'',situacao:p.situacao||'Aberto',direcionamento:p.direcionamento||getDirecionamento(f.status||p.statusFalha),resultado:p.resultado||'',encaminhamento:p.encaminhamento||'',fotos,fotoCount:fotos.length,plano:p,falha:f});
+    // fotoCount agora soma também as fotos anexadas por visita (plano.visitas[].fotos), já que o
+    // upload de evidências deixou de ficar só no bloco antigo "fotos do serviço" (p.fotos).
+    let fotoCountVisitas=(p.visitas||[]).reduce((acc,v)=>acc+((v.fotos||[]).length),0);
+    rows.push({origemLinha:'Plano',falhaId:p.falhaId||'',planoId:p.id,itemId:f.itemId||'',prioridade:p.prioridade||'Média',painel:inf.painel||p.painel||'',laco:inf.laco||p.laco||'',piso:inf.piso||p.piso||'',local:inf.local||p.local||'',itemNome:inf.itemNome||p.item||'',statusFalha:f.status||p.statusFalha||'',categoria:p.categoria||'',responsavel:p.responsavel||'',desde:f.data||p.criadoEm||'',criadoEm:p.criadoEm||'',concluidoEm:p.concluidoEm||'',situacao:p.situacao||'Aberto',direcionamento:p.direcionamento||getDirecionamento(f.status||p.statusFalha),resultado:p.resultado||'',encaminhamento:p.encaminhamento||'',fotos,fotoCount:fotos.length+fotoCountVisitas,plano:p,falha:f});
   });
   falhas.forEach(f=>{
     if(planoForFalha(f.id))return;
