@@ -1,5 +1,6 @@
 <!doctype html>
-<!-- build: 2026-07-11 v6.47 - CONSOLIDAÇÃO DA BASE, FASE 1 (ALTA PRIORIDADE): auditoria técnica completa identificou que o CRUD manual (savePainel/saveLaco/saveFlm/savePorta/saveEquip/saveLocal) cria registros via db.X.push(o) direto, sem passar pelos ensureX (que só existem no fluxo de importação) — isso não foi alterado nesta rodada (mudar a regra de deduplicação do cadastro manual é decisão de negócio, fora do escopo "não altere regras de negócio", registrada como recomendação). O que FOI corrigido: rastreabilidade (item 12 da auditoria) — savePainel/saveLaco/saveFlm/savePorta/saveEquip/saveLocal agora chamam logLocal() ao CRIAR um registro novo (não altera nada ao editar, que já era logado em alguns casos), e o fechamento da importação técnica em massa (importFile(), antes só gravava em db.imports) agora também grava 1 entrada agregada em db.historico com o resumo de criados/atualizados/ignorados/inconsistentes — sem gravar 1 linha por registro importado, para não estourar o cap de 1000 do histórico. Nenhuma função de cálculo de KPI/dashboard foi alterada (os números "Falhas ativas" da Visão Geral e "Lojas em falha" do Dashboard medem coisas propositalmente diferentes — falhas abertas vs. lojas distintas com falha — e já usam rótulos diferentes; não havia bug de rótulo). Nenhuma alteração em login/permissões/banco/sincronização/importação/Apps Script/regras de negócio — logLocal() é aditivo (só grava um registro extra em db.historico via persistLocal(), que já era chamado por save()/markDirty() de qualquer forma). -->
+<!-- build: 2026-07-11 v6.48 - SEPARAÇÃO DE ESCOPO CLIENTE × PLATAFORMA + ACCORDION VERDADEIRO: (A) "Usuários e Acessos" estava agrupado com Gestão de Dados/Configurações/Backup/Logs sob um rótulo genérico, mas db.usuarios é GLOBAL (loadUsuariosGlobais/saveUsuariosGlobais — persistClienteDb exclui explicitamente `usuarios` do blob do cliente) — movido de MENU_ADMINISTRACAO_ITEMS ("Gestão do Cliente") para MENU_PLATAFORMA_ITEMS, renomeada "Usuários e Permissões". (B) o painel "Segurança da API" (token — getApiToken/setApiToken usam API_TOKEN_KEY, fora de clienteDbKey) estava dentro de renderSistema(), a tela de dados DO CLIENTE ativo — movido para dentro de renderUsuarios() (tela global, Master-only); definirApiToken()/revogarApiToken() agora chamam renderUsuarios() em vez de renderSistema() ao concluir. (C) CAUSA RAIZ do "grupo não recolhe sozinho": openSubsys (subsistema aberto) e openSistemaGrp (Administração aberta) eram estados INDEPENDENTES — nada impedia os dois ficarem marcados como abertos ao mesmo tempo. Criada fecharOutrosBlocosDeTopo(), chamada por toggleSubsys()/toggleSistemaGrp()/toggleAdministracaoGlobal() (nova) e também na sincronização de buildNavTree() com a tela atual — agora só um bloco de topo (um Subsistema, "Gestão do Cliente" ou "Administração Global") fica aberto por vez, sempre. (D) Estado do bloco "Administração Global" passou a viver numa chave PRÓPRIA (MENU_GLOBAL_STATE_KEY='sdai_menu_global_v1'), fora de menuStateKey() (que já varia por clienteId) — não é mais salvo/perdido junto com o estado por-cliente. (E) updateBreadcrumb() não mostra mais o nome do cliente em telas de Administração Global (ex. "Plataforma › Usuários e Permissões", nunca "Shopping Pantanal › Administração › Usuários"); novo badge discreto #escopoBadge ("Escopo: <cliente>" ou "Escopo: Plataforma") ao lado do breadcrumb. MENU_SISTEMA_ITEMS (rótulos originais e permissão userViews) foi preservado intocado, como pedido — MENU_ADMINISTRACAO_ITEMS/MENU_PLATAFORMA_ITEMS continuam sendo só estruturas de agrupamento visual. Nenhuma view nova foi criada (Integrações/API Apps Script/Licenciamento sugeridos na estrutura ideal não existem como telas reais — não inventei nada, ver relatório de entrega). Não mexi em syncCfg/SYNC_KEY (é genuinamente global, mas syncNow() já usa clienteAtivo() para gravar na base certa do backend — mudar onde o status de sincronização é armazenado/exibido é decisão de arquitetura fora do escopo desta correção de navegação, documentada como pendência). Login/permissões/banco/importação/Code.gs não foram tocados. -->
+<!-- build anterior: 2026-07-11 v6.47 - CONSOLIDAÇÃO DA BASE, FASE 1 (ALTA PRIORIDADE): auditoria técnica completa identificou que o CRUD manual (savePainel/saveLaco/saveFlm/savePorta/saveEquip/saveLocal) cria registros via db.X.push(o) direto, sem passar pelos ensureX (que só existem no fluxo de importação) — isso não foi alterado nesta rodada (mudar a regra de deduplicação do cadastro manual é decisão de negócio, fora do escopo "não altere regras de negócio", registrada como recomendação). O que FOI corrigido: rastreabilidade (item 12 da auditoria) — savePainel/saveLaco/saveFlm/savePorta/saveEquip/saveLocal agora chamam logLocal() ao CRIAR um registro novo (não altera nada ao editar, que já era logado em alguns casos), e o fechamento da importação técnica em massa (importFile(), antes só gravava em db.imports) agora também grava 1 entrada agregada em db.historico com o resumo de criados/atualizados/ignorados/inconsistentes — sem gravar 1 linha por registro importado, para não estourar o cap de 1000 do histórico. Nenhuma função de cálculo de KPI/dashboard foi alterada (os números "Falhas ativas" da Visão Geral e "Lojas em falha" do Dashboard medem coisas propositalmente diferentes — falhas abertas vs. lojas distintas com falha — e já usam rótulos diferentes; não havia bug de rótulo). Nenhuma alteração em login/permissões/banco/sincronização/importação/Apps Script/regras de negócio — logLocal() é aditivo (só grava um registro extra em db.historico via persistLocal(), que já era chamado por save()/markDirty() de qualquer forma). -->
 <!-- build anterior: 2026-07-11 v6.46 - BREADCRUMB NAVEGÁVEL + RENOMEAÇÃO "GESTÃO DE DADOS": updateBreadcrumb() reescrita para gerar botões clicáveis (Cliente → Visão Geral; Subsistema → Dashboard daquele subsistema; Grupo → abre o subsistema com aquele grupo em foco, via nova breadcrumbAbrirGrupo(), que só ajusta menuState.openSubsys/openGroups — o mesmo estado já usado por toggleSubsys/toggleGrp — e chama navigate(); a Tela atual não é clicável, é apenas destaque). View 'sistema' renomeada de "Banco de Dados" para "Gestão de Dados" em todos os pontos de rótulo (MENU_SISTEMA_ITEMS, MENU_ADMINISTRACAO_ITEMS, VIEW_LABELS, L3A_VIEWS) e nos textos de ajuda que apontavam para ela — a view em si (id 'sistema', função renderSistema(), sincronização/backup/Apps Script que ela hospeda) não foi tocada, é troca de rótulo. -->
 <!-- build anterior: 2026-07-11 v6.45 - REVISÃO DE NAVEGAÇÃO/UX (incremental): (1) bloco único "Sistema" reorganizado em dois grupos colapsáveis — "Administração" (Banco de Dados/Usuários e Acessos/Configurações/Backup/Logs) e "Plataforma" (Clientes/Sobre) — usando exatamente as mesmas views e a mesma checagem de permissão userViews() de antes (MENU_SISTEMA_ITEMS não foi removido, só passou a existir também como MENU_ADMINISTRACAO_ITEMS/MENU_PLATAFORMA_ITEMS para desenhar os dois blocos); ambos iniciam RECOLHIDOS e só abrem ao clicar ou quando a tela atual pertence ao grupo (mesmo padrão de openGroups/toggleGrp já usado pelos subsistemas), com estado persistido em menuState.openSistemaGrp dentro do já existente localStorage['sdai_menu_v1__<clienteId>']. Não foram criadas as telas "Integrações", "Google Apps Script" e "Licenciamento" pedidas na estrutura sugerida — não existem no sistema atual e criá-las seria funcionalidade nova, fora do escopo desta correção incremental (ver relatório de entrega). (2) fontes ajustadas: subsistemas (SDAI/CFTV/Acesso/Ambiente) 13.5→13px, labels de campo 11.5→12px, KPI (.metric) título 11.5→12px, tabelas (table/.dsTable) padronizadas em 13px. (3) Plano de Ação: filtros avançados Painel/Laço/Piso/Loja agora são DEPENDENTES — Laço só lista laços do Painel escolhido, Piso só lista pisos daquele Painel+Laço, Loja só lista lojas daquele Painel+Laço+Piso; trocar o Painel limpa Laço/Piso/Loja (mesma ideia para Laço→Piso/Loja e Piso→Loja), evitando combinações impossíveis sem exigir um botão "aplicar". Falhas não tinha filtros de Painel/Laço/Piso/Loja no layout atual — adicioná-los é funcionalidade nova (ver recomendações futuras), não uma correção do que já existia. Nenhuma função de login/permissões/banco/importação/sincronização foi alterada; toggleSistemaGrp() é uma função nova, buildNavTree()/loadMenuStateLocal() foram ajustadas apenas para desenhar/persistir os dois novos blocos. -->
 <!-- build anterior: 2026-07-11 v6.44 - BUSCA ÚNICA PARA LOJAS/ÁREAS, FALHAS E PLANO DE AÇÃO: CAUSA RAIZ do "espaço bloqueado": esc() usa n(s), que faz .trim(); o valor do campo de busca é reimpresso via value="${esc(...)}" a cada render() (debounce após parar de digitar), então um espaço digitado no FINAL do texto (ex. "MC " antes de digitar "DON") era removido no redesenho seguinte, colando as palavras — não era um bloqueio de tecla, era o valor perdendo o espaço de ponta a cada re-render. Criada escSearchVal() (mesma função de esc(), sem trim) e trocada nos 4 campos de busca (Locais/Equipamentos/Falhas/Plano); esc() continua igual em todo o resto do sistema. CAUSA RAIZ da busca parcial/múltiplas palavras não funcionar, e diferente em cada aba: Locais comparava JSON.stringify(l).toUpperCase() (sem remover acento) com up(busca) (COM remoção de acento) — nunca batia para nomes acentuados, e a estrutura do JSON quebra a adjacência entre campos; Falhas já usava up() dos dois lados mas exigia substring CONTÍGUA de tudo (uma frase, não termos independentes); Plano comparava fx.q=f.q.toUpperCase() (SEM remover acento) com x._q=up(...) (COM remoção de acento) — praticamente nunca batia com acento, e também exigia substring contígua. Consolidado em duas funções únicas, reaproveitadas pelas 3 abas: normalizarBusca(valor) (maiúsculas, sem acento/diacrítico, sem apóstrofo/aspas, hífen/underscore/barra viram espaço, pontuação residual removida, espaços colapsados) e filtrarRegistrosPorBusca(registros,busca,extrairTexto) (divide a busca em termos e exige que TODOS apareçam, em qualquer campo/ordem — lógica E). Funções alteradas: renderLocais() (busca agora considera nome técnico/oficial/LUC/tipo/painel/laço/piso/endereço FLM/porta/sistema/status/observação), renderFalhas() (resolve loja/nomeOficial/LUC antes de filtrar; busca textual combinada em AND com os selects Tipo/Status, mantendo Situação como filtro separado), planoFiltrosAtuais()/planoRowsFiltrados() (busca agora usa a mesma função única, combinada em AND com Situação/Prioridade/Categoria/Responsável/Painel/Laço/Piso/Loja/Status Técnico/Período, exatamente como antes). Debounce de digitação aumentado de 120ms para 300ms (o valor de 120ms forçava um render() completo — tela inteira, KPIs, filtros e árvore do menu — cedo demais durante a digitação rápida, dando sensação de travamento). Adicionados em Locais/Falhas/Plano: botão "×" para limpar a busca, botão padronizado "Limpar filtros" (limparFiltrosTela()), e contador de resultados que diferencia base vazia ("Nenhuma loja/área cadastrada") de filtro sem resultado ("Nenhum registro corresponde aos filtros aplicados") — sem nunca mostrar contagem de linhas como se fosse quantidade de lojas. Nenhuma escrita no banco: busca e filtros continuam sendo só estado em memória (filters.*), sem chamar persistLocal()/markDirty()/sincronização — confirmado por leitura de todas as funções tocadas, nenhuma delas grava no localStorage nem altera db. Testado com simulação Node.js das funções reais extraídas do arquivo: ROM→ROMANNEL, ROMA→ROMANNEL, "MC DON"→MCDONALD'S, MCDONALDS→MCDONALD'S, "PRAÇA ALIM"→Praça de Alimentação, "PRACA ALIMENTACAO"→Praça de Alimentação, "CASA BOMB"→Casa de Bombas, "PISO 2"→registros do Piso 2, "LAÇO 3"/"LACO 3"→mesmo resultado, "3.1.4"→endereço 3.1.4.0, "ROMANNEL MODULO ABERTO"→localizado mesmo com termos em campos diferentes — todos os 12 testes obrigatórios passaram. Nenhuma alteração em banco/clienteId/importação/sincronização/login/permissões/regras de falha ou associação de LUC. -->
@@ -170,6 +171,10 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 button.crumb:hover{color:var(--l3a-primary);text-decoration:underline}
 .crumb.current{color:var(--l3a-text-soft);font-weight:700;cursor:default}
 .crumbSep{margin:0 5px;color:var(--l3a-text-muted);opacity:.5;font-size:11px}
+/* Badge discreto de escopo (item 11): cliente ativo × plataforma — selo pequeno, não um cartão. */
+.scopeBadge{display:inline-block;margin-left:8px;padding:2px 8px;border-radius:999px;font-size:10.5px;font-weight:700;letter-spacing:.02em;vertical-align:middle}
+.scopeCliente{background:var(--l3a-primary-50,#e8f1fc);color:var(--l3a-primary-700,#0b5fad)}
+.scopeGlobal{background:#fdf1e7;color:#9a5b12}
 .topMeta{display:flex;align-items:center;gap:10px;margin-left:auto}
 .menuToggle{display:none;border:0;background:var(--l3a-primary);color:#fff;border-radius:var(--l3a-radius-md);
   padding:9px 11px;align-items:center;justify-content:center}
@@ -922,7 +927,7 @@ table{font-size:13px}
     <header class="top">
       <div class="pageHead">
         <button class="menuToggle" id="mobileMenuBtn" aria-label="Abrir menu"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6.5h16M4 12h16M4 17.5h16"/></svg></button>
-        <div class="pageTitleWrap"><h1 id="pageTitle">Dashboard</h1><p id="breadcrumb">Gestão técnica SDAI • Bosch FPA/AVENAR</p></div>
+        <div class="pageTitleWrap"><h1 id="pageTitle">Dashboard</h1><p id="breadcrumb">Gestão técnica SDAI • Bosch FPA/AVENAR</p><span id="escopoBadge"></span></div>
       </div>
       <div class="topMeta">
         <div class="syncFooter" id="syncFooter"><span class="syncDot warn" id="syncDot"></span><span id="syncText">Banco local</span></div>
@@ -1071,18 +1076,32 @@ const MENU_SISTEMA_ITEMS=[
   {view:'usuarios',label:'Usuários e Acessos'},{view:'configuracoes',label:'Configurações'},
   {view:'backup',label:'Backup'},{view:'logs',label:'Logs'},{view:'sobre',label:'Sobre'}
 ];
-/* Reorganização visual do antigo bloco único "Sistema" (2026-07): Banco de Dados/Usuários/
-   Configurações/Backup/Logs são funções administrativas do CLIENTE ativo ("Administração"), já
-   que operam sobre a base daquele cliente; Clientes e Sobre são do nível da plataforma como um todo
-   ("Plataforma"). MENU_SISTEMA_ITEMS acima continua existindo (mesmas views, mesmos labels, mesma
-   checagem de permissão userViews) — isto é só o agrupamento usado por buildNavTree() para desenhar
-   dois blocos colapsáveis em vez de uma lista única; nenhuma view foi criada, removida ou reatribuída.*/
+/* Separação de escopo Cliente × Plataforma (2026-07, auditoria de navegação/governança):
+   MENU_SISTEMA_ITEMS acima é preservado INTOCADO (mesmas views, mesmos labels, mesma checagem de
+   permissão userViews) — item 8 do pedido do usuário ("preservar MENU_SISTEMA_ITEMS original, caso
+   outras funções dependam dele"). MENU_ADMINISTRACAO_ITEMS ("Gestão do Cliente") e
+   MENU_PLATAFORMA_ITEMS ("Administração Global") abaixo são estruturas NOVAS, usadas só por
+   buildNavTree() para desenhar dois blocos com escopos diferentes — nenhuma view foi criada,
+   removida ou teve sua lógica de permissão alterada.
+   Classificação (auditada função a função — ver relatório de entrega):
+   - 'sistema' (Gestão de Dados), 'configuracoes', 'backup', 'logs': todas leem/gravam o objeto `db`
+     em memória, que é TROCADO por switchCliente()/loadClienteDb(cid) a cada troca de cliente — ou
+     seja, são genuinamente dados/config DO CLIENTE ATIVO. Ficam em "Gestão do Cliente".
+   - 'clientes', 'usuarios', 'sobre': 'clientes' lista todos os clientes (não faz sentido "dentro" de
+     um cliente); 'usuarios' lê db.usuarios, que é injetado a partir de loadUsuariosGlobais()/salvo em
+     saveUsuariosGlobais() na chave GLOBAL (não na chave por-cliente — ver persistClienteDb, que
+     explicitamente exclui `usuarios` do blob do cliente) — logo usuários são globais, não do cliente,
+     e SÓ POR ISSO estavam mal posicionados antes; 'sobre' é informação da instalação. Ficam em
+     "Administração Global". O bloco "Segurança da API" (token, também 100% global — getApiToken/
+     setApiToken usam localStorage[API_TOKEN_KEY], fora de qualquer clienteDbKey) foi movido de dentro
+     de renderSistema() (tela do cliente) para dentro de renderUsuarios() (tela global) — ver essa
+     função para o código movido. */
 const MENU_ADMINISTRACAO_ITEMS=[
-  {view:'sistema',label:'Gestão de Dados'},{view:'usuarios',label:'Usuários e Acessos'},
-  {view:'configuracoes',label:'Configurações'},{view:'backup',label:'Backup'},{view:'logs',label:'Logs'}
+  {view:'sistema',label:'Gestão de Dados'},
+  {view:'configuracoes',label:'Configurações do Cliente'},{view:'backup',label:'Backup do Cliente'},{view:'logs',label:'Logs do Cliente'}
 ];
 const MENU_PLATAFORMA_ITEMS=[
-  {view:'clientes',label:'Clientes'},{view:'sobre',label:'Sobre'}
+  {view:'clientes',label:'Clientes'},{view:'usuarios',label:'Usuários e Permissões'},{view:'sobre',label:'Sobre'}
 ];
 const VIEW_TO_SECTION={
   visaoGeral:'visaoGeral',
@@ -1169,6 +1188,12 @@ let menuState={openSubsys:'sdai',openGroups:{},lastView:'',openSistemaGrp:null};
 function menuStateKey(){return 'sdai_menu_v1__'+(clienteAtivo()||'global')}
 function loadMenuStateLocal(){try{return Object.assign({openSubsys:'sdai',openGroups:{},lastView:'',openSistemaGrp:null},JSON.parse(localStorage.getItem(menuStateKey())||'{}'))}catch(e){return{openSubsys:'sdai',openGroups:{},lastView:'',openSistemaGrp:null}}}
 function saveMenuStateLocal(){try{localStorage.setItem(menuStateKey(),JSON.stringify(menuState))}catch(e){}}
+/* Estado do bloco "Administração Global" (auditoria de navegação, 2026-07): item 7 do pedido do
+   usuário — estado global NÃO pode ser salvo dentro da chave por-cliente (menuStateKey(), que já
+   varia por clienteId). Guardado numa chave própria, fixa, independente do cliente ativo. */
+const MENU_GLOBAL_STATE_KEY='sdai_menu_global_v1';
+function loadMenuGlobalState(){try{return Object.assign({open:false},JSON.parse(localStorage.getItem(MENU_GLOBAL_STATE_KEY)||'{}'))}catch(e){return{open:false}}}
+function saveMenuGlobalState(st){try{localStorage.setItem(MENU_GLOBAL_STATE_KEY,JSON.stringify(st))}catch(e){}}
 
 /* Módulos habilitados do cliente ativo (SDAI por padrão quando não há cliente). */
 function modulosClienteAtivo(){const c=clienteAtivoObj();return c?(c.modulos&&c.modulos.length?c.modulos:['sdai']):[];}
@@ -1194,8 +1219,24 @@ function viewInicialCliente(){
   if(last&&viewValidaParaCliente(last))return last;
   return primeiraViewCliente();
 }
+/* ACCORDION VERDADEIRO entre os blocos de topo (causa raiz do "grupo não recolhe": openSubsys,
+   openSistemaGrp e o estado global viviam soltos, sem se excluírem — dava pra ter um subsistema E
+   Administração Global abertos ao mesmo tempo. Agora toda troca de bloco de topo passa por
+   fecharOutrosBlocosDeTopo(), que fecha explicitamente os outros dois grupos antes de abrir o novo:
+   abrir SDAI fecha Gestão do Cliente e Administração Global; abrir Gestão do Cliente fecha os
+   subsistemas e Administração Global; abrir Administração Global fecha subsistemas e Gestão do
+   Cliente. Clicar de novo no bloco já aberto recolhe (mesmo comportamento de antes). Estado dos
+   subsistemas/Gestão do Cliente continua por-cliente (menuState/menuStateKey); o estado do bloco
+   global fica na chave própria MENU_GLOBAL_STATE_KEY (não é gravado dentro da chave do cliente). */
+function fecharOutrosBlocosDeTopo(){
+  menuState.openSubsys=null;
+  menuState.openSistemaGrp=null;
+  const g=loadMenuGlobalState(); g.open=false; saveMenuGlobalState(g);
+}
 function toggleSubsys(key){
-  if(menuState.openSubsys===key){menuState.openSubsys=null}else{menuState.openSubsys=key}
+  const abrindo=menuState.openSubsys!==key;
+  fecharOutrosBlocosDeTopo();
+  menuState.openSubsys=abrindo?key:null;
   saveMenuStateLocal(); buildNavTree();
 }
 function toggleGrp(subsysKey,grpKey){
@@ -1203,25 +1244,60 @@ function toggleGrp(subsysKey,grpKey){
   menuState.openGroups[subsysKey]=(cur===grpKey?null:grpKey);
   saveMenuStateLocal(); buildNavTree();
 }
-/* Blocos "Administração" e "Plataforma" (2026-07) — mesmo padrão de estado por cliente já usado em
-   openSubsys/openGroups (menuState, localStorage['sdai_menu_v1__<clienteId>']), só que com uma chave
-   própria (openSistemaGrp) para não interferir na navegação dos subsistemas. Iniciam RECOLHIDOS por
-   padrão (ver loadMenuStateLocal) e só abrem quando o usuário clica, ou automaticamente quando a
-   tela atual pertence àquele bloco — exatamente a mesma regra já usada para os grupos do SDAI. */
+/* Bloco "Gestão do Cliente" (funções que operam sobre o cliente ativo: Gestão de Dados,
+   Configurações, Backup, Logs — todas leem/gravam o `db` em memória, trocado por cliente) — estado
+   por-cliente, mesma chave já usada por openSubsys/openGroups. */
 function toggleSistemaGrp(key){
-  menuState.openSistemaGrp=(menuState.openSistemaGrp===key?null:key);
+  const abrindo=menuState.openSistemaGrp!==key;
+  fecharOutrosBlocosDeTopo();
+  menuState.openSistemaGrp=abrindo?key:null;
   saveMenuStateLocal(); buildNavTree();
+}
+/* Bloco "Administração Global" (Clientes/Usuários e Permissões/Sobre — nenhum depende do cliente
+   ativo) — estado guardado FORA da chave por-cliente (ver MENU_GLOBAL_STATE_KEY), justamente para
+   não ser perdido/duplicado ao trocar de cliente. */
+function toggleAdministracaoGlobal(){
+  const g=loadMenuGlobalState();
+  const abrindo=!g.open;
+  fecharOutrosBlocosDeTopo();
+  saveMenuGlobalState({open:abrindo});
+  saveMenuStateLocal();
+  buildNavTree();
 }
 function buildNavTree(){
   const tree=document.getElementById('navTree'); if(!tree)return;
   menuState=loadMenuStateLocal();
+  let globalState=loadMenuGlobalState();
   const c=clienteAtivoObj();
   const modulos=modulosClienteAtivo();
-  const loc=viewLocation(currentView);
-  if(loc&&menuState.openSubsys!==loc.subsys){menuState.openSubsys=loc.subsys;saveMenuStateLocal();}
-  if(loc&&!menuState.openGroups[loc.subsys]){menuState.openGroups[loc.subsys]=loc.group;saveMenuStateLocal();}
   const u=currentUserSafe();
   const uvs=userViews(u);
+  const loc=viewLocation(currentView);
+  const emGestaoCliente=MENU_ADMINISTRACAO_ITEMS.some(i=>i.view===currentView);
+  const emAdmGlobal=MENU_PLATAFORMA_ITEMS.some(i=>i.view===currentView);
+  // Sincroniza o bloco de topo com a tela atual, sempre respeitando a exclusividade mútua (item 6):
+  // a tela atual dita QUAL bloco deve estar aberto, e os outros dois são fechados junto — nunca dois
+  // blocos de topo abertos ao mesmo tempo, seja por clique do usuário, seja por navegação direta
+  // (ex.: abrir um link para "Usuários" com o SDAI previamente aberto).
+  if(loc){
+    if(menuState.openSubsys!==loc.subsys||menuState.openSistemaGrp||globalState.open){
+      menuState.openSubsys=loc.subsys; menuState.openSistemaGrp=null;
+      if(globalState.open){globalState={open:false}; saveMenuGlobalState(globalState);}
+      saveMenuStateLocal();
+    }
+    if(!menuState.openGroups[loc.subsys]){menuState.openGroups[loc.subsys]=loc.group;saveMenuStateLocal();}
+  } else if(emGestaoCliente){
+    if(menuState.openSistemaGrp!=='gestaoCliente'||menuState.openSubsys||globalState.open){
+      menuState.openSubsys=null; menuState.openSistemaGrp='gestaoCliente';
+      if(globalState.open){globalState={open:false}; saveMenuGlobalState(globalState);}
+      saveMenuStateLocal();
+    }
+  } else if(emAdmGlobal){
+    if(!globalState.open||menuState.openSubsys||menuState.openSistemaGrp){
+      menuState.openSubsys=null; menuState.openSistemaGrp=null; saveMenuStateLocal();
+      globalState={open:true}; saveMenuGlobalState(globalState);
+    }
+  }
 
   let html='';
   html+=`<div class="navSectionLabel">Gestão Geral</div>`;
@@ -1249,15 +1325,17 @@ function buildNavTree(){
     html+=`</div></div>`;
   }
 
-  // Administração (funções administrativas DO CLIENTE ativo) e Plataforma (Clientes/Sobre) — mesma
-  // checagem de permissão de sempre (uvs=userViews(u)), só reagrupada visualmente em dois blocos
-  // colapsáveis que iniciam fechados (grpOpen força abertura só quando a tela atual está ali dentro).
+  // "Gestão do Cliente" (Gestão de Dados/Configurações/Backup/Logs — operam sobre o `db` do cliente
+  // ativo, trocado a cada switchCliente()) e "Administração Global" (Clientes/Usuários e Permissões/
+  // Sobre — não dependem de nenhum cliente) — mesma checagem de permissão de sempre (uvs), agora com
+  // abertura mutuamente exclusiva entre os três blocos de topo (subsistema / Gestão do Cliente /
+  // Administração Global), sincronizada acima.
   const admItems=MENU_ADMINISTRACAO_ITEMS.filter(i=>uvs.includes(i.view));
   if(admItems.length){
-    const admOpen=menuState.openSistemaGrp==='administracao'||admItems.some(i=>i.view===currentView);
-    html+=`<div class="navSectionLabel" style="margin-top:8px">Administração</div>`;
+    const admOpen=menuState.openSistemaGrp==='gestaoCliente';
+    html+=`<div class="navSectionLabel" style="margin-top:8px">Gestão do Cliente</div>`;
     html+=`<div class="navGrpBlock">`;
-    html+=`<button class="navGrpHead${admOpen?' open':''}" title="Administração" onclick="toggleSistemaGrp('administracao')">Administração<span class="navChevron">▾</span></button>`;
+    html+=`<button class="navGrpHead${admOpen?' open':''}" title="Gestão do Cliente" onclick="toggleSistemaGrp('gestaoCliente')">Gestão do Cliente<span class="navChevron">▾</span></button>`;
     html+=`<div class="navGrpBody${admOpen?' open':''}">`;
     for(const item of admItems){
       html+=`<button class="navLeaf${currentView===item.view?' active':''}" title="${esc(item.label)}" onclick="navigate('${item.view}')">${item.label}</button>`;
@@ -1266,10 +1344,10 @@ function buildNavTree(){
   }
   const platItems=MENU_PLATAFORMA_ITEMS.filter(i=>uvs.includes(i.view));
   if(platItems.length){
-    const platOpen=menuState.openSistemaGrp==='plataforma'||platItems.some(i=>i.view===currentView);
-    html+=`<div class="navSectionLabel" style="margin-top:8px">Plataforma</div>`;
+    const platOpen=globalState.open;
+    html+=`<div class="navSectionLabel" style="margin-top:8px">Administração Global</div>`;
     html+=`<div class="navGrpBlock">`;
-    html+=`<button class="navGrpHead${platOpen?' open':''}" title="Plataforma" onclick="toggleSistemaGrp('plataforma')">Plataforma<span class="navChevron">▾</span></button>`;
+    html+=`<button class="navGrpHead${platOpen?' open':''}" title="Administração Global" onclick="toggleAdministracaoGlobal()">Administração Global<span class="navChevron">▾</span></button>`;
     html+=`<div class="navGrpBody${platOpen?' open':''}">`;
     for(const item of platItems){
       html+=`<button class="navLeaf${currentView===item.view?' active':''}" title="${esc(item.label)}" onclick="navigate('${item.view}')">${item.label}</button>`;
@@ -1313,29 +1391,40 @@ function updateBreadcrumb(){
   const c=clienteAtivoObj();
   const cName=c?c.nome:'';
   const loc=viewLocation(currentView);
-  const admItem=MENU_ADMINISTRACAO_ITEMS.find(i=>i.view===currentView);
-  const platItem=MENU_PLATAFORMA_ITEMS.find(i=>i.view===currentView);
+  const admItem=MENU_ADMINISTRACAO_ITEMS.find(i=>i.view===currentView); // "Gestão do Cliente" — escopo cliente
+  const platItem=MENU_PLATAFORMA_ITEMS.find(i=>i.view===currentView);   // "Administração Global" — escopo plataforma
+  const escopoGlobal=!!platItem; // item 10/11: telas globais NÃO mostram o cliente no breadcrumb
   const parts=[];
-  if(cName)parts.push(`<button class="crumb" onclick="breadcrumbGo('visaoGeral')">${esc(cName)}</button>`);
-  if(loc){
-    const s=MENU_TREE_SUBSYS.find(x=>x.key===loc.subsys);
-    const g=s?.groups.find(x=>x.key===loc.group);
-    const item=g?.items.find(x=>x.view===currentView);
-    const dash=s?.groups[0]?.items?.[0]?.view;
-    const naDashboard=currentView===dash;
-    parts.push(naDashboard?`<span class="crumb current">${esc(s.label)}</span>`:`<button class="crumb" onclick="breadcrumbGo('${dash}')">${esc(s.label)}</button>`);
-    if(g&&!naDashboard)parts.push(`<button class="crumb" onclick="breadcrumbAbrirGrupo('${s.key}','${g.key}')">${esc(g.label)}</button>`);
-    if(item&&!naDashboard)parts.push(`<span class="crumb current">${esc(item.label)}</span>`);
-  } else if(currentView==='visaoGeral'){
-    parts.push('<span class="crumb current">Visão Geral do Cliente</span>');
-  } else if(admItem){
-    parts.push('<span class="crumb">Administração</span>',`<span class="crumb current">${esc(admItem.label)}</span>`);
-  } else if(platItem){
+  if(escopoGlobal){
     parts.push('<span class="crumb">Plataforma</span>',`<span class="crumb current">${esc(platItem.label)}</span>`);
   } else {
-    parts.push(`<span class="crumb current">${esc(L3A_VIEWS[currentView]||currentView)}</span>`);
+    if(cName)parts.push(`<button class="crumb" onclick="breadcrumbGo('visaoGeral')">${esc(cName)}</button>`);
+    if(loc){
+      const s=MENU_TREE_SUBSYS.find(x=>x.key===loc.subsys);
+      const g=s?.groups.find(x=>x.key===loc.group);
+      const item=g?.items.find(x=>x.view===currentView);
+      const dash=s?.groups[0]?.items?.[0]?.view;
+      const naDashboard=currentView===dash;
+      parts.push(naDashboard?`<span class="crumb current">${esc(s.label)}</span>`:`<button class="crumb" onclick="breadcrumbGo('${dash}')">${esc(s.label)}</button>`);
+      if(g&&!naDashboard)parts.push(`<button class="crumb" onclick="breadcrumbAbrirGrupo('${s.key}','${g.key}')">${esc(g.label)}</button>`);
+      if(item&&!naDashboard)parts.push(`<span class="crumb current">${esc(item.label)}</span>`);
+    } else if(currentView==='visaoGeral'){
+      parts.push('<span class="crumb current">Visão Geral do Cliente</span>');
+    } else if(admItem){
+      parts.push('<span class="crumb">Gestão do Cliente</span>',`<span class="crumb current">${esc(admItem.label)}</span>`);
+    } else {
+      parts.push(`<span class="crumb current">${esc(L3A_VIEWS[currentView]||currentView)}</span>`);
+    }
   }
   el.innerHTML=parts.filter(Boolean).join('<span class="crumbSep">›</span>');
+  // Badge discreto de escopo (item 11) — não é um cartão grande, é um selo pequeno ao lado do
+  // breadcrumb, só para deixar explícito se a tela atual pertence ao cliente ativo ou é global.
+  const badge=document.getElementById('escopoBadge');
+  if(badge){
+    if(escopoGlobal)badge.innerHTML=`<span class="scopeBadge scopeGlobal" title="Esta tela não pertence a nenhum cliente — é configuração da plataforma">Escopo: Plataforma</span>`;
+    else if(cName)badge.innerHTML=`<span class="scopeBadge scopeCliente" title="Esta tela mostra/altera somente dados do cliente ativo">Escopo: ${esc(cName)}</span>`;
+    else badge.innerHTML='';
+  }
 }
 function renderVisaoGeral(){
   const el=document.getElementById('visaoGeral'); if(!el)return;
@@ -3500,7 +3589,7 @@ async function definirApiToken(){
     await new Promise(r=>setTimeout(r,1000));
     setApiToken(novo);
     const check=await jsonp('ping');
-    if(check&&check.ok){alert('Token configurado e confirmado com sucesso. A partir de agora, toda sincronização exige esse token.'); renderSistema();}
+    if(check&&check.ok){alert('Token configurado e confirmado com sucesso. A partir de agora, toda sincronização exige esse token.'); renderUsuarios();}
     else{alert('O token foi enviado, mas a confirmação falhou. Verifique se o Apps Script foi reimplantado com a versão mais recente do Code.gs, e tente novamente.');}
   }catch(e){alert('Falha ao definir token: '+e.message)}
 }
@@ -3511,7 +3600,7 @@ async function revogarApiToken(){
     await new Promise(r=>setTimeout(r,1000));
     setApiToken('');
     alert('Token revogado no Apps Script e removido deste navegador. Defina um novo token agora para restaurar a proteção.');
-    renderSistema();
+    renderUsuarios();
   }catch(e){alert('Falha ao revogar token: '+e.message)}
 }
 function renderSistema(){
@@ -3523,7 +3612,6 @@ function renderSistema(){
    <div class="premiumActions"><button class="btn" onclick="setupGoogle()">Inicializar</button><button class="btn secondary" onclick="syncNow(true)">Sincronizar</button><button class="btn secondary" onclick="loadGoogle()">Carregar base</button>${c.sheetUrl?`<button class="btn secondary" onclick="window.open('${esc(c.sheetUrl)}','_blank')">Abrir planilha</button>`:''}</div>
  </div>
  <div class="split2"><div class="premiumPanel"><h3>Autosync</h3><p>Define a gravação automática em segundo plano.</p><div class="formGrid" style="margin-top:14px"><div class="field"><label>Status</label><select onchange="setAutoEnabled(this.value==='Sim')"><option ${c.auto?'selected':''}>Sim</option><option ${!c.auto?'selected':''}>Não</option></select></div><div class="field"><label>Intervalo</label><select onchange="setAutoInterval(this.value)">${[15,30,60,120,300].map(s=>`<option value="${s}" ${Number(c.intervalSec||30)===s?'selected':''}>${s<60?s+' segundos':(s/60)+' minuto(s)'}</option>`).join('')}</select></div></div></div><div class="premiumPanel"><h3>Estrutura</h3><p>Banco separado por abas técnicas.</p><div class="compactHelp" style="margin-top:14px">Painéis, Laços, FLMs, Portas, Lojas/Áreas, Equipamentos, Falhas, Plano de Ação, Histórico, Importações e Usuários.</div></div></div>
- ${isMaster(currentUserSafe())?`<div class="premiumPanel"><h3>Segurança da API</h3><p>O Apps Script só aceita ler/gravar a base com o token correto — protege contra acesso direto por quem descobrir a URL do backend. ${tokenStatusHtml()}</p><div class="formGrid" style="margin-top:14px"><div class="field" style="grid-column:1/-1"><label>Definir / atualizar token (mín. 8 caracteres, use algo aleatório)</label><input id="mNovoToken" type="password" placeholder="Ex.: um trecho longo e aleatório"></div></div><div class="premiumActions"><button class="btn" onclick="definirApiToken()">Salvar token</button> <button class="btn secondary" onclick="revogarApiToken()">Revogar token atual</button></div><p class="mutedLine" style="margin-top:8px">Se você usa o sistema em mais de um navegador/computador, precisa configurar o MESMO token em cada um deles depois de definido.</p></div>`:''}
  <div class="premiumPanel"><h3>Resumo da base</h3><div class="premiumGrid" style="margin-top:14px">${premiumStat('Painéis',db.paineis.length)}${premiumStat('Laços',db.lacos.length)}${premiumStat('FLMs',db.flms.length)}${premiumStat('Equipamentos',db.equipamentos.length)}${premiumStat('Falhas',db.falhas.length)}${premiumStat('Planos',db.planos.length)}${premiumStat('Usuários',(db.usuarios||[]).length)}${premiumStat('Banco',c.configured?'Google':'Local')}</div></div>
  <div class="premiumPanel">${renderPainelMigracaoLegado()}</div>`;
 }
@@ -4073,7 +4161,8 @@ function renderUsuarios(){
  const el=document.getElementById('usuarios'); if(!el)return;
  if(!isMaster(currentUserSafe())){el.innerHTML='<div class="premiumPanel"><h3>Acesso restrito</h3><p>Somente Administrador pode criar usuários e alterar permissões.</p></div>';return}
  const us=db.usuarios||[];
- el.innerHTML=`<div class="premiumPanel"><div class="systemHeaderSlim"><div class="titleBlock"><h3>Usuários e acessos</h3><p>Login, senha, perfil e liberação individual de abas.</p></div><button class="btn" onclick="addUser()">+ Novo usuário</button></div><div class="premiumGrid">${premiumStat('Usuários',us.length)}${premiumStat('Master',us.filter(u=>isMaster(u)).length)}${premiumStat('Gestores',us.filter(u=>perfilNorm(u.perfil)==='Gestor').length)}${premiumStat('Operacionais / Visualizadores',us.filter(u=>['Operacional','Visualizador'].includes(perfilNorm(u.perfil))).length)}</div></div><div class="split2"><div class="userRoleCard"><h4>Master</h4><p>Acesso total: configura, importa/exporta, sistema, backup e usuários. Único que altera cadastros técnicos.</p></div><div class="userRoleCard"><h4>Gestor</h4><p>Vê tudo da operação; cria, edita e exclui falhas e planos de ação; posiciona dispositivos nas plantas.</p></div><div class="userRoleCard"><h4>Operacional</h4><p>Registra falhas, atualiza status e conclui planos. Não exclui registros.</p></div><div class="userRoleCard"><h4>Visualizador</h4><p>Somente leitura + emissão de relatórios. Perfis antigos (Administrador/Supervisor) valem como Master/Gestor.</p></div></div><div class="premiumPanel"><h3>Usuários cadastrados</h3><div class="softTable">${table(us,[['Nome','nome'],['Login','email'],['Perfil','perfil'],['Ativo','ativo'],['Abas liberadas','views',u=>userViews(u).map(v=>`<span class="pill">${esc(L3A_VIEWS[v]||VIEW_LABELS?.[v]||v)}</span>`).join(' ')]],u=>`<button class="btn small secondary" onclick="editUser('${u.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1-4.2L15.5 5.3a1.5 1.5 0 0 1 2.1 0l1.1 1.1a1.5 1.5 0 0 1 0 2.1L8.2 19 4 20Z"/><path d="M13.8 7 17 10.2"/></svg> Editar</button> <button class="btn small danger" onclick="delUser('${u.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2"/><path d="M6.5 7 7.3 19a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4L17.5 7"/><path d="M10 11v6M14 11v6"/></svg> Excluir</button>`)}</div></div>`;
+ el.innerHTML=`<div class="premiumPanel"><div class="systemHeaderSlim"><div class="titleBlock"><h3>Usuários e acessos</h3><p>Login, senha, perfil e liberação individual de abas.</p></div><button class="btn" onclick="addUser()">+ Novo usuário</button></div><div class="premiumGrid">${premiumStat('Usuários',us.length)}${premiumStat('Master',us.filter(u=>isMaster(u)).length)}${premiumStat('Gestores',us.filter(u=>perfilNorm(u.perfil)==='Gestor').length)}${premiumStat('Operacionais / Visualizadores',us.filter(u=>['Operacional','Visualizador'].includes(perfilNorm(u.perfil))).length)}</div></div><div class="split2"><div class="userRoleCard"><h4>Master</h4><p>Acesso total: configura, importa/exporta, sistema, backup e usuários. Único que altera cadastros técnicos.</p></div><div class="userRoleCard"><h4>Gestor</h4><p>Vê tudo da operação; cria, edita e exclui falhas e planos de ação; posiciona dispositivos nas plantas.</p></div><div class="userRoleCard"><h4>Operacional</h4><p>Registra falhas, atualiza status e conclui planos. Não exclui registros.</p></div><div class="userRoleCard"><h4>Visualizador</h4><p>Somente leitura + emissão de relatórios. Perfis antigos (Administrador/Supervisor) valem como Master/Gestor.</p></div></div><div class="premiumPanel"><h3>Usuários cadastrados</h3><div class="softTable">${table(us,[['Nome','nome'],['Login','email'],['Perfil','perfil'],['Ativo','ativo'],['Abas liberadas','views',u=>userViews(u).map(v=>`<span class="pill">${esc(L3A_VIEWS[v]||VIEW_LABELS?.[v]||v)}</span>`).join(' ')]],u=>`<button class="btn small secondary" onclick="editUser('${u.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1-4.2L15.5 5.3a1.5 1.5 0 0 1 2.1 0l1.1 1.1a1.5 1.5 0 0 1 0 2.1L8.2 19 4 20Z"/><path d="M13.8 7 17 10.2"/></svg> Editar</button> <button class="btn small danger" onclick="delUser('${u.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2"/><path d="M6.5 7 7.3 19a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4L17.5 7"/><path d="M10 11v6M14 11v6"/></svg> Excluir</button>`)}</div></div>
+ <div class="premiumPanel"><h3>Segurança da API (global)</h3><p>O Apps Script só aceita ler/gravar a base com o token correto — protege contra acesso direto por quem descobrir a URL do backend. Este token é da INSTALAÇÃO/navegador, não do cliente ativo — ele não muda ao trocar de cliente e não fica salvo dentro da base de nenhum cliente (getApiToken/setApiToken usam uma chave própria no localStorage, fora de clienteDbKey). ${tokenStatusHtml()}</p><div class="formGrid" style="margin-top:14px"><div class="field" style="grid-column:1/-1"><label>Definir / atualizar token (mín. 8 caracteres, use algo aleatório)</label><input id="mNovoToken" type="password" placeholder="Ex.: um trecho longo e aleatório"></div></div><div class="premiumActions"><button class="btn" onclick="definirApiToken()">Salvar token</button> <button class="btn secondary" onclick="revogarApiToken()">Revogar token atual</button></div><p class="mutedLine" style="margin-top:8px">Se você usa o sistema em mais de um navegador/computador, precisa configurar o MESMO token em cada um deles depois de definido.</p></div>`;
 }
 function renderConfiguracoes(){
  const el=document.getElementById('configuracoes'); if(!el)return; const cfg=db.config||{};
