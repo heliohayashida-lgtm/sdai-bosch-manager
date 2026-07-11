@@ -1967,7 +1967,13 @@ function falhasRowsFiltradas(){
     if(f.piso&&(r.piso||'')!==f.piso)return false;
     if(f.loja&&r.localId!==f.loja)return false;
     if(f.tipo&&r.tipoEfetivo!==f.tipo)return false;
-    if(f.situacao&&r.situacaoEfetiva!==f.situacao)return false;
+    // BACKUP LOGICA ANTERIOR: quando filters.falhas.situacao vinha vazio, a tabela mostrava TODAS as
+    // falhas (inclusive Resolvidas/Canceladas), exigindo filtro manual para ver so as ativas. NOVA
+    // LOGICA (item 6, 2026-07): sem filtro explicito de Situacao, mostra so falhas ativas
+    // (situacaoEfetiva != Resolvida/Cancelada). O valor especial 'Todas' (nova opcao no filtro)
+    // mostra tudo; qualquer valor especifico de SITUACAO_FALHA_OPTIONS filtra normalmente.
+    if(f.situacao){ if(f.situacao!=='Todas'&&r.situacaoEfetiva!==f.situacao)return false; }
+    else { if(!falhaSituacaoAtiva(r))return false; }
     if(f.periodoDe&&String(r.data||'').slice(0,10)<f.periodoDe)return false;
     if(f.periodoAte&&String(r.data||'').slice(0,10)>f.periodoAte)return false;
     return true;
@@ -2062,7 +2068,7 @@ function renderFalhas(){
       <div class="field"><label>Piso</label><select onchange="filters.falhas={...filters.falhas,piso:this.value};render()">${selectOpts(pisosOpts,f.piso)}</select></div>
       <div class="field"><label>Loja</label><select onchange="filters.falhas={...filters.falhas,loja:this.value};render()"><option value="">Todas</option>${lojaOpts.map(x=>`<option value="${x.id}" ${x.id===f.loja?'selected':''}>${esc(x.nome)}</option>`).join('')}</select></div>
       <div class="field"><label>Tipo</label><select onchange="filters.falhas={...filters.falhas,tipo:this.value};render()">${selectOpts(TIPO_FALHA_OPTIONS,f.tipo)}</select></div>
-      <div class="field"><label>Situação</label><select onchange="filters.falhas={...filters.falhas,situacao:this.value};render()">${selectOpts(SITUACAO_FALHA_OPTIONS,f.situacao)}</select></div>
+      <div class="field"><label>Situação</label><select onchange="filters.falhas={...filters.falhas,situacao:this.value};render()"><option value="" ${!f.situacao?'selected':''}>Ativas (padrão)</option><option value="Todas" ${f.situacao==='Todas'?'selected':''}>Todas</option>${SITUACAO_FALHA_OPTIONS.map(v=>`<option ${f.situacao===v?'selected':''}>${esc(v)}</option>`).join('')}</select></div>
       <div class="field"><label>Período inicial</label><input type="date" value="${esc(f.periodoDe||'')}" onchange="filters.falhas={...filters.falhas,periodoDe:this.value};renderFalhasResultado()"></div>
       <div class="field"><label>Período final</label><input type="date" value="${esc(f.periodoAte||'')}" onchange="filters.falhas={...filters.falhas,periodoAte:this.value};renderFalhasResultado()"></div>
       <div class="dsFilterActions">
@@ -2590,6 +2596,14 @@ function formFalha(i=''){
   let statusOptsFalha=STATUS_SISTEMA_OPTIONS.filter(s=>s!=='__renomear__');
   if(!i)statusOptsFalha=statusOptsFalha.filter(s=>s!=='Em operação'&&s!=='Em teste');
   if(i&&statusAtual&&!statusOptsFalha.includes(statusAtual))statusOptsFalha=[statusAtual,...statusOptsFalha];
+  // BACKUP LOGICA ANTERIOR: formFalha sempre exibia o status tecnico como checkboxes editaveis e a
+  // Situacao como select editavel para qualquer falha existente, mesmo com Plano de Acao ativo
+  // vinculado — permitindo concluir/alterar status final pela aba Falhas, o que a aba Plano de Acao
+  // ja faz de forma correta e auditada (item 1, 2026-07). NOVA LOGICA: se ha um plano vinculado ainda
+  // ativo (nao Concluido/Cancelado), status tecnico e situacao ficam SOMENTE LEITURA aqui, com link
+  // direto para o Plano de Acao — a aba Falhas deixa de permitir concluir/alterar status final.
+  const planoVincFF=i?planoForFalha(i):null;
+  const planoAtivoForm=!!(planoVincFF&&planoVincFF.situacao!=='Concluído'&&planoVincFF.situacao!=='Cancelado');
   const cu=currentUser(); const isAdmin=(cu.perfil==='Administrador');
   const respPadrao=o.responsavel||cu.nome||'';
   const origemOpts=['Painel Bosch','Inspeção técnica','Plano de ação','Comunicação do lojista','Teste programado','Outro'];
@@ -2622,10 +2636,10 @@ function formFalha(i=''){
   <div class="formGrid">
     <div class="field"><label>Tipo da falha</label><select id="mTipo">${TIPO_FALHA_OPTIONS.map(v=>`<option ${((o.tipo||tipoFalhaEfetivo(o))===v)?'selected':''}>${v}</option>`).join('')}</select></div>
     <div class="field"><label>Criticidade</label><select id="mCriticidade">${CRITICIDADE_FALHA_OPTIONS.map(v=>`<option ${(criticidadeFalhaEfetiva(o)===v)?'selected':''}>${v}</option>`).join('')}</select></div>
-    ${i?`<div class="field"><label>Situação</label><select id="mSituacao">${SITUACAO_FALHA_OPTIONS.map(v=>`<option ${(situacaoFalhaEfetiva(o)===v)?'selected':''}>${v}</option>`).join('')}</select></div>`:''}
-    <div class="field" style="grid-column:1/-1"><label>Status técnico do item${!i?' (novos cadastros não usam mais "Em operação"/"Em teste" aqui — use Resolver/normalização)':''}</label><div class="toolbar statusChecks">
-      ${statusOptsFalha.map(st=>`<label class="check"><input type="checkbox" name="mStatusCheck" value="${st}" ${st===statusAtual?'checked':''}> ${st}</label>`).join('')}
-    </div></div>
+    ${i?(planoAtivoForm?`<div class="field" style="grid-column:1/-1"><label>Situação</label><div class="compactHelp">Situação controlada pelo Plano de Ação vinculado (atual: <b>${esc(situacaoFalhaEfetiva(o))}</b>). <button type="button" class="btn small secondary" onclick="closeModal();formAtendimentoPlano('${planoVincFF.id}')">Abrir Plano de Ação</button></div><input type="hidden" id="mSituacao" value="${esc(situacaoFalhaEfetiva(o))}"></div>`:`<div class="field"><label>Situação</label><select id="mSituacao">${SITUACAO_FALHA_OPTIONS.map(v=>`<option ${(situacaoFalhaEfetiva(o)===v)?'selected':''}>${v}</option>`).join('')}</select></div>`):''}
+    <div class="field" style="grid-column:1/-1"><label>Status técnico do item${!i?' (novos cadastros não usam mais "Em operação"/"Em teste" aqui — use Resolver/normalização)':''}${planoAtivoForm?' (bloqueado — controlado pelo Plano de Ação)':''}</label><div class="toolbar statusChecks">
+      ${statusOptsFalha.map(st=>`<label class="check"><input type="checkbox" name="mStatusCheck" value="${st}" ${st===statusAtual?'checked':''} ${planoAtivoForm?'disabled':''}> ${st}</label>`).join('')}
+    </div>${planoAtivoForm?`<div class="compactHelp" style="margin-top:6px">Status técnico final é controlado pelo Plano de Ação vinculado. <button type="button" class="btn small secondary" onclick="closeModal();formAtendimentoPlano('${planoVincFF.id}')">Abrir Plano de Ação</button></div>`:''}</div>
     <div class="field" style="grid-column:1/-1"><label>Motivo</label><input id="mMotivo" value="${esc(o.motivo)}" placeholder="Ex.: curto, aberto, acionamento, normalização"></div>
     <div class="field" style="grid-column:1/-1"><label>Observação técnica</label><textarea id="mObs" placeholder="Detalhe técnico do lançamento">${esc(o.obs)}</textarea></div>
   </div>
@@ -2664,39 +2678,47 @@ function saveFalha(i){
   Object.assign(rec,{data:isoNow(),painelId:item.painelId,lacoId:item.lacoId,piso:item.piso,tipo:tipoSel,criticidade:criticidadeSel,situacao:situacaoSel,itemId:sel,itemNome:(isFlm?`Módulo ${item.endereco||item.modelo}${porta?' • Porta '+porta.numero:''}`:item.endereco||item.modelo),localId,status:checked.value,statusAnterior,responsavel:n(document.getElementById('mResp')?.value),origem:document.getElementById('mOrigem')?.value,motivo:n(document.getElementById('mMotivo')?.value),obs:n(document.getElementById('mObs')?.value),resolvidaEm:situacaoSel==='Resolvida'?(rec.resolvidaEm||isoNow()):''});
   if(!i){db.falhas.push(rec);
     logLocal('Falha',rec.id,'Falha criada',`${tipoSel} — ${rec.itemNome} (${locName(localId)||'—'})`);
-    // REGRA (item 1 do pedido do usuário, 2026-07): toda NOVA falha deve gerar automaticamente um
-    // Plano de Ação com Situação = Aberto. Reaproveitado sem alteração de comportamento.
-    if(!db.planos.find(p=>p.falhaId===rec.id)){
-      const tpl=window._planoTemplate||null;
-      db.planos.push({id:id(),falhaId:rec.id,criadoEm:isoNow(),categoria:tpl?.categoria||'Manutenção corretiva',prioridade:tpl?.prioridade||criticidadeSel||'Média',responsavel:tpl?.responsavel||'L3A Engenharia',situacao:'Aberto',painel:paiName(rec.painelId),laco:lacName(rec.lacoId),piso:rec.piso,local:locName(rec.localId),item:rec.itemNome,statusFalha:rec.status,justificativa:rec.motivo||rec.obs||'',providencia:'',necessitaCompra:tpl?.necessitaCompra||false,material:tpl?.material||'',direcionamento:tpl?.direcionamento||undefined});
-      if(tpl)window._planoTemplate=null;
-    }
+    // BACKUP LOGICA ANTERIOR: criacao automatica de plano ficava inline aqui (push direto em
+    // db.planos). Extraida para criarPlanoAutomaticoParaFalha(f) para ser reaproveitada tambem por
+    // resolverFalha() quando a falha ainda nao tem plano vinculado (item 1, 2026-07). Comportamento
+    // preservado 100% para o fluxo de cadastro de nova falha.
+    criarPlanoAutomaticoParaFalha(rec);
   } else {
     logLocal('Falha',rec.id,'Falha atualizada',`Situação: ${situacaoSel}`);
   }
   closeModal(); save()
 }
-// resolverFalha(falhaId): ação DIRETA de resolução de falha (item 15/16), separada de qualquer
-// "cadastro manual de Em operação". Se já existe Plano de Ação em andamento para a falha, reaproveita
-// o atendimento do plano (formAtendimentoPlano) em vez de duplicar a lógica de Conforme/Não conforme.
+// criarPlanoAutomaticoParaFalha(f): cria (uma unica vez) o Plano de Acao vinculado a uma falha,
+// respeitando a garantia estrutural 1 falha <-> 1 plano (nunca cria um segundo se ja existir).
+// Reaproveitado por saveFalha() (nova falha) e por resolverFalha() (quando o usuario tenta resolver
+// uma falha antiga que nunca teve plano gerado).
+function criarPlanoAutomaticoParaFalha(f){
+  if(!f)return null;
+  const existente=planoForFalha(f.id); if(existente)return existente;
+  const tpl=window._planoTemplate||null;
+  const novo={id:id(),falhaId:f.id,criadoEm:isoNow(),categoria:tpl?.categoria||'Manutenção corretiva',prioridade:tpl?.prioridade||f.criticidade||'Média',responsavel:tpl?.responsavel||'L3A Engenharia',situacao:'Aberto',painel:paiName(f.painelId),laco:lacName(f.lacoId),piso:f.piso,local:locName(f.localId),item:f.itemNome,statusFalha:f.status,justificativa:f.motivo||f.obs||'',providencia:'',necessitaCompra:tpl?.necessitaCompra||false,material:tpl?.material||'',direcionamento:tpl?.direcionamento||undefined};
+  db.planos.push(novo);
+  if(tpl)window._planoTemplate=null;
+  logLocal('Plano de Ação',novo.id,'Plano criado',`${novo.categoria} — ${novo.item||''} (${novo.local||'—'})`);
+  return novo;
+}
+// BACKUP LOGICA ANTERIOR: resolverFalha(falhaId) so reaproveitava o Plano de Acao quando ja existia
+// um plano ATIVO vinculado; caso contrario abria um modal de resolucao DIRETA (salvarResolverFalha)
+// que encerrava a falha sem nunca passar pelo Plano — violando a regra "a aba Falhas nunca resolve
+// sozinha" (item 1, 2026-07). NOVA LOGICA: se ja existe QUALQUER plano vinculado (mesmo concluido —
+// nunca criamos um segundo plano para a mesma falha, ver criarPlanoAutomaticoParaFalha), reabre esse
+// plano em formAtendimentoPlano para registrar uma nova visita; se nao existe nenhum plano, cria
+// automaticamente e abre formAtendimentoPlano no plano recem-criado. A funcao salvarResolverFalha()
+// permanece definida apenas por compatibilidade (nenhum botao/fluxo da UI a chama mais).
 function resolverFalha(falhaId){
   const f=(db.falhas||[]).find(x=>x.id===falhaId); if(!f)return;
-  const plano=planoForFalha(falhaId);
-  if(plano&&plano.situacao!=='Concluído'&&plano.situacao!=='Cancelado'){
-    formAtendimentoPlano(plano.id);
-    return;
+  let plano=planoForFalha(falhaId);
+  if(!plano){
+    plano=criarPlanoAutomaticoParaFalha(f);
+    save();
   }
-  const isAdmin=perfilAtual()==='Administrador';
-  const respAtual=f.responsavel||currentUser().nome||'';
-  openModal(`<h2>Resolver falha</h2>
-  <p class="note">Ação direta na falha (sem Plano de Ação formal aberto). Se "Não conforme", a falha permanece ativa e é registrada a tratativa "Notificar lojista".</p>
-  <div class="formGrid">
-    <div class="field"><label>Responsável</label><input id="rfResp" value="${esc(respAtual)}" ${isAdmin?'':'readonly'}></div>
-    <div class="field"><label>Resultado</label><select id="rfResultado">${RESOLVER_RESULTADO_OPTIONS.map(v=>`<option ${v==='Conforme'?'selected':''}>${v}</option>`).join('')}</select></div>
-    <div class="field" style="grid-column:1/-1"><label>Conclusão</label><textarea id="rfConclusao" placeholder="Descreva o que foi feito/constatado"></textarea></div>
-    <div class="field" style="grid-column:1/-1"><label>Evidências (descrição)</label><input id="rfEvidencias" placeholder="Ex.: foto anexada no plano X, laudo, etc."></div>
-  </div><br>
-  <button class="btn" onclick="salvarResolverFalha('${falhaId}')">Confirmar</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`);
+  if(!plano){alert('Não foi possível localizar ou criar o Plano de Ação desta falha.');return}
+  formAtendimentoPlano(plano.id);
 }
 function salvarResolverFalha(falhaId){
   const f=(db.falhas||[]).find(x=>x.id===falhaId); if(!f)return;
@@ -3460,6 +3482,129 @@ function confirmarSaneamentoFalhas(){
   closeModal();
   render();
 }
+// ---- Validacao/saneamento de consistencia Falha x Plano (item 4/5, 2026-07) ----
+// analisarConsistenciaFalhaPlano(f): analise PURA (dry-run), nao altera nada em db. Detecta, por
+// falha: (a) falha resolvida com plano ainda aberto; (b) plano concluido sem resultado preenchido;
+// (c) falha ativa com status tecnico "Em operação" (inconsistente); (d) multiplos planos abertos
+// simultaneos para a mesma falha. Cada issue traz autoCorrigivel (true so quando inequivoco) e uma
+// funcao aplicar() usada apenas por validarConsistenciaFalhaPlano()/aplicarCorrecaoConsistencia().
+function analisarConsistenciaFalhaPlano(f){
+  const issues=[];
+  if(!f)return {falhaId:'',issues};
+  const planosDaFalha=(db.planos||[]).filter(p=>p.falhaId===f.id);
+  const situacaoEf=situacaoFalhaEfetiva(f);
+  const ativa=falhaSituacaoAtiva(f);
+  const planoAtivo=planosDaFalha.find(p=>p.situacao!=='Concluído'&&p.situacao!=='Cancelado');
+  if(situacaoEf==='Resolvida'&&planoAtivo){
+    const normalizado=(planoAtivo.visitas||[]).slice().reverse().find(v=>v.resultado==='Normalizado');
+    issues.push({tipo:'falha_resolvida_plano_aberto',descricao:`Falha ${f.id} está Resolvida mas o plano ${planoAtivo.id} continua "${planoAtivo.situacao}".`,autoCorrigivel:!!normalizado,falhaId:f.id,planoId:planoAtivo.id,
+      aplicar:normalizado?()=>{planoAtivo.situacao='Concluído';planoAtivo.concluidoEm=planoAtivo.concluidoEm||normalizado.data;planoAtivo.resultado=planoAtivo.resultado||'Conforme'}:null});
+  }
+  planosDaFalha.filter(p=>p.situacao==='Concluído'&&!p.resultado).forEach(p=>{
+    issues.push({tipo:'plano_concluido_sem_resultado',descricao:`Plano ${p.id} está Concluído mas o campo "resultado" está vazio.`,autoCorrigivel:false,falhaId:f.id,planoId:p.id,aplicar:null});
+  });
+  if(ativa&&up(normalizeStatus(f.status||''))==='EM OPERAÇÃO'){
+    issues.push({tipo:'falha_ativa_status_operacao',descricao:`Falha ${f.id} está ativa (${situacaoEf}) mas o status técnico é "Em operação".`,autoCorrigivel:false,falhaId:f.id,planoId:'',aplicar:null});
+  }
+  const abertos=planosDaFalha.filter(p=>p.situacao!=='Concluído'&&p.situacao!=='Cancelado');
+  if(abertos.length>1){
+    const manter=abertos.slice().sort((a,b)=>String(a.criadoEm||'').localeCompare(String(b.criadoEm||'')))[0];
+    const extras=abertos.filter(p=>p.id!==manter.id);
+    issues.push({tipo:'multiplos_planos_abertos',descricao:`Falha ${f.id} tem ${abertos.length} planos abertos simultâneos (mantendo ${manter.id}).`,autoCorrigivel:true,falhaId:f.id,planoId:extras.map(p=>p.id).join(','),
+      aplicar:()=>{extras.forEach(p=>{p.situacao='Cancelado';p.canceladoEm=isoNow();p.observacaoCancelamento='Cancelado automaticamente — plano duplicado para a mesma falha (mantido '+manter.id+').'})}});
+  }
+  return {falhaId:f.id,issues};
+}
+// validarConsistenciaFalhaPlano(falhaId): roda a analise acima E APLICA de fato as correcoes
+// inequivocas (autoCorrigivel), marcando os casos ambiguos com falha._revisaoManual=true e um motivo
+// legivel em falha._motivoRevisao. Nunca apaga falhas reais.
+function validarConsistenciaFalhaPlano(falhaId){
+  const f=(db.falhas||[]).find(x=>x.id===falhaId); if(!f)return null;
+  const rel=analisarConsistenciaFalhaPlano(f);
+  let corrigidos=0,manuais=0;
+  rel.issues.forEach(is=>{
+    if(is.autoCorrigivel&&is.aplicar){ is.aplicar(); is.corrigido=true; corrigidos++; }
+    else { manuais++; }
+  });
+  if(manuais>0){
+    f._revisaoManual=true;
+    f._motivoRevisao=rel.issues.filter(is=>!is.corrigido).map(is=>is.descricao).join(' | ');
+  } else if(f._revisaoManual){
+    delete f._revisaoManual; delete f._motivoRevisao;
+  }
+  return {falhaId,corrigidos,manuais,issues:rel.issues};
+}
+// validarConsistenciaGeral(): roda validarConsistenciaFalhaPlano() para TODAS as falhas, mais os
+// checks de nivel geral: planos sem falha vinculada e falhas duplicadas ativas (mesmo item/local/
+// tipo) — ambos apenas SINALIZADOS (_revisaoManual), nunca corrigidos automaticamente (ambiguos).
+function validarConsistenciaGeral(){
+  const resultados=(db.falhas||[]).map(f=>validarConsistenciaFalhaPlano(f.id)).filter(Boolean);
+  const orfaos=(db.planos||[]).filter(p=>p.falhaId&&!(db.falhas||[]).find(f=>f.id===p.falhaId));
+  orfaos.forEach(p=>{p._revisaoManual=true;p._motivoRevisao='Plano sem falha vinculada (falhaId="'+(p.falhaId||'—')+'").'});
+  const grupos={};
+  (db.falhas||[]).filter(falhaSituacaoAtiva).forEach(f=>{const k=(f.itemId||'')+'|'+(f.localId||'')+'|'+(f.tipo||'');grupos[k]=grupos[k]||[];grupos[k].push(f)});
+  const duplicadas=Object.values(grupos).filter(arr=>arr.length>1);
+  duplicadas.forEach(arr=>arr.forEach(f=>{f._revisaoManual=true;f._motivoRevisao=(f._motivoRevisao?f._motivoRevisao+' | ':'')+'Possível falha duplicada ativa (mesmo item/local/tipo com outra(s) '+(arr.length-1)+' falha(s) ativa(s)).'}));
+  return {
+    totalFalhas:(db.falhas||[]).length,
+    totalPlanosOrfaos:orfaos.length,
+    totalGruposDuplicados:duplicadas.length,
+    corrigidosAuto:resultados.reduce((a,r)=>a+r.corrigidos,0),
+    revisaoManual:resultados.filter(r=>r.manuais>0).length+orfaos.length+duplicadas.reduce((a,g)=>a+g.length,0)
+  };
+}
+// auditarConsistenciaFalhaPlano(): DRY-RUN puro (usa analisarConsistenciaFalhaPlano, nunca aplica()),
+// devolve contagens por tipo de inconsistencia para exibir em modal antes de qualquer alteracao.
+function auditarConsistenciaFalhaPlano(){
+  const porTipo={};
+  let autoCorrigiveis=0,manuais=0;
+  (db.falhas||[]).forEach(f=>{
+    const rel=analisarConsistenciaFalhaPlano(f);
+    rel.issues.forEach(is=>{porTipo[is.tipo]=(porTipo[is.tipo]||0)+1; if(is.autoCorrigivel)autoCorrigiveis++; else manuais++;});
+  });
+  const orfaos=(db.planos||[]).filter(p=>p.falhaId&&!(db.falhas||[]).find(f=>f.id===p.falhaId));
+  if(orfaos.length){porTipo['plano_sem_falha']=orfaos.length; manuais+=orfaos.length;}
+  const grupos={};
+  (db.falhas||[]).filter(falhaSituacaoAtiva).forEach(f=>{const k=(f.itemId||'')+'|'+(f.localId||'')+'|'+(f.tipo||'');grupos[k]=grupos[k]||[];grupos[k].push(f)});
+  const duplicadas=Object.values(grupos).filter(arr=>arr.length>1);
+  if(duplicadas.length){const qtd=duplicadas.reduce((a,g)=>a+g.length,0);porTipo['falhas_duplicadas_ativas']=qtd; manuais+=qtd;}
+  return {executadoEm:isoNow(),totalAnalisado:(db.falhas||[]).length,porTipo,totalAutoCorrigivel:autoCorrigiveis,totalRevisaoManual:manuais};
+}
+// aplicarCorrecaoConsistencia(relatorio): EXECUTA de fato — so deve ser chamada apos confirmacao
+// explicita (ver abrirAuditoriaConsistenciaFalhaPlano/confirmarConsistenciaFalhaPlano). Cria backup
+// completo em db._backupConsistenciaFalhaPlano antes de qualquer alteracao (mesmo padrao ja usado em
+// db._backupAntesSaneamento). Nao apaga nenhuma falha.
+function aplicarCorrecaoConsistencia(relatorio){
+  if(!relatorio)return;
+  db._backupConsistenciaFalhaPlano={timestamp:isoNow(),db:JSON.parse(JSON.stringify(db))};
+  const res=validarConsistenciaGeral();
+  db.logsAuditoria=db.logsAuditoria||[];
+  db.logsAuditoria.push({timestamp:isoNow(),usuario:(currentUser&&currentUser().email)||(currentUserSafe&&currentUserSafe().email)||'sistema',
+    resumo:`Consistência Falha × Plano: ${res.corrigidosAuto} correção(ões) automática(s), ${res.revisaoManual} caso(s) marcado(s) para revisão manual, ${res.totalPlanosOrfaos} plano(s) órfão(s), ${res.totalGruposDuplicados} grupo(s) de falha duplicada ativa.`});
+  logLocal('Sistema','consistencia-falha-plano','Auditar consistência Falha × Plano',`${res.corrigidosAuto} corrigido(s) automaticamente, ${res.revisaoManual} sinalizado(s) para revisão manual.`);
+  persistLocal(); markDirty('consistência falha-plano'); save();
+  alert(`Consistência aplicada: ${res.corrigidosAuto} correção(ões) automática(s). ${res.revisaoManual} caso(s) marcado(s) para revisão manual (não alterados).`);
+  return res;
+}
+// UI: mesmo padrao ja usado em abrirAuditoriaFalhas() — previa (dry-run) em modal, revisao, so
+// aplica apos confirmacao explicita.
+function abrirAuditoriaConsistenciaFalhaPlano(){
+  const rel=auditarConsistenciaFalhaPlano();
+  window._relatorioConsistenciaFalhaPlano=rel;
+  const linhasTipo=Object.entries(rel.porTipo).map(([k,v])=>`<tr><td>${esc(k)}</td><td style="text-align:center">${v}</td></tr>`).join('')||'<tr><td colspan="2">Nenhuma inconsistência encontrada.</td></tr>';
+  openModal(`<h2>Auditar consistência Falha × Plano</h2>
+  <p class="msg warn">Prévia (nada foi alterado ainda). Falhas analisadas: <b>${rel.totalAnalisado}</b> • Autocorrigíveis: <b>${rel.totalAutoCorrigivel}</b> • Revisão manual: <b>${rel.totalRevisaoManual}</b></p>
+  <div class="dsTableWrap"><table class="dsTable"><thead><tr><th>Tipo de inconsistência</th><th>Qtd</th></tr></thead><tbody>${linhasTipo}</tbody></table></div>
+  <p class="note">Casos autocorrigíveis (ex.: sincronizar plano com visita "Normalizado" já registrada, cancelar plano duplicado mantendo o mais antigo) são aplicados automaticamente. Casos ambíguos são apenas sinalizados (falha._revisaoManual=true) para revisão manual — nenhum dado é alterado nesses casos.</p>
+  <br><button class="btn danger" onclick="confirmarConsistenciaFalhaPlano()">Confirmar e aplicar correções (${rel.totalAutoCorrigivel})</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`);
+}
+function confirmarConsistenciaFalhaPlano(){
+  const rel=window._relatorioConsistenciaFalhaPlano; if(!rel)return;
+  if(!confirm(`Confirma aplicar ${rel.totalAutoCorrigivel} correção(ões) automática(s)? Um backup completo (db._backupConsistenciaFalhaPlano) é criado antes. Casos de revisão manual não serão alterados.`))return;
+  aplicarCorrecaoConsistencia(rel);
+  closeModal();
+  render();
+}
 function renderSistema(){
  const el=document.getElementById('sistema'); if(!el)return; const c=syncCfg();
  el.innerHTML=`
@@ -3471,7 +3616,7 @@ function renderSistema(){
  <div class="split2"><div class="premiumPanel"><h3>Autosync</h3><p>Define a gravação automática em segundo plano.</p><div class="formGrid" style="margin-top:14px"><div class="field"><label>Status</label><select onchange="setAutoEnabled(this.value==='Sim')"><option ${c.auto?'selected':''}>Sim</option><option ${!c.auto?'selected':''}>Não</option></select></div><div class="field"><label>Intervalo</label><select onchange="setAutoInterval(this.value)">${[15,30,60,120,300].map(s=>`<option value="${s}" ${Number(c.intervalSec||30)===s?'selected':''}>${s<60?s+' segundos':(s/60)+' minuto(s)'}</option>`).join('')}</select></div></div></div><div class="premiumPanel"><h3>Estrutura</h3><p>Banco separado por abas técnicas.</p><div class="compactHelp" style="margin-top:14px">Painéis, Laços, FLMs, Portas, Lojas/Áreas, Equipamentos, Falhas, Plano de Ação, Histórico, Importações e Usuários.</div></div></div>
  ${currentUserSafe().perfil==='Administrador'?`<div class="premiumPanel"><h3>Segurança da API</h3><p>O Apps Script só aceita ler/gravar a base com o token correto — protege contra acesso direto por quem descobrir a URL do backend. ${tokenStatusHtml()}</p><div class="formGrid" style="margin-top:14px"><div class="field" style="grid-column:1/-1"><label>Definir / atualizar token (mín. 8 caracteres, use algo aleatório)</label><input id="mNovoToken" type="password" placeholder="Ex.: um trecho longo e aleatório"></div></div><div class="premiumActions"><button class="btn" onclick="definirApiToken()">Salvar token</button> <button class="btn secondary" onclick="revogarApiToken()">Revogar token atual</button></div><p class="mutedLine" style="margin-top:8px">Se você usa o sistema em mais de um navegador/computador, precisa configurar o MESMO token em cada um deles depois de definido.</p></div>`:''}
  <div class="premiumPanel"><h3>Resumo da base</h3><div class="premiumGrid" style="margin-top:14px">${premiumStat('Painéis',db.paineis.length)}${premiumStat('Laços',db.lacos.length)}${premiumStat('FLMs',db.flms.length)}${premiumStat('Equipamentos',db.equipamentos.length)}${premiumStat('Falhas',db.falhas.length)}${premiumStat('Planos',db.planos.length)}${premiumStat('Usuários',(db.usuarios||[]).length)}${premiumStat('Banco',c.configured?'Google':'Local')}</div></div>
- <div class="premiumPanel"><h3>Qualidade da base de falhas</h3><p>Audita db.falhas em busca de registros sintéticos criados pelo bug antigo de conclusão de Plano de Ação (duplicavam a falha original com status "Em operação"). Só remove após revisão e confirmação explícita; nada é excluído silenciosamente.</p><div class="premiumActions" style="margin-top:10px"><button class="btn secondary" onclick="abrirAuditoriaFalhas()">Auditar e corrigir falhas duplicadas</button></div></div>`;
+ <div class="premiumPanel"><h3>Qualidade da base de falhas</h3><p>Audita db.falhas em busca de registros sintéticos criados pelo bug antigo de conclusão de Plano de Ação (duplicavam a falha original com status "Em operação"). Só remove após revisão e confirmação explícita; nada é excluído silenciosamente.</p><div class="premiumActions" style="margin-top:10px"><button class="btn secondary" onclick="abrirAuditoriaFalhas()">Auditar e corrigir falhas duplicadas</button> <button class="btn secondary" onclick="abrirAuditoriaConsistenciaFalhaPlano()">Auditar consistência Falha × Plano</button></div></div>`;
 }
 function renderUsuarios(){
  const el=document.getElementById('usuarios'); if(!el)return;
