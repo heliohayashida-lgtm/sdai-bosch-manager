@@ -695,17 +695,17 @@ tbody tr:last-child td{border-bottom:0}
 /* --- DS-6. Badges padronizados ---------------------------------------- */
 .dsBadge{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:99px;
   font-size:11px;font-weight:750;white-space:nowrap}
-.dsBadge.op{background:#E7F7EC;color:#15803D}          /* Em operação  — Verde   */
-.dsBadge.test{background:#EAF1FE;color:#1D4ED8}        /* Em teste     — Azul    */
-.dsBadge.wait{background:#FDF3DF;color:#B45309}        /* Aguardando   — Amarelo */
-.dsBadge.alert{background:#FEF0E6;color:#C05A0A}       /* Alerta       — Laranja */
-.dsBadge.fail{background:#FCEAE9;color:#B42318}        /* Falha        — Vermelho*/
-.dsBadge.off{background:#EEF1F5;color:#475569}         /* Desativado   — Cinza   */
-.dsBadge.open{background:#EAF1FE;color:#1D4ED8}        /* Aberto (plano)         */
-.dsBadge.prog{background:#FDF3DF;color:#B45309}        /* Em andamento           */
-.dsBadge.done{background:#E7F7EC;color:#15803D}        /* Concluído              */
-.dsBadge.noplan{background:#EEF1F5;color:#475569}      /* Sem plano              */
-.dsBadge.fire{background:#B42318;color:#fff}           /* Incêndio disparado     */
+.dsBadge.op{background:#E7F7EC;color:#2E7D32}          /* Em operação  — Verde   #2E7D32 (padronizado 2026-07) */
+.dsBadge.test{background:#FFF3E0;color:#FB8C00}        /* Em teste     — Laranja #FB8C00 (nunca azul p/ estado operacional) */
+.dsBadge.wait{background:#E3F2FD;color:#1565C0}        /* Aguardando   — Azul "Informação" #1565C0 */
+.dsBadge.alert{background:#FFF3E0;color:#FB8C00}       /* Alerta       — Laranja #FB8C00 */
+.dsBadge.fail{background:#FDEBEE;color:#D32F2F}        /* Falha        — Vermelho #D32F2F */
+.dsBadge.off{background:#EEEEEE;color:#757575}         /* Desativado   — Cinza #757575 */
+.dsBadge.open{background:#E3F2FD;color:#1565C0}        /* Aberto (plano) — Azul "Informação" #1565C0 */
+.dsBadge.prog{background:#FFF3E0;color:#FB8C00}        /* Em andamento — Laranja #FB8C00 */
+.dsBadge.done{background:#E7F7EC;color:#2E7D32}        /* Concluído    — Verde #2E7D32 */
+.dsBadge.noplan{background:#EEEEEE;color:#757575}      /* Sem plano    — Cinza #757575 */
+.dsBadge.fire{background:#D32F2F;color:#fff}           /* Incêndio disparado — Vermelho #D32F2F */
 
 /* --- DS-7. Botões ícone ------------------------------------------------ */
 .dsIco{border:1px solid var(--l3a-border);background:var(--l3a-surface);color:var(--l3a-text-soft);
@@ -1380,7 +1380,28 @@ const cards=rows.map(r=>`<div class="lacoCard">
     <button class="btn small danger" onclick="del('lacos','${r.id}')">Excluir</button>
   </div>
 </div>`).join('');
-document.getElementById('lacos').innerHTML=`<div class="card"><button class="btn" onclick="formLaco()">+ Criar novo laço</button><div class="toolbar"><div class="field"><label>Painel</label><select onchange="filters.lacoPainel=this.value;render()">${selectOpts(unique(db.paineis.map(p=>p.nome)),fp)}</select></div><div class="field"><label>Laço</label><select onchange="filters.lacoNome=this.value;render()">${selectOpts(unique(db.lacos.map(l=>l.nome)),fl)}</select></div><div class="field"><label>Status</label><select onchange="filters.lacoStatus=this.value;render()">${selectOpts(['Em operação','Com falha'],fs)}</select></div></div></div><div class="card"><h3 class="sectionTitle">Laços cadastrados</h3><p class="msg warn">O Sistema (SDAI / CO2) de cada laço agora só é alterado na aba <b>Painéis</b>, para evitar trocas acidentais aqui.</p>${rows.length?`<div class="lacoCardGrid">${cards}</div>`:'<p class="msg warn">Sem registros.</p>'}</div>`}
+document.getElementById('lacos').innerHTML=`<div class="card"><button class="btn" onclick="formLaco()">+ Criar novo laço</button><div class="toolbar"><div class="field"><label>Painel</label><select onchange="filters.lacoPainel=this.value;render()">${selectOpts(unique(db.paineis.map(p=>p.nome)),fp)}</select></div><div class="field"><label>Laço</label><select onchange="filters.lacoNome=this.value;render()">${selectOpts(unique(db.lacos.map(l=>l.nome)),fl)}</select></div><div class="field"><label>Status</label><select onchange="filters.lacoStatus=this.value;render()">${selectOpts(['Em operação','Com falha'],fs)}</select></div></div></div><div class="card"><h3 class="sectionTitle">Laços cadastrados</h3><p class="msg warn">O Sistema (SDAI / CO2) de cada laço agora só é alterado na aba <b>Painéis</b>, para evitar trocas acidentais aqui.</p>${rows.length?`<div class="lacoCardGrid">${cards}</div>`:'<p class="msg warn">Sem registros.</p>'}</div>${lacosPanoramaSectionHtml()}`}
+// lacosPanoramaSectionHtml(): "Panorama completo por Laço" — movido do Dashboard (2026-07) para cá,
+// pois é uma leitura técnica detalhada de TODOS os laços da central (não só os com falha), mais
+// adequada à aba Laços do que ao painel executivo do Dashboard. Reaproveita dashPanoramaLacos(),
+// já existente, sem duplicar lógica.
+function lacosPanoramaSectionHtml(){
+  const panorama=dashPanoramaLacos();
+  const panoramaRows=panorama.map(r=>`<tr>
+      <td>${esc(r.painel)}</td>
+      <td>${esc(r.laco)}</td>
+      <td>${esc(r.pisoDisplay)}</td>
+      <td><span class="pill ${r.sistema==='CO2'?'warn':'ok'}">${esc(r.sistema)}</span></td>
+      <td>${r.flms}</td>
+      <td>${r.equip}</td>
+      <td><b>${r.total}</b></td>
+      <td>${r.falha?`<span class="pill bad">${r.falha}</span>`:'0'}</td>
+      <td>${r.teste?`<span class="pill warn">${r.teste}</span>`:'0'}</td>
+      <td><div class="bar" style="max-width:90px"><i class="${r.disp>=90?'ok':r.disp>=70?'':'bad'}" style="width:${r.disp}%"></i></div><small class="mutedLine">${r.disp}%</small></td>
+    </tr>`).join('');
+  const panoramaTable=panorama.length?`<div class="tableWrap"><table><thead><tr><th>Painel</th><th>Laço</th><th>Piso</th><th>Sistema</th><th>FLMs</th><th>Equip.</th><th>Total disp.</th><th>Falha</th><th>Teste</th><th>Disponibilidade</th></tr></thead><tbody>${panoramaRows}</tbody></table></div>`:'<div class="emptyState">Nenhum laço cadastrado ainda.</div>';
+  return `<div class="card"><h3 class="sectionTitle">Panorama completo por Laço</h3><p class="msg warn">Todos os laços da central — não só os com falha — com quantidade de dispositivos, sistema e disponibilidade. Leitura completa da central. (Movido do Dashboard para cá em 2026-07, para manter o Dashboard como painel executivo.)</p><div style="margin-top:14px">${panoramaTable}</div></div>`;
+}
 function subTipoCatClass(cat){const c=up(cat); if(c.includes('MODULO'))return 'modulo'; if(c.includes('FUMACA'))return 'fumaca'; if(c.includes('TERMICO'))return 'termico'; if(c.includes('ACIONADOR'))return 'acionador'; if(c.includes('SIRENE')||c.includes('SINALIZ'))return 'sirene'; return 'outro'}
 function subTipos(match){let map={}; db.flms.filter(match).forEach(f=>{let k='Módulo • '+(f.modelo||'FLM');map[k]=(map[k]||0)+1}); db.equipamentos.filter(match).forEach(e=>{let k=(e.tipo||'Equipamento')+' • '+(e.modelo||'S/modelo');map[k]=(map[k]||0)+1}); let entries=Object.entries(map).sort((a,b)=>b[1]-a[1]); if(!entries.length)return '<span class="mutedLine">Sem dispositivos cadastrados</span>'; return '<div class="subTipoGrid">'+entries.map(([k,v])=>{const [cat,modelo]=k.split(' • '); return `<div class="subTipoRow"><span class="subTipoDot cat-${subTipoCatClass(cat)}"></span><span class="subTipoLabel"><b>${esc(cat)}</b><small>${esc(modelo||'')}</small></span><span class="subTipoCount">${v}</span></div>`}).join('')+'</div>'}
 function renderFlms(){
@@ -3202,92 +3223,374 @@ function dashPanoramaLacos(){
 window._dashCharts=window._dashCharts||{};
 function dashDestroyChart(k){if(window._dashCharts[k]){try{window._dashCharts[k].destroy()}catch(e){}delete window._dashCharts[k]}}
 
-const _renderDashboardAnterior=null; // (mantido apenas como marcador de versão; a versão anterior de renderDashboard() continua no arquivo, apenas superada por esta)
-function renderDashboard(){
-  const el=document.getElementById('dashboard');if(!el)return;
-  const pisos=dashPisoStats();
+/* =========================================================================
+   V9 — Dashboard Executivo (2026-07). Substitui a versão técnica/tabular
+   anterior por um painel voltado a Gerente/Superintendente/Diretor: cards,
+   Índice de Risco Operacional, tendência de 12 meses, ranking e prioridades.
+   O "Panorama completo por Laço" (tabela técnica de todos os laços) foi
+   MOVIDO para a aba Laços (ver lacosPanoramaSectionHtml(), dentro de
+   renderLacos()) — continua existindo, só que fora do Dashboard.
+   Nada aqui altera login, permissões, sincronização, importação/exportação
+   ou o formato dos dados gravados no banco.
+   ========================================================================= */
+
+window._dashCharts=window._dashCharts||{};
+function dashDestroyChart(k){if(window._dashCharts[k]){try{window._dashCharts[k].destroy()}catch(e){}delete window._dashCharts[k]}}
+
+// Lista de status técnicos tratados como CRÍTICOS no sistema (confirmada via STATUS_TECNICO_OPTIONS
+// e normalizeStatus(): os três estados que representam risco imediato de segurança/detecção).
+const STATUS_CRITICOS=['Incêndio disparado','Laço aberto','Módulo em curto'];
+function isStatusCritico(st){return STATUS_CRITICOS.includes(normalizeStatus(st))}
+
+// ---- Indicadores básicos (item 1) ----
+function dashDisponibilidadeReal(){
   const totalEquip=(db.equipamentos||[]).length+(db.flms||[]).length;
-  const totalOp=pisos.reduce((a,p)=>a+p.operacao,0);
-  const totalTeste=pisos.reduce((a,p)=>a+p.teste,0);
-  const disponibilidade=totalEquip?Math.round((totalOp/totalEquip)*100):0;
-  const lojasFalha=dashLojasComFalha();
-  const planosAbertos=(db.planos||[]).filter(p=>p.situacao!=='Concluído').length;
-  const porLaco=dashPorLaco();
-  const panorama=dashPanoramaLacos();
+  if(!totalEquip)return 0;
+  const emOp=(db.equipamentos||[]).filter(e=>dashStatusBucket(e.status)==='operacao').length
+    +(db.flms||[]).filter(f=>dashStatusBucket(f.status)==='operacao').length;
+  return Math.round((emOp/totalEquip)*1000)/10; // 1 casa decimal
+}
+function dashFalhasAtivas(){return (db.falhas||[]).filter(f=>!f.resolvidaEm&&isFalhaStatus(f.status))}
+function dashPendenciasCriticas(){return dashFalhasAtivas().filter(f=>isStatusCritico(f.status))}
+function dashTestesNoMes(){
+  const hoje=new Date(); const ym=hoje.getFullYear()+'-'+String(hoje.getMonth()+1).padStart(2,'0');
+  let total=0;
+  (db.locais||[]).forEach(l=>{(l.inspecoes||[]).forEach(insp=>{if(String(insp.data||'').startsWith(ym))total++})});
+  return total;
+}
+function dashPlanosPendentes(){return (db.planos||[]).filter(p=>p.situacao==='Aberto'||p.situacao==='Em andamento')}
 
-  const panoramaRows=panorama.map(r=>`<tr>
-      <td>${esc(r.painel)}</td>
-      <td>${esc(r.laco)}</td>
-      <td>${esc(r.pisoDisplay)}</td>
-      <td><span class="pill ${r.sistema==='CO2'?'warn':'ok'}">${esc(r.sistema)}</span></td>
-      <td>${r.flms}</td>
-      <td>${r.equip}</td>
-      <td><b>${r.total}</b></td>
-      <td>${r.falha?`<span class="pill bad">${r.falha}</span>`:'0'}</td>
-      <td>${r.teste?`<span class="pill warn">${r.teste}</span>`:'0'}</td>
-      <td><div class="bar" style="max-width:90px"><i class="${r.disp>=90?'ok':r.disp>=70?'':'bad'}" style="width:${r.disp}%"></i></div><small class="mutedLine">${r.disp}%</small></td>
-    </tr>`).join('');
-  const panoramaTable=panorama.length?`<div class="tableWrap"><table><thead><tr><th>Painel</th><th>Laço</th><th>Piso</th><th>Sistema</th><th>FLMs</th><th>Equip.</th><th>Total disp.</th><th>Falha</th><th>Teste</th><th>Disponibilidade</th></tr></thead><tbody>${panoramaRows}</tbody></table></div>`:'<div class="emptyState">Nenhum laço cadastrado ainda.</div>';
+// ---- Reincidência (lojas com 2+ falhas), item 9 ----
+function dashReincidencia(){
+  const map={};
+  (db.falhas||[]).forEach(f=>{if(!f.localId)return; map[f.localId]=(map[f.localId]||0)+1});
+  return Object.entries(map).filter(([,q])=>q>=2).map(([localId,q])=>{
+    const l=(db.locais||[]).find(x=>x.id===localId);
+    const ultima=(db.falhas||[]).filter(f=>f.localId===localId).sort((a,b)=>String(b.data||'').localeCompare(String(a.data||'')))[0];
+    return {localId,nome:l?l.nome:'—',piso:l?(pisoEfetivo(l)||'—'):'—',qtd:q,ultima:ultima?ultima.data:''};
+  }).sort((a,b)=>b.qtd-a.qtd).slice(0,10);
+}
 
-  const failRows=lojasFalha.length?lojasFalha.map(r=>{const t=timeSince(r.desde);const cls=(t.endsWith('d')&&parseInt(t)>=1)?'urgent':(t.endsWith('h')?'recent':'');return `<div class="failRow"><b>${esc(r.nome)}</b><span>${esc(r.piso)}</span><span>${esc(r.laco)}</span><span class="tsince ${cls}">${esc(t)}</span></div>`}).join(''):'<div class="emptyState">Nenhuma loja em falha no momento.</div>';
+// ---- Tempo de atendimento/solução e SLA (item 8) ----
+// LIMITAÇÃO DOCUMENTADA: o sistema não possui um campo específico de "hora do 1º atendimento
+// técnico" — só existem criadoEm (quando o Plano de Ação é aberto, junto com a falha) e
+// concluidoEm (quando o plano é concluído). Por isso:
+//  - "Tempo até solução" = concluidoEm - criadoEm (dado real).
+//  - "Tempo até atendimento" = estimativa (documentada como tal na tela) de 1/3 do tempo até a
+//    solução, heurística conservadora na ausência de um marco de "1ª visita técnica" no banco.
+//  - SLA: usamos 48h como prazo razoável (não há campo de SLA configurado no sistema hoje).
+function dashTemposAtendimento(){
+  const SLA_HORAS=48;
+  const concluidos=(db.planos||[]).filter(p=>p.situacao==='Concluído'&&p.criadoEm&&p.concluidoEm);
+  if(!concluidos.length)return {atendimentoH:null,solucaoH:null,slaPct:null,amostra:0,slaHoras:SLA_HORAS};
+  let somaSolucao=0,dentroSLA=0;
+  concluidos.forEach(p=>{
+    const h=(new Date(p.concluidoEm).getTime()-new Date(p.criadoEm).getTime())/3600000;
+    if(isNaN(h)||h<0)return;
+    somaSolucao+=h;
+    if(h<=SLA_HORAS)dentroSLA++;
+  });
+  const solucaoH=somaSolucao/concluidos.length;
+  return {atendimentoH:solucaoH/3,solucaoH,slaPct:Math.round((dentroSLA/concluidos.length)*100),amostra:concluidos.length,slaHoras:SLA_HORAS};
+}
+function fmtHoras(h){if(h===null||h===undefined||isNaN(h))return '—';if(h<1)return Math.max(1,Math.round(h*60))+' min';if(h<48)return h.toFixed(1)+'h';return (h/24).toFixed(1)+'d'}
 
-  el.innerHTML=`
+// ---- Tendência dos últimos 12 meses (item 3) ----
+function dadosTendencia12Meses(){
+  const meses=[]; const hoje=new Date();
+  for(let i=11;i>=0;i--){
+    const d=new Date(hoje.getFullYear(),hoje.getMonth()-i,1);
+    meses.push({ym:d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'),label:d.toLocaleDateString('pt-BR',{month:'short',year:'2-digit'}).replace('.','')});
+  }
+  return meses.map(m=>{
+    const falhasAbertas=(db.falhas||[]).filter(f=>String(f.data||'').startsWith(m.ym)).length;
+    const falhasResolvidas=(db.planos||[]).filter(p=>p.situacao==='Concluído'&&String(p.concluidoEm||'').startsWith(m.ym)).length;
+    let testes=0; (db.locais||[]).forEach(l=>(l.inspecoes||[]).forEach(insp=>{if(String(insp.data||'').startsWith(m.ym))testes++}));
+    const totalEquip=(db.equipamentos||[]).length+(db.flms||[]).length;
+    return {...m,falhasAbertas,falhasResolvidas,testes,totalEquip};
+  });
+}
+
+// ---- Disponibilidade detalhada por piso (item 4) ----
+function dashPisoDetalhado(){
+  const pisos=dashPisoStats();
+  const hoje=new Date(); const ym=hoje.getFullYear()+'-'+String(hoje.getMonth()+1).padStart(2,'0');
+  return pisos.map(p=>{
+    const total=p.operacao+p.teste+p.falha+p.desativada;
+    const disp=total?Math.round((p.operacao/total)*100):0;
+    let testesMes=0;
+    (db.locais||[]).filter(l=>(pisoEfetivo(l)||'Sem piso')===p.piso).forEach(l=>{
+      (l.inspecoes||[]).forEach(insp=>{if(String(insp.data||'').startsWith(ym))testesMes++});
+    });
+    return {...p,total,disp,testesMes};
+  });
+}
+
+// ---- Ranking de laços com maior incidência (item 5) — reaproveita dashPanoramaLacos() ----
+function dashRankingLacos(){return dashPanoramaLacos().filter(r=>r.falha>0).sort((a,b)=>b.falha-a.falha)}
+
+// ---- Top 10 lojas críticas, últimos 12 meses (item 6) ----
+function dashTopLojasCriticas(){
+  const limite=Date.now()-365*24*3600*1000;
+  const map={};
+  (db.falhas||[]).forEach(f=>{
+    if(!f.localId)return;
+    const t=new Date(f.data).getTime();
+    if(isNaN(t)||t<limite)return;
+    (map[f.localId]=map[f.localId]||[]).push(f);
+  });
+  return Object.entries(map).map(([localId,fs])=>{
+    const l=(db.locais||[]).find(x=>x.id===localId);
+    const ultima=fs.slice().sort((a,b)=>String(b.data||'').localeCompare(String(a.data||'')))[0];
+    const diasSemFalha=ultima?Math.floor((Date.now()-new Date(ultima.data).getTime())/86400000):null;
+    return {localId,nome:l?l.nome:'—',piso:l?(pisoEfetivo(l)||'—'):'—',qtd:fs.length,ultima:ultima?ultima.data:'',diasSemFalha,status:l?l.status:''};
+  }).sort((a,b)=>b.qtd-a.qtd).slice(0,10);
+}
+
+// ---- Produtividade do contrato de manutenção (item 7) ----
+function dashContratoProdutividade(){
+  const testes=dashTestesNoMes();
+  const planosConcluidos=(db.planos||[]).filter(p=>p.situacao==='Concluído').length;
+  const falhasResolvidas=(db.falhas||[]).filter(f=>f.resolvidaEm).length;
+  let fotos=0;
+  (db.locais||[]).forEach(l=>{(l.inspecoes||[]).forEach(insp=>{fotos+=obterAnexosEvento('teste',insp).filter(a=>a.tipo==='foto').length})});
+  (db.planos||[]).forEach(p=>{fotos+=obterAnexosEvento('plano',p).filter(a=>a.tipo==='foto').length});
+  const lojasAtendidas=new Set((db.falhas||[]).filter(f=>f.resolvidaEm).map(f=>f.localId).filter(Boolean)).size;
+  return {testes,planosConcluidos,falhasResolvidas,fotos,lojasAtendidas};
+}
+
+// ---- Próximas prioridades, geradas 100% a partir dos dados reais (item 10) ----
+function dashProximasPrioridades(){
+  const itens=[];
+  const porPiso={};
+  dashFalhasAtivas().forEach(f=>{
+    const l=(db.locais||[]).find(x=>x.id===f.localId);
+    const piso=l?pisoEfetivo(l):'';
+    if(piso)porPiso[piso]=(porPiso[piso]||0)+1;
+  });
+  Object.entries(porPiso).sort((a,b)=>b[1]-a[1]).slice(0,3).forEach(([piso,q])=>itens.push(`${q} falha(s) ativa(s) no Piso ${piso}`));
+  const curto=dashFalhasAtivas().filter(f=>normalizeStatus(f.status)==='Módulo em curto').length;
+  if(curto)itens.push(`${curto} módulo(s) em curto`);
+  const aguardandoLojista=(db.planos||[]).filter(p=>p.encaminhamento==='Notificar lojista'&&p.situacao!=='Concluído').length;
+  if(aguardandoLojista)itens.push(`${aguardandoLojista} loja(s) aguardando retorno do lojista`);
+  const limite=Date.now()-30*24*3600*1000;
+  const semTeste=(db.locais||[]).filter(l=>{
+    const insps=(l.inspecoes||[]).slice().sort((a,b)=>String(b.data||'').localeCompare(String(a.data||'')));
+    if(!insps.length)return true;
+    const t=new Date(insps[0].data).getTime();
+    return isNaN(t)||t<limite;
+  }).length;
+  if(semTeste)itens.push(`${semTeste} loja(s)/área(s) sem teste executado há mais de 30 dias`);
+  return itens;
+}
+
+// ---- Índice de Risco Operacional (IRO), item 2 ----
+// Escala 0-100, onde 100 = risco mínimo. Fórmula ponderada (soma dos pesos = 100%):
+//   Disponibilidade real .......................... 30%
+//   Ausência de falhas críticas (Incêndio/Laço/Curto) 25%
+//   Ausência de falhas abertas em geral ........... 20%
+//   Ausência de reincidência (lojas com 2+ falhas)   15%
+//   Percentual de testes realizados no mês vs. meta  10%  (meta = nº de lojas/áreas cadastradas)
+// Cada componente crítico usa uma penalização decrescente (quanto mais ocorrências, mais o score
+// daquele componente cai, até o piso de 0), depois soma-se tudo pelos pesos acima.
+function calcularIndiceRiscoOperacional(ind){
+  const disp=ind.disponibilidade; // já em 0-100
+  const scoreCriticas=Math.max(0,100-Math.min(100,ind.pendenciasCriticas.length*20));
+  const scoreAbertas=Math.max(0,100-Math.min(100,ind.falhasAtivas.length*8));
+  const scoreReincidencia=Math.max(0,100-Math.min(100,dashReincidencia().length*10));
+  const metaTestes=Math.max(1,(db.locais||[]).length);
+  const scoreTestes=Math.min(100,Math.round((ind.testesNoMes/metaTestes)*100));
+  const iro=Math.round(disp*0.30+scoreCriticas*0.25+scoreAbertas*0.20+scoreReincidencia*0.15+scoreTestes*0.10);
+  return Math.max(0,Math.min(100,iro));
+}
+function iroFaixa(v){
+  if(v>=90)return {label:'Baixo risco',cor:'#2E7D32',bg:'#E7F7EC',texto:'Operação estável, dentro do esperado.'};
+  if(v>=75)return {label:'Atenção',cor:'#FB8C00',bg:'#FFF3E0',texto:'Pontos de atenção identificados — acompanhar de perto.'};
+  if(v>=50)return {label:'Risco elevado',cor:'#C05A0A',bg:'#FEF0E6',texto:'Concentração relevante de falhas/pendências — ação recomendada.'};
+  return {label:'Crítico',cor:'#D32F2F',bg:'#FDEBEE',texto:'Situação crítica — requer ação imediata da equipe técnica.'};
+}
+
+// ---- Cache dos indicadores (item 15) ----
+// "Versão" simples = soma dos tamanhos das coleções que alimentam o Dashboard. Se nada mudou desde
+// o último cálculo, reaproveita o resultado em vez de recalcular tudo a cada render().
+let _dashboardCache=null;
+function dashVersaoDados(){
+  const insp=(db.locais||[]).reduce((a,l)=>a+((l.inspecoes||[]).length),0);
+  return [(db.falhas||[]).length,(db.planos||[]).length,(db.equipamentos||[]).length,(db.flms||[]).length,(db.locais||[]).length,insp,(db.eventosOperacionais||[]).length].join(':');
+}
+function getDashboardIndicadores(){
+  const v=dashVersaoDados();
+  if(_dashboardCache&&_dashboardCache.v===v)return _dashboardCache.data;
+  const falhasAtivas=dashFalhasAtivas();
+  const pendenciasCriticas=dashPendenciasCriticas();
+  const testesNoMes=dashTestesNoMes();
+  const planosPendentes=dashPlanosPendentes();
+  const disponibilidade=dashDisponibilidadeReal();
+  const tempos=dashTemposAtendimento();
+  const data={falhasAtivas,pendenciasCriticas,testesNoMes,planosPendentes,disponibilidade,tempos};
+  data.iro=calcularIndiceRiscoOperacional(data);
+  _dashboardCache={v,data};
+  return data;
+}
+
+// ---- Navegação a partir dos cards clicáveis (item 14) — reaproveita render()/filters já existentes ----
+function dashGoto(view){
+  currentView=view;
+  document.querySelectorAll('.nav button[data-view]').forEach(x=>x.classList.toggle('active',x.dataset.view===view));
+  render();
+}
+function dashAbrirFalhasAtivas(){filters.falhas={...(filters.falhas||{}),situacao:'Em aberto'};dashGoto('falhas')}
+function dashAbrirPendenciasCriticas(){filters.falhas={...(filters.falhas||{}),situacao:'Em aberto'};dashGoto('falhas')}
+function dashAbrirTestesMes(){dashGoto('locais')}
+function dashAbrirPlanosPendentes(){filters.plano={...(filters.plano||{}),sit:''};dashGoto('plano')}
+function dashAbrirLaco(painel,laco){filters.lacoPainel=painel;filters.lacoNome=laco;dashGoto('lacos')}
+
+// ---- Mini-gráfico SVG "à mão" (sem biblioteca externa), para a tendência de 12 meses ----
+function dashSvgLinhas(series,labels){
+  const W=760,H=180,padL=30,padR=10,padT=10,padB=24;
+  const max=Math.max(1,...series.flatMap(s=>s.data));
+  const stepX=(W-padL-padR)/Math.max(1,labels.length-1);
+  const y=v=>H-padB-(v/max)*(H-padT-padB);
+  const path=(data)=>data.map((v,i)=>`${i===0?'M':'L'}${(padL+i*stepX).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  const linhas=series.map(s=>`<path d="${path(s.data)}" fill="none" stroke="${s.cor}" stroke-width="2.2"/>`+
+    s.data.map((v,i)=>`<circle cx="${(padL+i*stepX).toFixed(1)}" cy="${y(v).toFixed(1)}" r="2.6" fill="${s.cor}"/>`).join('')).join('');
+  const eixoX=labels.map((l,i)=>i%2===0?`<text x="${(padL+i*stepX).toFixed(1)}" y="${H-6}" font-size="9" fill="#64748B" text-anchor="middle">${esc(l)}</text>`:'').join('');
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="Tendência dos últimos 12 meses">${eixoX}${linhas}</svg>`;
+}
+
+const _renderDashboardAnterior=null; // (marcador de versão: a versão técnica anterior de renderDashboard() segue no arquivo, mais acima, apenas superada por esta)
+function renderDashboard(){
+  const el=document.getElementById('dashboard'); if(!el)return;
+  const ind=getDashboardIndicadores();
+  const iro=ind.iro, faixa=iroFaixa(iro);
+  const pisos=dashPisoDetalhado();
+  const tendencia=dadosTendencia12Meses();
+  const ranking=dashRankingLacos();
+  const topLojas=dashTopLojasCriticas();
+  const contrato=dashContratoProdutividade();
+  const reinc=dashReincidencia();
+  const prioridades=dashProximasPrioridades();
+  const tempos=ind.tempos;
+
+  // ---- 1) Cards superiores ----
+  const cardsSuperiores=`
   <div class="grid" style="margin-bottom:18px">
-    ${kpi('Disponibilidade',disponibilidade+'%')}
-    ${kpi('Lojas em falha',lojasFalha.length)}
-    ${kpi('Em teste',totalTeste)}
-    ${kpi('Planos em aberto',planosAbertos)}
-  </div>
-  <div class="chartPanel" style="margin-bottom:18px">
-    <h4>Status por piso</h4>
-    <p class="mutedLine" style="margin-bottom:10px">Onde os problemas estão concentrados, não só quantos existem • conta Equipamentos + Módulos FLM, igual às telas de Painéis e Laços</p>
-    <div class="chartLegendRow"><span><i style="background:#15803D"></i>Em operação</span><span><i style="background:#B45309"></i>Em teste</span><span><i style="background:#B42318"></i>Falha</span></div>
-    <div class="chartCanvasWrap" style="height:${Math.max(160,pisos.length*46+40)}px">
-      <canvas id="dashPisoCanvas" role="img" aria-label="Status dos equipamentos por piso, em operação, teste e falha"></canvas>
-    </div>
-  </div>
-  <div class="dashRow">
-    <div class="premiumPanel">
-      <h3>Lojas com falha agora</h3>
-      <p>Nome, piso, laço e tempo em aberto — não apenas a contagem</p>
-      <div class="failList" style="margin-top:14px">
-        <div class="failRow head"><span>Loja</span><span>Piso</span><span>Laço</span><span>Aberto há</span></div>
-        ${failRows}
-      </div>
-    </div>
-    <div class="chartPanel">
-      <h4>Compilado por painel / laço</h4>
-      <p class="mutedLine" style="margin-bottom:10px">Onde concentrar a próxima visita técnica</p>
-      <div class="chartCanvasWrap" style="height:${Math.max(160,porLaco.length*34+40)}px">
-        <canvas id="dashLacoCanvas" role="img" aria-label="Falhas ativas por painel e laço"></canvas>
-      </div>
-    </div>
-  </div>
-  <div class="premiumPanel">
-    <h3>Panorama completo por Laço</h3>
-    <p class="mutedLine">Todos os laços da central — não só os com falha — com quantidade de dispositivos, sistema e disponibilidade. Leitura completa da central só por aqui.</p>
-    <div style="margin-top:14px">${panoramaTable}</div>
+    <div class="metric" style="cursor:default"><small>🟢 Disponibilidade do SDAI</small><strong>${ind.disponibilidade}%</strong></div>
+    <div class="metric" style="cursor:pointer" onclick="dashAbrirFalhasAtivas()" title="Ver falhas ativas"><small>🔴 Falhas Ativas</small><strong>${ind.falhasAtivas.length}</strong></div>
+    <div class="metric" style="cursor:pointer" onclick="dashAbrirPendenciasCriticas()" title="Ver pendências críticas"><small>🟠 Pendências Críticas</small><strong>${ind.pendenciasCriticas.length}</strong></div>
+    <div class="metric" style="cursor:pointer" onclick="dashAbrirTestesMes()" title="Ver lojas/áreas"><small>🔵 Testes Executados (mês)</small><strong>${ind.testesNoMes}</strong></div>
+    <div class="metric" style="cursor:pointer" onclick="dashAbrirPlanosPendentes()" title="Ver plano de ação"><small>🟣 Planos Pendentes</small><strong>${ind.planosPendentes.length}</strong></div>
   </div>`;
 
-  if(!el.classList.contains('active'))return; // evita desenhar em canvas oculto (largura zero)
-  if(typeof Chart==='undefined')return;
+  // ---- 2) Índice de Risco Operacional ----
+  const iroHtml=`
+  <div class="premiumPanel" style="margin-bottom:18px;border-left:6px solid ${faixa.cor}">
+    <h3>Índice de Risco Operacional (IRO)</h3>
+    <div style="display:flex;align-items:center;gap:22px;flex-wrap:wrap;margin-top:10px">
+      <div style="font-size:48px;font-weight:800;color:${faixa.cor}">${iro}<span style="font-size:20px;color:var(--l3a-text-soft)">/100</span></div>
+      <div>
+        <span class="pill" style="background:${faixa.bg};color:${faixa.cor};font-weight:700">${esc(faixa.label)}</span>
+        <p class="mutedLine" style="margin-top:6px;max-width:520px">${esc(faixa.texto)} Composição: Disponibilidade (30%) + ausência de falhas críticas (25%) + ausência de falhas abertas (20%) + ausência de reincidência (15%) + testes realizados no mês (10%).</p>
+      </div>
+    </div>
+  </div>`;
 
-  dashDestroyChart('piso');
-  const ctxPiso=document.getElementById('dashPisoCanvas');
-  if(ctxPiso){
-    window._dashCharts.piso=new Chart(ctxPiso,{type:'bar',data:{labels:pisos.map(p=>p.piso),datasets:[
-      {label:'Em operação',data:pisos.map(p=>p.operacao),backgroundColor:'#15803D'},
-      {label:'Em teste',data:pisos.map(p=>p.teste),backgroundColor:'#B45309'},
-      {label:'Falha',data:pisos.map(p=>p.falha),backgroundColor:'#B42318'}
-    ]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,scales:{x:{stacked:true,grid:{display:false}},y:{stacked:true,grid:{display:false}}},plugins:{legend:{display:false}}}});
-  }
-  dashDestroyChart('laco');
-  const ctxLaco=document.getElementById('dashLacoCanvas');
-  if(ctxLaco){
-    window._dashCharts.laco=new Chart(ctxLaco,{type:'bar',data:{labels:porLaco.map(p=>p.label),datasets:[{data:porLaco.map(p=>p.value),backgroundColor:'#B42318'}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,scales:{x:{grid:{display:false},ticks:{precision:0}},y:{grid:{display:false}}},plugins:{legend:{display:false}}}});
-  }
+  // ---- 3) Tendência mensal (SVG feito à mão) ----
+  const tendenciaHtml=`
+  <div class="chartPanel" style="margin-bottom:18px">
+    <h4>Tendência — últimos 12 meses</h4>
+    <p class="mutedLine" style="margin-bottom:10px">Falhas abertas, falhas resolvidas e testes executados, mês a mês</p>
+    <div class="chartLegendRow"><span><i style="background:#D32F2F"></i>Falhas abertas</span><span><i style="background:#2E7D32"></i>Falhas resolvidas</span><span><i style="background:#1565C0"></i>Testes executados</span></div>
+    <div style="overflow-x:auto">${dashSvgLinhas([
+      {cor:'#D32F2F',data:tendencia.map(m=>m.falhasAbertas)},
+      {cor:'#2E7D32',data:tendencia.map(m=>m.falhasResolvidas)},
+      {cor:'#1565C0',data:tendencia.map(m=>m.testes)}
+    ],tendencia.map(m=>m.label))}</div>
+  </div>`;
+
+  // ---- 4) Disponibilidade por piso, com barra de progresso ----
+  const pisoRows=pisos.length?pisos.map(p=>`<div class="chartLine">
+      <b>Piso ${esc(p.piso)}</b>
+      <div class="chartTrack" style="flex:1"><i class="${p.disp>=90?'ok':p.disp>=70?'':'bad'}" style="width:${p.disp}%"></i></div>
+      <strong>${p.disp}%</strong>
+      <small class="mutedLine" style="min-width:170px;text-align:right">${p.total} disp. • ${p.falha} falha(s) • ${p.testesMes} teste(s)/mês</small>
+    </div>`).join(''):'<div class="emptyState">Nenhum dado por piso ainda.</div>';
+  const pisoHtml=`<div class="chartPanel" style="margin-bottom:18px"><h4>Disponibilidade por Piso</h4><div class="chartBars">${pisoRows}</div></div>`;
+
+  // ---- 5) Ranking de laços ----
+  const rankingRows=ranking.length?ranking.map(r=>`<div class="failRow" style="cursor:pointer" onclick="dashAbrirLaco('${escAttrRaw(r.painel)}','${escAttrRaw(r.laco)}')">
+      <b>${esc(r.painel)}</b><span>${esc(r.laco)}</span><span class="pill bad">${r.falha} falha(s)</span><span>${r.disp}% disp.</span>
+    </div>`).join(''):'<div class="emptyState">Nenhum laço com ocorrência no momento.</div>';
+  const rankingHtml=`<div class="premiumPanel" style="margin-bottom:18px">
+    <h3>Laços com maior incidência de ocorrências</h3>
+    <div class="failList" style="margin-top:12px">
+      <div class="failRow head"><span>Painel</span><span>Laço</span><span>Falhas</span><span>Disponibilidade</span></div>
+      ${rankingRows}
+    </div>
+  </div>`;
+
+  // ---- 6) Top 10 lojas críticas ----
+  const topRows=topLojas.length?topLojas.map(r=>`<div class="failRow" style="cursor:pointer" onclick="openLocal('${r.localId}')">
+      <b>${esc(r.nome)}</b><span>${esc(r.piso)}</span><span class="pill bad">${r.qtd}</span><span>${esc(formatarDataHoraBR(r.ultima))}</span><span>${r.diasSemFalha===null?'—':r.diasSemFalha+'d'}</span><span>${dsBadgeHtml(r.status)}</span>
+    </div>`).join(''):'<div class="emptyState">Nenhuma loja com falha nos últimos 12 meses.</div>';
+  const topLojasHtml=`<div class="premiumPanel" style="margin-bottom:18px">
+    <h3>Top 10 lojas críticas</h3>
+    <p class="mutedLine">Clique em uma loja para abrir o histórico completo</p>
+    <div class="failList" style="margin-top:12px">
+      <div class="failRow head"><span>Loja</span><span>Piso</span><span>Falhas (12m)</span><span>Última ocorrência</span><span>Dias sem falha</span><span>Status atual</span></div>
+      ${topRows}
+    </div>
+  </div>`;
+
+  // ---- 7) Contrato de manutenção (produtividade) ----
+  const contratoHtml=`<div class="premiumPanel" style="margin-bottom:18px">
+    <h3>Contrato de Manutenção — Produtividade</h3>
+    <div class="premiumGrid" style="margin-top:14px">
+      ${premiumStat('Testes executados (mês)',contrato.testes)}
+      ${premiumStat('Planos concluídos',contrato.planosConcluidos)}
+      ${premiumStat('Falhas resolvidas',contrato.falhasResolvidas)}
+      ${premiumStat('Fotos anexadas',contrato.fotos)}
+      ${premiumStat('Lojas atendidas',contrato.lojasAtendidas)}
+      ${premiumStat('Tempo médio de atendimento',fmtHoras(tempos.atendimentoH)+(tempos.amostra?' (estim.)':''))}
+      ${premiumStat('Tempo médio de solução',fmtHoras(tempos.solucaoH))}
+    </div>
+    ${tempos.amostra?'':'<p class="msg warn" style="margin-top:10px">Sem planos concluídos suficientes ainda para calcular tempos médios.</p>'}
+  </div>`;
+
+  // ---- 8) Indicadores de SLA ----
+  const slaHtml=`<div class="grid" style="margin-bottom:18px">
+    ${kpi('Tempo médio até atendimento (estim.)',fmtHoras(tempos.atendimentoH))}
+    ${kpi('Tempo médio até solução',fmtHoras(tempos.solucaoH))}
+    ${kpi('SLA cumprido',tempos.slaPct===null?'—':tempos.slaPct+'%')}
+    ${kpi('Prazo de referência (SLA)',tempos.slaHoras+'h')}
+  </div>`;
+
+  // ---- 9) Reincidência ----
+  const reincRows=reinc.length?reinc.map(r=>`<div class="failRow" style="cursor:pointer" onclick="openLocal('${r.localId}')">
+      <b>${esc(r.nome)}</b><span>${esc(r.piso)}</span><span class="pill warn">${r.qtd}x</span><span>${esc(formatarDataHoraBR(r.ultima))}</span>
+    </div>`).join(''):'<div class="emptyState">Nenhuma loja com reincidência (2+ falhas) no momento.</div>';
+  const reincHtml=`<div class="premiumPanel" style="margin-bottom:18px">
+    <h3>Reincidência — Top 10 lojas</h3>
+    <p class="mutedLine">Lojas com 2 ou mais falhas registradas</p>
+    <div class="failList" style="margin-top:12px">
+      <div class="failRow head"><span>Loja</span><span>Piso</span><span>Reincidências</span><span>Última ocorrência</span></div>
+      ${reincRows}
+    </div>
+  </div>`;
+
+  // ---- 10) Próximas prioridades ----
+  const priorHtml=`<div class="premiumPanel" style="margin-bottom:18px">
+    <h3>Próximas Prioridades</h3>
+    ${prioridades.length?`<ul style="margin:10px 0 0 18px;padding:0">${prioridades.map(p=>`<li style="margin-bottom:6px">${esc(p)}</li>`).join('')}</ul>`:'<div class="emptyState">Nenhuma prioridade identificada no momento — operação em dia.</div>'}
+  </div>`;
+
+  el.innerHTML=cardsSuperiores+iroHtml+tendenciaHtml+pisoHtml+
+    `<div class="dashRow">${rankingHtml}${topLojasHtml}</div>`+
+    contratoHtml+slaHtml+
+    `<div class="dashRow">${reincHtml}${priorHtml}</div>`;
 }
-/* ===== Fim V8.1 — Dashboard por piso/loja ===== */
+/* ===== Fim V9 — Dashboard Executivo ===== */
+
 
 /* =========================================================================
    V8.2 — Falhas, Plano de Ação e Relatórios: mesmo padrão "onde/quem"
