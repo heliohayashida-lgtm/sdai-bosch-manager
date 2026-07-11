@@ -235,13 +235,6 @@ A função `sincronizarPlanosFalhas()` roda em todo carregamento de base (`norma
 
 ---
 
-## 🤝 Sobre o Projeto
-
-Desenvolvido pela **L3A Engenharia** para gestão dos contratos de manutenção de SDAI.
-
-- **Foco:** Bosch FPA-1200 / FPA-5000 / AVENAR 2000 / AVENAR 8000
-- **Ambiente de referência:** Shopping Pantanal — Cuiabá/MT
-- **Contato:** [helio@setupsolucoes.com](mailto:helio@setupsolucoes.com)
 
 ---
 
