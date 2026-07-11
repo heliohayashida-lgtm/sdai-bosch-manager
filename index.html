@@ -2020,7 +2020,18 @@ function renderFalhasResultado(){
   const trs=visiveis.map(r=>{
     const loc=dsLocHtml({painel:r.painel,piso:r.piso,laco:r.laco,tipo:r.tipo,endereco:r.itemNome});
     const legado=(up(r.status)==='EM TESTE'||up(r.status)==='EM OPERAÇÃO'||up(r.status)==='EM OPERACAO')?`<div style="font-size:10.5px;color:var(--l3a-text-muted)">${esc(interpretarStatusLegado(r.status))}</div>`:'';
-    const plano=r.planoVinculado?`<span class="dsBadge ${r.planoVinculado.situacao==='Concluído'?'done':'open'}" style="cursor:pointer" onclick="formAtendimentoPlano('${r.planoVinculado.id}')" title="Abrir plano">${esc(r.planoVinculado.situacao||'Aberto')}</span>`:`<button class="btn small secondary" onclick="irParaPlanoFalha('${r.id}')" title="Criar plano de ação">+ Plano</button>`;
+    // BACKUP LÓGICA ANTERIOR: coluna "Plano" tinha um badge clicável (onclick formAtendimentoPlano,
+    // indo direto para novo atendimento) OU botão "+ Plano" (irParaPlanoFalha), e a coluna Ações
+    // ainda duplicava um ícone 📋 "Plano de ação" (irParaPlanoFalha) além de 🕒 Histórico,
+    // ✅ Resolver e 🗑 Excluir — 6 controles ao todo espalhados em 2 colunas.
+    // NOVA LÓGICA: coluna "Plano" vira só um badge de status (não-clicável, exibição). A coluna
+    // Ações passa a ter exatamente 3 botões: Visualizar, Editar diagnóstico e Ver Plano/Criar Plano
+    // (este último abre a ficha do plano via formPlano, que já traz o histórico de visitas e o
+    // atalho para registrar nova visita — sem duplicar formAtendimentoPlano direto). Resolver e
+    // Excluir saíram da tabela: a resolução passou a acontecer dentro do Plano de Ação, e a exclusão
+    // de falha virou ferramenta administrativa restrita (ver excluirFalhaAdmin em Sistema).
+    const planoBadge=r.planoVinculado?`<span class="dsBadge ${r.planoVinculado.situacao==='Concluído'?'done':'open'}" title="Situação do plano vinculado">${esc(r.planoVinculado.situacao||'Aberto')}</span>`:`<span class="dsBadge" title="Nenhum plano de ação criado ainda">Sem plano</span>`;
+    const acaoPlano=r.planoVinculado?`<button class="dsIco" onclick="formPlano('${r.planoVinculado.id}')" title="Ver Plano">📋 Ver Plano</button>`:`<button class="dsIco" onclick="irParaPlanoFalha('${r.id}')" title="Criar Plano">📋 Criar Plano</button>`;
     return `<tr>
       <td>${dsDateHtml(r.data)}</td>
       <td><div style="font-weight:700;font-size:13px">${esc(r.loja||'—')}</div>${legado}</td>
@@ -2028,15 +2039,12 @@ function renderFalhasResultado(){
       <td style="font-size:12.5px">${esc(r.tipoEfetivo)}</td>
       <td><span class="dsBadge ${r.criticidadeEfetiva==='Crítica'?'bad':(r.criticidadeEfetiva==='Alta'?'warn':'')}">${esc(r.criticidadeEfetiva)}</span></td>
       <td><span class="dsBadge ${falhaSituacaoAtiva(r)?'open':'done'}">${esc(r.situacaoEfetiva)}</span></td>
-      <td>${plano}</td>
+      <td>${planoBadge}</td>
       <td style="font-size:12px">${esc(r.responsavel||'—')}</td>
       <td><div class="dsIcoGroup">
         <button class="dsIco" onclick="verFalha('${r.id}')" title="Visualizar">👁</button>
-        <button class="dsIco" onclick="formFalha('${r.id}')" title="Editar">✏️</button>
-        <button class="dsIco" onclick="irParaPlanoFalha('${r.id}')" title="Plano de ação">📋</button>
-        <button class="dsIco" onclick="historicoPlano('${r.id}')" title="Histórico">🕒</button>
-        <button class="dsIco" onclick="resolverFalha('${r.id}')" title="Resolver">✅</button>
-        <button class="dsIco del" onclick="del('falhas','${r.id}')" title="Excluir">🗑</button>
+        <button class="dsIco" onclick="formFalha('${r.id}')" title="Editar diagnóstico">✏️</button>
+        ${acaoPlano}
       </div></td>
     </tr>`;
   }).join('');
@@ -3182,6 +3190,29 @@ function concluirPlano(i){let o=db.planos.find(x=>x.id===i); if(!o)return; o.sit
 function openEquip(i){let e=db.equipamentos.find(x=>x.id===i);let hist=db.falhas.filter(f=>f.itemId===i||f.localId===e.localId).sort((a,b)=>b.data.localeCompare(a.data));openModal(`<h2>${esc(e.tipo)} ${esc(e.endereco)}</h2><p><b>Loja:</b> ${esc(locName(e.localId))} • <b>Painel:</b> ${esc(paiName(e.painelId))} • <b>Laço:</b> ${esc(lacName(e.lacoId))}</p><h3>Histórico</h3><div class="timeline">${hist.map(h=>`<div class="tl"><b>${esc(h.status)}</b><br><small>${esc(h.data)} • ${esc(h.origem||'')}</small><p>${esc(h.motivo||h.obs||'Sem observação')}</p></div>`).join('')||'<p class="msg warn">Sem histórico.</p>'}</div>`)}
 function openLocal(i){let l=db.locais.find(x=>x.id===i);let hist=db.falhas.filter(f=>f.localId===i||f.itemId===i).sort((a,b)=>b.data.localeCompare(a.data));openModal(`<h2>${esc(l.nome)}</h2><p><b>Tipo:</b> ${esc(l.tipo)} • <b>Painel:</b> ${esc(paiName(l.painelId))} • <b>Laço:</b> ${esc(lacName(l.lacoId))} • <b>Piso:</b> ${esc(l.piso)}</p><h3>Histórico da loja/área</h3><div class="timeline">${hist.map(h=>`<div class="tl"><b>${esc(h.status)}</b><br><small>${esc(h.data)} • ${esc(h.itemNome||'')}</small><p>${esc(h.motivo||h.obs||'Sem observação')}</p></div>`).join('')||'<p class="msg warn">Sem histórico.</p>'}</div>`)}
 function del(ent,i){if(['paineis','lacos','flms','portas','locais','equipamentos','planos'].includes(ent)&&!requireAccess('cadastro','Seu perfil não pode excluir cadastros.'))return; if(!confirm('Excluir registro?'))return;db[ent]=db[ent].filter(x=>x.id!==i);closeModal();save()}
+// BACKUP LÓGICA ANTERIOR: a exclusão de falha era feita direto na tabela da aba Falhas via
+// del('falhas', id) — um único clique + confirm() genérico, sem motivo e sem registro específico
+// de auditoria além do log padrão de del().
+// NOVA LÓGICA: excluirFalhaAdmin(falhaId) — ferramenta administrativa restrita, acionada em
+// Sistema → Qualidade da base de falhas. Só Administrador; exige confirmação dupla (aviso +
+// motivo obrigatório via prompt); registra em db.eventosOperacionais e no histórico (logLocal)
+// quem excluiu, quando e por quê, ANTES de remover o registro de db.falhas.
+function excluirFalhaAdmin(falhaId){
+  if(currentUserSafe().perfil!=='Administrador'){alert('Somente administrador pode excluir falhas.');return}
+  falhaId=(falhaId||'').trim();
+  if(!falhaId){alert('Informe o ID da falha a excluir.');return}
+  const f=(db.falhas||[]).find(x=>x.id===falhaId);
+  if(!f){alert('Falha não encontrada com esse ID.');return}
+  if(!confirm(`Confirma EXCLUIR a falha ${falhaId} (${f.tipo||'—'} — ${f.local||f.loja||'—'})? Esta ação é irreversível e só deve ser usada em casos administrativos (ex.: registro duplicado/errado).`))return;
+  const motivo=(prompt('Motivo da exclusão (obrigatório):')||'').trim();
+  if(!motivo){alert('Exclusão cancelada: motivo é obrigatório.');return}
+  db.eventosOperacionais=db.eventosOperacionais||[];
+  db.eventosOperacionais.push({id:id(),data:isoNow(),tipoEvento:'Exclusão administrativa de Falha',falhaId:f.id,planoId:(f.planoVinculado&&f.planoVinculado.id)||'',localId:f.localId,itemId:f.itemId,painelId:f.painelId,lacoId:f.lacoId,responsavel:(currentUserSafe().nome||currentUserSafe().email||'usuario'),observacao:motivo});
+  logLocal('Falha',f.id,'Exclusão administrativa',`Excluída por ${currentUserSafe().nome||currentUserSafe().email||'usuario'}. Motivo: ${motivo}`);
+  db.falhas=(db.falhas||[]).filter(x=>x.id!==falhaId);
+  markDirty('falhas'); render();
+  alert('Falha excluída e registrada em auditoria.');
+}
 async function restoreBackupFile(file){if(!file)return; if(!confirm('Restaurar este backup local e substituir a base atual do navegador?'))return; const txt=await file.text(); try{const parsed=JSON.parse(txt); db=normalizeAllStatuses(Object.assign(emptyDB(),parsed)); persistLocal(); markDirty('backup restaurado'); render(); alert('Backup restaurado localmente. Use Sincronizar agora para enviar ao Google.');}catch(e){alert('Arquivo de backup inválido: '+e.message)}}
 function exportJson(){download(JSON.stringify(db,null,2),'base_sdai_bosch_completa.json','application/json')}
 function flat(entity){return db[entity].map(o=>Object.fromEntries(Object.entries(o).map(([k,v])=>[k,typeof v==='object'?JSON.stringify(v):v])))}
@@ -3616,7 +3647,9 @@ function renderSistema(){
  <div class="split2"><div class="premiumPanel"><h3>Autosync</h3><p>Define a gravação automática em segundo plano.</p><div class="formGrid" style="margin-top:14px"><div class="field"><label>Status</label><select onchange="setAutoEnabled(this.value==='Sim')"><option ${c.auto?'selected':''}>Sim</option><option ${!c.auto?'selected':''}>Não</option></select></div><div class="field"><label>Intervalo</label><select onchange="setAutoInterval(this.value)">${[15,30,60,120,300].map(s=>`<option value="${s}" ${Number(c.intervalSec||30)===s?'selected':''}>${s<60?s+' segundos':(s/60)+' minuto(s)'}</option>`).join('')}</select></div></div></div><div class="premiumPanel"><h3>Estrutura</h3><p>Banco separado por abas técnicas.</p><div class="compactHelp" style="margin-top:14px">Painéis, Laços, FLMs, Portas, Lojas/Áreas, Equipamentos, Falhas, Plano de Ação, Histórico, Importações e Usuários.</div></div></div>
  ${currentUserSafe().perfil==='Administrador'?`<div class="premiumPanel"><h3>Segurança da API</h3><p>O Apps Script só aceita ler/gravar a base com o token correto — protege contra acesso direto por quem descobrir a URL do backend. ${tokenStatusHtml()}</p><div class="formGrid" style="margin-top:14px"><div class="field" style="grid-column:1/-1"><label>Definir / atualizar token (mín. 8 caracteres, use algo aleatório)</label><input id="mNovoToken" type="password" placeholder="Ex.: um trecho longo e aleatório"></div></div><div class="premiumActions"><button class="btn" onclick="definirApiToken()">Salvar token</button> <button class="btn secondary" onclick="revogarApiToken()">Revogar token atual</button></div><p class="mutedLine" style="margin-top:8px">Se você usa o sistema em mais de um navegador/computador, precisa configurar o MESMO token em cada um deles depois de definido.</p></div>`:''}
  <div class="premiumPanel"><h3>Resumo da base</h3><div class="premiumGrid" style="margin-top:14px">${premiumStat('Painéis',db.paineis.length)}${premiumStat('Laços',db.lacos.length)}${premiumStat('FLMs',db.flms.length)}${premiumStat('Equipamentos',db.equipamentos.length)}${premiumStat('Falhas',db.falhas.length)}${premiumStat('Planos',db.planos.length)}${premiumStat('Usuários',(db.usuarios||[]).length)}${premiumStat('Banco',c.configured?'Google':'Local')}</div></div>
- <div class="premiumPanel"><h3>Qualidade da base de falhas</h3><p>Audita db.falhas em busca de registros sintéticos criados pelo bug antigo de conclusão de Plano de Ação (duplicavam a falha original com status "Em operação"). Só remove após revisão e confirmação explícita; nada é excluído silenciosamente.</p><div class="premiumActions" style="margin-top:10px"><button class="btn secondary" onclick="abrirAuditoriaFalhas()">Auditar e corrigir falhas duplicadas</button> <button class="btn secondary" onclick="abrirAuditoriaConsistenciaFalhaPlano()">Auditar consistência Falha × Plano</button></div></div>`;
+ <div class="premiumPanel"><h3>Qualidade da base de falhas</h3><p>Audita db.falhas em busca de registros sintéticos criados pelo bug antigo de conclusão de Plano de Ação (duplicavam a falha original com status "Em operação"). Só remove após revisão e confirmação explícita; nada é excluído silenciosamente.</p><div class="premiumActions" style="margin-top:10px"><button class="btn secondary" onclick="abrirAuditoriaFalhas()">Auditar e corrigir falhas duplicadas</button> <button class="btn secondary" onclick="abrirAuditoriaConsistenciaFalhaPlano()">Auditar consistência Falha × Plano</button></div>
+   ${currentUserSafe().perfil==='Administrador'?`<h3 style="margin-top:18px">Excluir falha (administrativo)</h3><p class="mutedLine">A exclusão de falha saiu da tabela da aba Falhas — só pode ser feita aqui por Administrador, com motivo obrigatório, e fica registrada em auditoria.</p><div class="formGrid" style="margin-top:10px"><div class="field"><label>ID da falha</label><input id="mExcluirFalhaId" placeholder="Cole o ID da falha"></div></div><div class="premiumActions" style="margin-top:10px"><button class="btn secondary" onclick="excluirFalhaAdmin(document.getElementById('mExcluirFalhaId').value)">Excluir falha selecionada</button></div>`:''}
+ </div>`;
 }
 function renderUsuarios(){
  const el=document.getElementById('usuarios'); if(!el)return;
