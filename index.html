@@ -1,5 +1,6 @@
 <!doctype html>
-<!-- build: 2026-07-11 v6.49 - FASE 2 DA NOVA ESPECIFICAÇÃO (Testes/Falhas/Plano/Anexos): criada a ação "Executar teste" em Lojas/Áreas (ícone 📋, distinto do de falha), com formTeste()/saveTeste() — modal mobile-first, identificação (painel/laço/piso/loja) pré-preenchida a partir do item clicado, 5 resultados (Em funcionamento/Funcionamento parcial/Não funcionou/Não foi possível testar/Teste interrompido), tipo de teste, observação curta e evidências (reaproveitando o pipeline de upload já existente do Plano de Ação, generalizado com um novo parâmetro `tipo` em queueFotoUploads/handleFotoUploadResult — nenhuma mudança em Code.gs foi necessária: handleUploadFoto_ trata o identificador recebido apenas como marcador de log/pasta, não valida contra uma coleção de planos). CORREÇÃO CRÍTICA em criarTeste(): antes criava uma falha em db.falhas AUTOMATICAMENTE, sem qualquer confirmação, sempre que resultado==='Não Conforme' — agora só cria falha quando o parâmetro confirmarFalha===true, que só é setado após o usuário confirmar explicitamente na tela (saveTeste(true), com um window.confirm de dupla checagem), e apenas para os resultados Funcionamento parcial/Não funcionou; um teste "Em funcionamento" nunca grava em db.falhas/db.planos. db.testes ganhou os campos painelId/lacoId/flmId/portaId/tipoTeste/usuario/origem/falhaId (todos com defaults seguros — registros antigos continuam lendo normalmente, nada foi removido do schema). openLocal() (drawer de histórico da loja) ganhou uma seção "Testes recentes" (últimos 10, com indicação de quando geraram falha). Não alterado nesta fase (deferido para as próximas, conforme fases do pedido): retrofit do formulário de Falha/Plano em etapas, componente universal de anexos para todas as ações, reestruturação de pastas no Drive por cliente/entidade. Login/permissões/banco/sincronização/importação/estrutura multicliente/relação 1 falha↔1 plano não foram tocados. -->
+<!-- build: 2026-07-11 v6.50 - VALIDAÇÃO FUNCIONAL/REGRESSÃO DA FASE 2 (Executar teste): auditoria dos 20 cenários pedidos encontrou e corrigiu 4 problemas reais na v6.49 (nenhum deles alterou o comportamento já validado de não-criação-automática de falha). (1) BUG: formTeste()/criarTeste() referenciavam `currentUser` (a própria função) em vez de `currentUser()` (o objeto) — `(currentUser&&currentUser.nome)` nunca lançava erro (função é truthy) mas sempre resolvia para undefined, então o campo "Responsável" nunca vinha pré-preenchido e `db.testes[].usuario` sempre gravava vazio — corrigido para `currentUser().nome` nos dois pontos. (2) GAP (item 10 da validação — troca de cliente com formulário aberto): não havia nenhuma proteção; agora formTeste() grava o clienteId no momento da abertura (window._testeClienteId), saveTeste() bloqueia e avisa se o cliente ativo mudou antes de salvar (nunca grava no cliente errado), e switchCliente() fecha automaticamente o modal de teste aberto ao trocar de cliente. (3) GAP (item 11 — duplo clique/reenvio): saveTeste() não tinha proteção contra submissão dupla; adicionado guard window._testeSaving + desabilitação dos botões do modal durante a gravação. (4) GAP (item 8 — excluir anexo antes de salvar): o grid de evidências do teste usava fotosThumbsHtml() sem botão de exclusão (por reusar excluirFoto(), que é exclusiva de Plano); criadas renderTesteFotoGrid()/removerTesteFotoTemp() dedicadas ao rascunho de teste, com botão de remover funcional antes de salvar. Também reforçada a rastreabilidade (item 17): logLocal() do teste agora registra tipo de teste e quantidade de anexos, e um segundo logLocal('teste',...,'falha_gerada',...) é gravado quando uma falha é criada a partir de um teste. Validado via simulação Node.js isolada dos 7 cenários de resultado (aprovado/parcial-sem-falha/parcial-com-falha/não-funcionou-sem-falha/não-funcionou-com-falha/não-foi-possível-testar/interrompido — todos passaram, incluindo defesa extra: resultados fora da whitelist nunca criam falha mesmo que confirmarFalha chegue true por engano) e leitura completa de sincronizarPlanosFalhas() (confirma a garantia estrutural 1-falha↔1-plano já existente, inclusive sob duplo clique). Confirmado por leitura de código (sem alteração): erro de upload nunca apaga o teste/falha (o alerta de erro cai num branch que não toca em db.testes/db.falhas), anexos antigos do Plano de Ação continuam usando o caminho original (queueFotoUploads(planoId,files) sem 3º parâmetro = tipo 'plano', comportamento idêntico ao anterior), registros antigos de db.testes (sem os novos campos) renderizam sem erro em "Testes recentes" (defaults por ||''). Nenhuma mudança em saveFalha()/quickStatusChange()/concluirPlano()/confirmarResultadoPlano() — o fluxo "Conforme/Não Conforme" da conclusão de Plano é uma rotina pré-existente e não relacionada a criarTeste(), não foi tocada e não sofre regressão. -->
+<!-- build anterior: 2026-07-11 v6.49 - FASE 2 DA NOVA ESPECIFICAÇÃO (Testes/Falhas/Plano/Anexos): criada a ação "Executar teste" em Lojas/Áreas (ícone 📋, distinto do de falha), com formTeste()/saveTeste() — modal mobile-first, identificação (painel/laço/piso/loja) pré-preenchida a partir do item clicado, 5 resultados (Em funcionamento/Funcionamento parcial/Não funcionou/Não foi possível testar/Teste interrompido), tipo de teste, observação curta e evidências (reaproveitando o pipeline de upload já existente do Plano de Ação, generalizado com um novo parâmetro `tipo` em queueFotoUploads/handleFotoUploadResult — nenhuma mudança em Code.gs foi necessária: handleUploadFoto_ trata o identificador recebido apenas como marcador de log/pasta, não valida contra uma coleção de planos). CORREÇÃO CRÍTICA em criarTeste(): antes criava uma falha em db.falhas AUTOMATICAMENTE, sem qualquer confirmação, sempre que resultado==='Não Conforme' — agora só cria falha quando o parâmetro confirmarFalha===true, que só é setado após o usuário confirmar explicitamente na tela (saveTeste(true), com um window.confirm de dupla checagem), e apenas para os resultados Funcionamento parcial/Não funcionou; um teste "Em funcionamento" nunca grava em db.falhas/db.planos. db.testes ganhou os campos painelId/lacoId/flmId/portaId/tipoTeste/usuario/origem/falhaId (todos com defaults seguros — registros antigos continuam lendo normalmente, nada foi removido do schema). openLocal() (drawer de histórico da loja) ganhou uma seção "Testes recentes" (últimos 10, com indicação de quando geraram falha). Não alterado nesta fase (deferido para as próximas, conforme fases do pedido): retrofit do formulário de Falha/Plano em etapas, componente universal de anexos para todas as ações, reestruturação de pastas no Drive por cliente/entidade. Login/permissões/banco/sincronização/importação/estrutura multicliente/relação 1 falha↔1 plano não foram tocados. -->
 <!-- build anterior: 2026-07-11 v6.48 - SEPARAÇÃO DE ESCOPO CLIENTE × PLATAFORMA + ACCORDION VERDADEIRO: (A) "Usuários e Acessos" estava agrupado com Gestão de Dados/Configurações/Backup/Logs sob um rótulo genérico, mas db.usuarios é GLOBAL (loadUsuariosGlobais/saveUsuariosGlobais — persistClienteDb exclui explicitamente `usuarios` do blob do cliente) — movido de MENU_ADMINISTRACAO_ITEMS ("Gestão do Cliente") para MENU_PLATAFORMA_ITEMS, renomeada "Usuários e Permissões". (B) o painel "Segurança da API" (token — getApiToken/setApiToken usam API_TOKEN_KEY, fora de clienteDbKey) estava dentro de renderSistema(), a tela de dados DO CLIENTE ativo — movido para dentro de renderUsuarios() (tela global, Master-only); definirApiToken()/revogarApiToken() agora chamam renderUsuarios() em vez de renderSistema() ao concluir. (C) CAUSA RAIZ do "grupo não recolhe sozinho": openSubsys (subsistema aberto) e openSistemaGrp (Administração aberta) eram estados INDEPENDENTES — nada impedia os dois ficarem marcados como abertos ao mesmo tempo. Criada fecharOutrosBlocosDeTopo(), chamada por toggleSubsys()/toggleSistemaGrp()/toggleAdministracaoGlobal() (nova) e também na sincronização de buildNavTree() com a tela atual — agora só um bloco de topo (um Subsistema, "Gestão do Cliente" ou "Administração Global") fica aberto por vez, sempre. (D) Estado do bloco "Administração Global" passou a viver numa chave PRÓPRIA (MENU_GLOBAL_STATE_KEY='sdai_menu_global_v1'), fora de menuStateKey() (que já varia por clienteId) — não é mais salvo/perdido junto com o estado por-cliente. (E) updateBreadcrumb() não mostra mais o nome do cliente em telas de Administração Global (ex. "Plataforma › Usuários e Permissões", nunca "Shopping Pantanal › Administração › Usuários"); novo badge discreto #escopoBadge ("Escopo: <cliente>" ou "Escopo: Plataforma") ao lado do breadcrumb. MENU_SISTEMA_ITEMS (rótulos originais e permissão userViews) foi preservado intocado, como pedido — MENU_ADMINISTRACAO_ITEMS/MENU_PLATAFORMA_ITEMS continuam sendo só estruturas de agrupamento visual. Nenhuma view nova foi criada (Integrações/API Apps Script/Licenciamento sugeridos na estrutura ideal não existem como telas reais — não inventei nada, ver relatório de entrega). Não mexi em syncCfg/SYNC_KEY (é genuinamente global, mas syncNow() já usa clienteAtivo() para gravar na base certa do backend — mudar onde o status de sincronização é armazenado/exibido é decisão de arquitetura fora do escopo desta correção de navegação, documentada como pendência). Login/permissões/banco/importação/Code.gs não foram tocados. -->
 <!-- build anterior: 2026-07-11 v6.47 - CONSOLIDAÇÃO DA BASE, FASE 1 (ALTA PRIORIDADE): auditoria técnica completa identificou que o CRUD manual (savePainel/saveLaco/saveFlm/savePorta/saveEquip/saveLocal) cria registros via db.X.push(o) direto, sem passar pelos ensureX (que só existem no fluxo de importação) — isso não foi alterado nesta rodada (mudar a regra de deduplicação do cadastro manual é decisão de negócio, fora do escopo "não altere regras de negócio", registrada como recomendação). O que FOI corrigido: rastreabilidade (item 12 da auditoria) — savePainel/saveLaco/saveFlm/savePorta/saveEquip/saveLocal agora chamam logLocal() ao CRIAR um registro novo (não altera nada ao editar, que já era logado em alguns casos), e o fechamento da importação técnica em massa (importFile(), antes só gravava em db.imports) agora também grava 1 entrada agregada em db.historico com o resumo de criados/atualizados/ignorados/inconsistentes — sem gravar 1 linha por registro importado, para não estourar o cap de 1000 do histórico. Nenhuma função de cálculo de KPI/dashboard foi alterada (os números "Falhas ativas" da Visão Geral e "Lojas em falha" do Dashboard medem coisas propositalmente diferentes — falhas abertas vs. lojas distintas com falha — e já usam rótulos diferentes; não havia bug de rótulo). Nenhuma alteração em login/permissões/banco/sincronização/importação/Apps Script/regras de negócio — logLocal() é aditivo (só grava um registro extra em db.historico via persistLocal(), que já era chamado por save()/markDirty() de qualquer forma). -->
 <!-- build anterior: 2026-07-11 v6.46 - BREADCRUMB NAVEGÁVEL + RENOMEAÇÃO "GESTÃO DE DADOS": updateBreadcrumb() reescrita para gerar botões clicáveis (Cliente → Visão Geral; Subsistema → Dashboard daquele subsistema; Grupo → abre o subsistema com aquele grupo em foco, via nova breadcrumbAbrirGrupo(), que só ajusta menuState.openSubsys/openGroups — o mesmo estado já usado por toggleSubsys/toggleGrp — e chama navigate(); a Tela atual não é clicável, é apenas destaque). View 'sistema' renomeada de "Banco de Dados" para "Gestão de Dados" em todos os pontos de rótulo (MENU_SISTEMA_ITEMS, MENU_ADMINISTRACAO_ITEMS, VIEW_LABELS, L3A_VIEWS) e nos textos de ajuda que apontavam para ela — a view em si (id 'sistema', função renderSistema(), sincronização/backup/Apps Script que ela hospeda) não foi tocada, é troca de rótulo. -->
@@ -1480,6 +1481,13 @@ function renderSubsisStub(titulo, subtitulo){
 function switchCliente(cid,reload=true){
   const prevCid=clienteAtivo();
   if(prevCid)persistClienteDb(prevCid); // salva DB do cliente atual antes de trocar
+  // Item 10 da validação de Fase 2 (2026-07): se houver um rascunho de "Executar teste" aberto,
+  // fecha o modal ao trocar de cliente — nunca deixa uma tela do Cliente A visível/editável sob o
+  // Cliente B; saveTeste() também teria bloqueado, mas fechar aqui evita a tela morta e confusa.
+  if(window._testeClienteId&&window._testeClienteId!==cid){
+    window._testeClienteId=null;
+    if(document.getElementById('mTesteLocalId'))closeModal();
+  }
   setClienteAtivo(cid);
   db=loadClienteDb(cid);
   menuState=loadMenuStateLocal();
@@ -2520,9 +2528,9 @@ const TESTE_TIPOS=['Acionamento','Supervisão','Comunicação com a central','Si
 // comportamento anterior que criava falha sozinho sempre que resultado==='Não Conforme'.
 function criarTeste({localId,itemId,painelId,lacoId,flmId,portaId,responsavel,data,tipoTeste,resultado,observacao,fotos,statusTecnico,confirmarFalha,origem}){
   db.testes=db.testes||[];
-  const novoTeste={id:id(),localId:localId||'',itemId:itemId||'',painelId:painelId||'',lacoId:lacoId||'',flmId:flmId||'',portaId:portaId||'',responsavel:responsavel||'',usuario:(currentUser&&currentUser.nome)||'',data:data||isoNow(),tipoTeste:tipoTeste||'Teste geral da loja',resultado:resultado||'Em funcionamento',observacao:observacao||'',fotos:fotos||[],origem:origem||'Manual',falhaId:'',criadoEm:isoNow()};
+  const novoTeste={id:id(),localId:localId||'',itemId:itemId||'',painelId:painelId||'',lacoId:lacoId||'',flmId:flmId||'',portaId:portaId||'',responsavel:responsavel||'',usuario:(currentUser().nome)||'',data:data||isoNow(),tipoTeste:tipoTeste||'Teste geral da loja',resultado:resultado||'Em funcionamento',observacao:observacao||'',fotos:fotos||[],origem:origem||'Manual',falhaId:'',criadoEm:isoNow()};
   db.testes.push(novoTeste);
-  logLocal('teste',novoTeste.id,'registrar','Teste registrado: '+novoTeste.resultado+' — '+(locName(localId)||itemId||''));
+  logLocal('teste',novoTeste.id,'registrar','Teste registrado: '+novoTeste.resultado+' — '+(locName(localId)||itemId||'')+' — tipo: '+(novoTeste.tipoTeste||'—')+' — anexos: '+(novoTeste.fotos||[]).length);
   const resultadosQuePermitemFalha=['Funcionamento parcial','Não funcionou'];
   if(confirmarFalha&&resultadosQuePermitemFalha.includes(novoTeste.resultado)){
     const item=String(itemId||'').startsWith('flm:')?flmById(String(itemId).slice(4)):db.equipamentos.find(e=>e.id===itemId);
@@ -2532,6 +2540,7 @@ function criarTeste({localId,itemId,painelId,lacoId,flmId,portaId,responsavel,da
     db.falhas.push(rec);
     novoTeste.falhaId=rec.id;
     sincronizarPlanosFalhas(db);
+    logLocal('teste',novoTeste.id,'falha_gerada','Falha '+rec.id+' criada a partir do teste '+novoTeste.id+' ('+novoTeste.resultado+'), mediante confirmação explícita do usuário.');
   }
   return novoTeste;
 }
@@ -2545,7 +2554,7 @@ function formTeste(localId){
   <div class="compactHelp" style="margin-bottom:10px"><b>${esc(paiName(loc.painelId)||'—')}</b> • Laço ${esc(lacName(loc.lacoId)||'—')} • Piso ${esc(loc.piso||'—')} • ${esc(loc.nomeOficial||loc.nome)}</div>
   <div class="formGrid">
     <div class="field"><label>Tipo de teste</label><select id="mTesteTipo">${TESTE_TIPOS.map(t=>`<option>${esc(t)}</option>`).join('')}</select></div>
-    <div class="field"><label>Responsável</label><input id="mTesteResp" value="${esc((currentUser&&currentUser.nome)||'')}"></div>
+    <div class="field"><label>Responsável</label><input id="mTesteResp" value="${esc((currentUser().nome)||'')}"></div>
     <div class="field" style="grid-column:1/-1"><label>Resultado</label>
       <div class="toolbar" id="mTesteResultados" style="flex-wrap:wrap;gap:6px">
         ${TESTE_RESULTADOS.map((r,idx)=>`<label class="check"><input type="radio" name="mTesteResultado" value="${esc(r)}" ${idx===0?'checked':''}> ${esc(r)}</label>`).join('')}
@@ -2558,6 +2567,12 @@ function formTeste(localId){
   <button class="btn secondary" id="mBtnTesteFalha" style="display:none" onclick="saveTeste(true)">Salvar teste e registrar falha</button>
   <button class="btn secondary" onclick="closeModal()">Cancelar</button>`);
   window._testeFotosTemp=[];
+  // Guarda de troca de cliente (item 10 da validação, 2026-07): o formulário fica travado ao
+  // clienteId ativo no momento da abertura. Se o usuário trocar de cliente com o modal aberto,
+  // saveTeste() detecta a divergência e bloqueia o salvamento — nunca grava silenciosamente no
+  // cliente novo (switchCliente() também fecha o modal automaticamente, ver switchCliente()).
+  window._testeClienteId=clienteAtivo();
+  window._testeSaving=false;
   document.querySelectorAll('input[name="mTesteResultado"]').forEach(r=>r.addEventListener('change',atualizaBotaoFalhaTeste));
   atualizaBotaoFalhaTeste();
 }
@@ -2568,16 +2583,30 @@ function atualizaBotaoFalhaTeste(){
 }
 function saveTeste(confirmarFalha){
   if(!requireAccess('editarFalhaPlano','Seu perfil não pode registrar testes.'))return;
+  // Proteção contra duplo clique/reenvio (item 11 da validação): trava a gravação até terminar.
+  if(window._testeSaving)return;
+  if(window._testeClienteId&&window._testeClienteId!==clienteAtivo()){
+    alert('O cliente ativo mudou desde que este teste foi aberto. Por segurança, o registro NÃO foi salvo — feche e abra o teste novamente a partir do cliente correto.');
+    closeModal();
+    return;
+  }
   const localId=document.getElementById('mTesteLocalId')?.value||'';
   const resultado=document.querySelector('input[name="mTesteResultado"]:checked')?.value||'Em funcionamento';
   if(confirmarFalha&&!['Funcionamento parcial','Não funcionou'].includes(resultado)){confirmarFalha=false}
   if(confirmarFalha&&!confirm('Confirma o registro de uma FALHA a partir deste teste? Isso vai criar um lançamento na aba Falhas e um Plano de Ação.')){return}
-  const t=criarTeste({
-    localId,tipoTeste:document.getElementById('mTesteTipo')?.value,resultado,
-    responsavel:n(document.getElementById('mTesteResp')?.value),
-    observacao:n(document.getElementById('mTesteObs')?.value),
-    fotos:window._testeFotosTemp||[],confirmarFalha,origem:'Manual'
-  });
+  window._testeSaving=true;
+  document.querySelectorAll('#modal .btn').forEach(b=>b.disabled=true);
+  let t;
+  try{
+    t=criarTeste({
+      localId,tipoTeste:document.getElementById('mTesteTipo')?.value,resultado,
+      responsavel:n(document.getElementById('mTesteResp')?.value),
+      observacao:n(document.getElementById('mTesteObs')?.value),
+      fotos:window._testeFotosTemp||[],confirmarFalha,origem:'Manual'
+    });
+  }finally{
+    window._testeSaving=false;
+  }
   closeModal(); save();
   if(t.falhaId)alert('Teste registrado. Falha criada com sucesso — abra a aba Falhas/Plano de Ação para dar continuidade.');
 }
@@ -3132,6 +3161,20 @@ function fotosThumbsHtml(fotos,tamanho=38,planoId=''){
   }).join('');
   return `<div style="display:flex;flex-direction:column;gap:4px"><small class="note"><b>${lista.length}</b> foto${lista.length===1?'':'s'}</small><div style="display:flex;gap:5px;flex-wrap:wrap">${thumbs}</div></div>`;
 }
+// Anexos do rascunho de "Executar teste" (ainda não salvo em db.testes): grid próprio com botão
+// de excluir, já que o teste ainda não tem id definitivo para reaproveitar excluirFoto()/fotosThumbsHtml
+// (item 8 da validação — "excluir anexo antes de salvar funciona").
+function renderTesteFotoGrid(){
+  const grid=document.getElementById('mTesteFotoGrid'); if(!grid)return;
+  const lista=window._testeFotosTemp||[];
+  if(!lista.length){grid.innerHTML='<span class="mutedLine">—</span>';return}
+  grid.innerHTML=`<div style="display:flex;gap:5px;flex-wrap:wrap">${lista.map((u,idx)=>`<div style="position:relative;display:inline-block"><img src="${esc(normalizeFotoUrl(u))}" alt="Evidência" loading="lazy" style="width:72px;height:72px;object-fit:cover;border-radius:6px;border:1px solid var(--l3a-border);display:block"><button onclick="removerTesteFotoTemp(${idx})" title="Remover" style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,.6);border:none;border-radius:50%;width:18px;height:18px;cursor:pointer;color:#fff;font-size:11px">✕</button></div>`).join('')}</div>`;
+}
+function removerTesteFotoTemp(idx){
+  if(!window._testeFotosTemp)return;
+  window._testeFotosTemp.splice(idx,1);
+  renderTesteFotoGrid();
+}
 function excluirFoto(planoId,idx){
   if(!confirm('Excluir esta foto do chamado? (o arquivo no Drive não será apagado)'))return;
   const plano=(db.planos||[]).find(p=>p.id===planoId); if(!plano)return;
@@ -3294,8 +3337,7 @@ function handleFotoUploadResult(data){
       window._testeFotosTemp.push(data.url);
       const t=pend.planoId!=='__novoteste__'?(db.testes||[]).find(x=>x.id===pend.planoId):null;
       if(t){t.fotos=normalizeFotos(t.fotos);t.fotos.push(data.url);markDirty('foto anexada ao teste')}
-      const grid=document.getElementById('mTesteFotoGrid');
-      if(grid)grid.innerHTML=fotosThumbsHtml(window._testeFotosTemp,72,'');
+      renderTesteFotoGrid();
     } else if(data.ok&&data.url){
       const plano=(db.planos||[]).find(p=>p.id===pend.planoId);
       if(plano){plano.fotos=normalizeFotos(plano.fotos);plano.fotos.push(data.url);markDirty('foto anexada ao plano');renderPlano();const grid=document.getElementById('mFotoGrid');if(grid)grid.innerHTML=fotosThumbsHtml(plano.fotos,72,plano.id)}
