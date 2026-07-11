@@ -1,5 +1,73 @@
 <!doctype html>
-<!-- build: 2026-07-11 v6.60 - MÓDULO PLANTAS: escala de marcadores/textos (Feature Set A) + tooltip rico de
+<!-- build: 2026-07-11 v6.62 - MÓDULO PLANTAS: nova ação "Adicionar marcador" (📍, visível só com podeEditarPlantas()) em cada bloco de planta, um modo de inserção ALTERNATIVO ao arrastar-e-soltar já existente, focado em pontos técnicos (db.locais). Ao ativar, o próximo clique (não-arrasto — mesmo limiar de 6px de plantaIniciarDrag) no viewport captura x%/y% (mesma fórmula de rect.getBoundingClientRect() já usada no drop) em plantasUI.pendenteX/Y — estado 100% efêmero, nada é gravado antes da confirmação — e abre um modal de seleção (plantaAbrirModalInsercao). O modal lista SÓ pontos técnicos com local.plantaId!==id-da-planta-atual (exclusão sempre por id, nunca por nome, então "ROMMANEL SDAI" e "ROMMANEL CO2" são sempre tratados como registros independentes), com filtros combináveis (busca nome/LUC via filtrarRegistrosPorBusca, Sistema, Piso, Painel, Laço, Módulo, Porta, Status via plantaStatusFiltroLocal — Com falha/Em operação/Nunca testado), ordenados por Piso/Nome/Sistema/Painel/Laço/Módulo/Porta, e 3 contadores sempre recalculados na hora (disponíveis/já inseridos nesta planta/total do piso — nunca cache). Por padrão só mostra pontos do piso da planta; toggle "Mostrar pontos de outros pisos" (só para Master) permite ver de outros pisos, e ao confirmar um desses abre plantaConfirmarOutroPiso()/OutroPisoOk() — modal PRÓPRIO, nunca confirm() nativo — que audita a exceção via logLocal() antes de gravar. Selecionar um ponto (plantaSelecionarPontoInsercao→plantaConfirmarInsercao) revalida duplicidade (loc.plantaId===plantaAtual → aborta com aviso, sem gravar nada), grava plantaId/plantaX/plantaY, aplica escalaPadraoMarcador/escalaPadraoTexto da planta quando o ponto ainda não tem override (mesma regra do v6.60), grava marcadorCriadoPor/marcadorCriadoEm no próprio registro, chama logLocal('Plantas',...,'inserir_marcador',...), invalida o cache do tooltip e chama save() (que já dispara markDirty+render). O modal É REABERTO em seguida (plantaAbrirModalInsercao de novo) para atualizar lista/contadores SEM fechar — e o modo de inserção continua ativo, permitindo clicar no próximo ponto da planta imediatamente sem reabrir nada manualmente. Saída do modo de inserção: Esc (novo listener global, guardado por window._plantaEscInserirBound), botão "Cancelar inserção" ou clicar de novo em "Adicionar marcador" — todos chamam plantaSairModoInserir(), que NUNCA deixa uma posição pendente incompleta gravada. Exclusão de marcador (menu de contexto "Excluir") ganhou confirmação explícita (antes chamava plantaLimparPosicao() direto); a função em si já só limpava plantaId/plantaX/plantaY do registro (nunca apagava o cadastro nem testes/falhas), então voltar a aparecer na lista de inserção é automático (contadores/lista recalculados por leitura direta de db.locais, sem cache). GAPS HONESTOS: (1) reassociar um marcador JÁ POSICIONADO a um ponto técnico DIFERENTE (spec item 12) não foi implementado — plantaEditarMarcador() continua só editando posição/escala do MESMO item, como já era; construir essa re-vinculação exigiria uma UI nova maior, fora do pedido mínimo desta rodada. (2) o modal de inserção reconstrói o HTML inteiro a cada filtro (mesmo padrão de outras telas do sistema), o que reseta o foco do campo de busca — mitigado com um refoco manual (setTimeout+#mInsBusca) só nesse campo, mas outros selects não preservam scroll da lista. (3) "mostrar pontos de outros pisos" só aparece para isMaster() (mais restrito que podeEditarPlantas() genérico), decisão deliberada por ser uma exceção mais sensível. node --check validado sem erros (zero) logo após esta mudança.
+build anterior: 2026-07-11 v6.61 - MÓDULO PLANTAS: zoom interativo (roda do mouse SEM Ctrl, zoom centrado no
+cursor/toque, pinça de 2 dedos, escala automática de marcador por zoom, agrupamento/clustering visual). Tudo
+incremental sobre o sistema de zoom/pan/escala do v6.60 — nenhuma função/id/classe existente foi removida,
+plantaX/plantaY (posição persistida) NUNCA é tocado por nada deste build (verificado: todo o código novo só
+escreve em plantasUI.zoom/pan, que já eram estado efêmero de UI, e no transform CSS do .plantaCanvas).
+ITEM 1 (roda sem Ctrl): o handler de 'wheel' em .plantaViewport deixou de exigir ev.ctrlKey; sempre chama
+preventDefault() com o listener em {passive:false} para a página nunca rolar junto. Scroll para cima = zoom
+in (fator 1.1), para baixo = zoom out (fator 1/1.1) — os antigos botões +/- (fator 1.25/0.8) e o botão
+"Restaurar" (⟲) foram mantidos como estão, só passaram a usar os mesmos PLANTA_ZOOM_MIN/MAX.
+ITEM 2 (zoom no cursor) — nova função plantaZoomAt(pid,novoZ,clientX,clientY,animate): matemática clássica de
+"zoom to point". Sendo z0/z1 o zoom antigo/novo, pan0 o pan atual e (cx,cy) a posição do cursor relativa ao
+canto superior-esquerdo do .plantaViewport (elemento que não se move), o ponto do desenho sob o cursor fica
+fixo na tela se pan1 = (cx,cy)*(1 - z1/z0) + pan0*(z1/z0). Dedução: screen = viewportTopLeft + pan + p*z,
+onde p = (cursorRelViewport - pan0)/z0 é a posição do ponto em coordenadas não-escaladas do canvas; impondo
+screen constante ao trocar z0→z1 chega-se direto na fórmula acima. Aplicada tanto pela roda quanto pelos
+botões +/- (centrados no meio do viewport quando não há clientX/clientY) e pelo clique num selo de cluster
+(centrado no clique).
+ITEM 3/4 (escala automática por zoom): nova plantaZoomAutoFactor(z) — mapeamento LINEAR em dois trechos,
+ancorado em zoom=1 → fator=1.0: de PLANTA_ZOOM_MIN(0.2) a 1 interpola linearmente até 0.5; de 1 a
+PLANTA_ZOOM_MAX(5) interpola linearmente até 1.5; sempre clampado em [0.5,1.5]. O fator MULTIPLICA (nunca
+substitui) a escala já configurada — tamanho final renderizado = escalaPadraoMarcador(planta) ×
+escalaMarcador(override do item, se houver) × zoomAutoFactor(zoom atual). Aplicado nos dois lugares que já
+desenhavam o scale() dos pinos: renderPlantas() (render completo) e plantaAtualizarEscalasNaTela() (preview
+ao vivo, sem re-render completo — já existia do v6.60, só ganhou o novo fator).
+ITEM 5 (nunca move posição persistida): auditado manualmente — plantaZoomAt/plantaAplicarClusters/handlers de
+roda/pinça/pan só escrevem em plantasUI.zoom[pid]/plantasUI.pan[pid] (objetos de estado de UI, não
+persistidos em db) e no style.transform do .plantaCanvas; plantaX/plantaY só são escritos em
+plantaIniciarDrag() (arrastar-e-soltar em modo edição) e plantaEditarMarcador(), inalterados nesta rodada.
+ITEM 7/8 (clustering): novo PLANTA_CLUSTER_PX=32 (pixels de TELA) e plantaAplicarClusters(scope) — usa
+getBoundingClientRect() dos .plantaPin já renderizados (portanto já reflete zoom/pan atuais) para agrupar por
+proximidade de centro-a-centro; grupos com 2+ pinos ganham a classe .plantaClusterOculto (display:none) e um
+.plantaClusterBadge (selo "N") é inserido na posição percentual média do grupo. Clique no selo chama
+plantaZoomAt() centrado no clique com fator 1.8x (zoom-to-point, item 8) e reagenda um novo
+plantaAplicarClusters() após a transição — nunca abre lista, nunca move marcador. GAP HONESTO: o "até
+desagrupar" do item 8 é aproximado por um fator fixo (1.8x) em vez de resolver algebricamente o zoom mínimo
+que separaria os pontos além do limiar — na prática quase sempre desagrupa em 1 clique; casos de pontos
+extremamente coincidentes podem precisar de um 2º clique.
+ITEM 10 (performance): clusters e o fator de escala NUNCA recalculam a cada pointermove/tick de roda. A roda
+chama plantaZoomAt() (barato: só grava zoom/pan + 1 style.transform) a cada tick, mas plantaAplicarClusters()
+só roda 180ms depois do ÚLTIMO evento de roda (debounce em plantaPosSettleZoom, chamada também no fim do pan
+por arrasto e no fim da pinça). Render completo (renderPlantas) já recalcula tudo do zero ao final, cobrindo
+troca de planta/novo teste/nova falha/resolução de falha/sync (mesmos pontos que já chamavam render() antes).
+ITEM 9 (tooltip): plantaOcultarTooltipAgora() é chamado no início de wheel/pinch-start/pan-start (reaproveita
+o mesmíssimo padrão "esconde ao arrastar" que o v6.60 já usava em plantaIniciarDrag/plantaIniciarResize);
+volta a aparecer normalmente no próximo pointerenter depois que o gesto termina — nenhuma mudança na lógica
+interna do tooltip (cache, hover, posicionamento) em si.
+ITEM 11 (touch): pinça de 2 dedos nova via Pointer Events — estado por planta em _plantaPinchState (Map
+pid→{touchPointers,pinchStart}), criado uma única vez (plantaEstadoPinch) e NÃO recriado a cada
+render/plantaBindEventos (evita vazar listeners de window a cada re-render); os 3 listeners globais de
+pointermove/up/cancel são registrados uma única vez via plantaEnsureGestureListeners(). Se um 2º dedo pousa
+durante um pan de 1 dedo já em curso, o pan é cancelado na hora e a pinça assume. Arrasto de 1 dedo continua
+usando o pan pré-existente do v6.58/6.60, sem mudanças de comportamento.
+ITEM 12 (animação): nova classe .plantaCanvasAnim (transition:transform .22s) é aplicada SÓ em ações
+discretas — botões +/-/⟲, clique em cluster — e removida ~260ms depois. Roda do mouse e pinça NUNCA recebem
+essa classe (plantaZoomAt chama cv.classList.remove('plantaCanvasAnim') quando animate=false) para o gesto
+contínuo não parecer atrasado.
+ITEM 13 (limites): PLANTA_ZOOM_MIN=0.2/PLANTA_ZOOM_MAX=5 substituem os limites antigos e inconsistentes
+(4/0.4) que só existiam nos botões +/- e no wheel com Ctrl — agora é uma única constante reaproveitada em
+TODOS os pontos de zoom (botões, roda, pinça, clique em cluster).
+FUNÇÕES NOVAS: plantaZoomAutoFactor(), plantaZoomAt(), plantaPosSettleZoom(), plantaAplicarClusters(),
+plantaEstadoPinch(), plantaGestureLimpar(), plantaEnsureGestureListeners().
+FUNÇÕES MODIFICADAS: plantaZoom() (agora delega a plantaZoomAt, sem forçar render completo em +/-),
+renderPlantas() (z/zf calculados antes dos pinos; chama plantaAplicarClusters() ao final),
+plantaAtualizarEscalasNaTela() (aplica zoomAutoFactor), plantaBindEventos() (wheel sem Ctrl + pan/pinça
+reescritos). Nenhuma função foi removida ou renomeada. node --check validado sem erros (zero) ao final desta
+rodada.
+-->
+<!-- build anterior: 2026-07-11 v6.60 - MÓDULO PLANTAS: escala de marcadores/textos (Feature Set A) + tooltip rico de
 hover em vez de nome fixo (Feature Set B).
 FEATURE SET A (escala): planta ganhou escalaPadraoMarcador/escalaPadraoTexto (default 1.0), cada marcador
 (db.locais/db.equipamentos/db.flms posicionado via plantaX/plantaY — NÃO existe array separado de marcadores
@@ -457,6 +525,11 @@ input[type=checkbox],input[type=radio]{accent-color:var(--l3a-primary)}
 .plantaZoomBtns{display:flex;gap:4px}
 .plantaViewport{position:relative;overflow:hidden;background:#eef1f5}
 .plantaCanvas{position:relative;width:100%;transform-origin:0 0}
+/* v6.61 — zoom interativo: transição curta só em ações discretas (botões/cluster), nunca durante roda/pinça contínuas */
+.plantaCanvas.plantaCanvasAnim{transition:transform .22s cubic-bezier(.2,.7,.3,1)}
+.plantaPin.plantaClusterOculto{display:none!important}
+.plantaClusterBadge{position:absolute;transform:translate(-50%,-50%);width:26px;height:26px;border-radius:50%;background:var(--l3a-primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;border:2px solid #fff;box-shadow:0 2px 6px rgba(16,24,40,.4);cursor:pointer;z-index:500;user-select:none}
+.plantaClusterBadge:hover{filter:brightness(1.1)}
 .plantaCanvas img.plantaImg{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;user-select:none;-webkit-user-drag:none;pointer-events:none}
 .plantaPlaceholder{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:220px;color:var(--l3a-text-muted);font-size:13px}
 .plantaPin{position:absolute;transform:translate(-50%,-100%);display:flex;flex-direction:column;align-items:center;cursor:pointer;touch-action:none}
@@ -474,6 +547,8 @@ input[type=checkbox],input[type=radio]{accent-color:var(--l3a-primary)}
 @keyframes plantaPulso{0%,100%{box-shadow:0 0 0 0 rgba(180,35,24,.55);opacity:1}50%{box-shadow:0 0 0 11px rgba(180,35,24,0);opacity:.82}}
 .plantaGhost{position:fixed;z-index:9999;pointer-events:none;opacity:.8;transform:translate(-50%,-50%)}
 .plantaDropAlvo{outline:3px dashed var(--l3a-primary);outline-offset:-3px}
+.plantaModoInserir{cursor:crosshair}
+.plantaModoInserir .plantaCanvas{cursor:crosshair}
 /* v6.60 — escala de marcadores/textos (Feature Set A) */
 .plantaPin.selecionado .pinDot{outline:2px dashed var(--l3a-primary);outline-offset:3px}
 .plantaHandle{position:absolute;width:12px;height:12px;border-radius:50%;background:#fff;border:2px solid var(--l3a-primary);box-shadow:0 1px 3px rgba(16,24,40,.4);touch-action:none;z-index:5}
@@ -7388,7 +7463,24 @@ function openLocalBlocosHtml(l,testes,hist){
    renderPlantas() é PURA (lê db, escreve HTML); estado efêmero de UI vive
    em plantasUI e é reaplicado a cada re-render.
    ========================================================================= */
-const plantasUI={edit:false,zoom:{},pan:{},filtro:{tipo:'',piso:'',q:''},selecionado:null};
+const plantasUI={edit:false,zoom:{},pan:{},filtro:{tipo:'',piso:'',q:''},selecionado:null,
+  // v6.62 — modo de inserção por clique ("Adicionar marcador"): modoInserir/modoInserirPlantaId controlam
+  // se o próximo clique no viewport captura uma posição pendente (pendenteX/Y, NUNCA gravada em db.locais
+  // até a confirmação explícita no modal de seleção). modalInsercao guarda os filtros combináveis do modal.
+  modoInserir:false,modoInserirPlantaId:null,pendenteX:null,pendenteY:null,
+  modalInsercao:{q:'',sistema:'',piso:'',painel:'',laco:'',flm:'',porta:'',status:'',outrosPisos:false},
+  _confirmadoOutroPiso:false};
+// v6.61 — limites únicos de zoom (reaproveitados por botões +/-, roda do mouse e pinça em touch).
+const PLANTA_ZOOM_MIN=0.2, PLANTA_ZOOM_MAX=5;
+// Fator de escala AUTOMÁTICO dos marcadores em função do zoom atual — multiplica (nunca substitui) a
+// escala configurada (escalaPadraoMarcador/escalaMarcador do v6.60). Mapeamento linear em dois trechos,
+// ancorado em zoom=1 → fator=1: de PLANTA_ZOOM_MIN a 1 interpola até 0.5; de 1 a PLANTA_ZOOM_MAX interpola
+// até 1.5. Sempre clampado em [0.5, 1.5] (itens 3/4 do pedido de zoom interativo).
+function plantaZoomAutoFactor(z){
+  z=Number(z)||1;
+  let f=(z<=1)?(1-(1-z)/(1-PLANTA_ZOOM_MIN)*0.5):(1+(z-1)/(PLANTA_ZOOM_MAX-1)*0.5);
+  return Math.min(1.5,Math.max(0.5,f));
+}
 function plantasOrdenadas(){return (db.plantas||[]).filter(p=>p.ativo!==false).slice().sort((a,b)=>(a.ordem??99)-(b.ordem??99))}
 function podeEditarPlantas(){return can('posicionarPlanta')}
 
@@ -7464,6 +7556,7 @@ function renderPlantas(){
   </div>`;
 
   const blocos=plantas.map(pl=>{
+    const z=plantasUI.zoom[pl.id]||1, zf=plantaZoomAutoFactor(z);
     const pins=itens.filter(i=>i.ref.plantaId===pl.id&&i.ref.plantaX!=null&&i.ref.plantaX!=='');
     // Deslocamento visual determinístico para pinos sobrepostos (spec 8.3) — só visual, dados intactos.
     const offset={};
@@ -7493,17 +7586,16 @@ function renderPlantas(){
       }
       // v6.60 (Feature Set B, item 1): nome permanente REMOVIDO do marcador — só ícone/cor/badge numérico.
       // O nome/detalhes completos passam a viver exclusivamente no tooltip de hover (renderTooltipMarcador).
-      const escM=plantaEscalaMarcador(i.ref,pl), escT=plantaEscalaTexto(i.ref,pl);
+      const escM=plantaEscalaMarcador(i.ref,pl)*zf, escT=plantaEscalaTexto(i.ref,pl)*zf;
       const selecionado=plantasUI.selecionado&&plantasUI.selecionado.kind===i.kind&&plantasUI.selecionado.id===i.id;
       const handles=(plantasUI.edit&&podeEditarPlantas()&&selecionado)?`<div class="plantaHandle hMarcador" data-handle="marcador" title="Redimensionar marcador"></div><div class="plantaHandle hTexto" data-handle="texto" title="Redimensionar texto (badge)"></div>`:'';
       const badge=badgeN?`<span class="pinBadge" style="transform:scale(${escT});transform-origin:center">${badgeN}</span>`:'';
       const zi=10+(Number(i.ref.zIndexPlanta)||0);
       return `<div class="plantaPin ${cls}${selecionado?' selecionado':''}" data-kind="${i.kind}" data-id="${esc(i.id)}" data-local-id="${esc(i.kind==='local'?i.id:(i.ref.localId||''))}" style="left:${i.ref.plantaX}%;top:${i.ref.plantaY}%;margin-left:${dx}px;margin-top:${dy}px;z-index:${zi}">${badge}<span class="pinDot" style="transform:scale(${escM});transform-origin:center">${inner}</span>${handles}</div>`;
     }).join('');
-    const z=plantasUI.zoom[pl.id]||1;
     const pan=plantasUI.pan[pl.id]||{x:0,y:0};
     const corpo=pl.imagemUrl
-      ?`<div class="plantaViewport" data-planta="${esc(pl.id)}">
+      ?`<div class="plantaViewport ${(plantasUI.modoInserir&&plantasUI.modoInserirPlantaId===pl.id)?'plantaModoInserir':''}" data-planta="${esc(pl.id)}">
           <div class="plantaCanvas ${z<0.8?'plantaZoomOut':''}" data-planta-canvas="${esc(pl.id)}" style="aspect-ratio:${pl.imagemW||4}/${pl.imagemH||3};transform:translate(${pan.x}px,${pan.y}px) scale(${z})">
             <img class="plantaImg" src="${esc(pl.imagemUrl)}" alt="Planta ${esc(pl.piso)}">
             ${pinsHtml}
@@ -7523,6 +7615,7 @@ function renderPlantas(){
             <button class="iconBtn" title="Restaurar" onclick="plantaZoom('${esc(pl.id)}',0)">⟲</button>
           </div>
           ${podeEditarPlantas()&&pl.imagemUrl?`<label class="iconBtn" title="Trocar imagem" style="cursor:pointer">🖼<input type="file" accept="image/*,.pdf" style="display:none" onchange="uploadPlantaArquivo('${esc(pl.id)}',this.files[0]);this.value=''"></label>`:''}
+          ${podeEditarPlantas()&&pl.imagemUrl?(plantasUI.modoInserir&&plantasUI.modoInserirPlantaId===pl.id?`<button class="btn small danger" onclick="plantaSairModoInserir()">✕ Cancelar inserção</button>`:`<button class="btn small" onclick="plantaToggleModoInserir('${esc(pl.id)}')">📍 Adicionar marcador</button>`):''}
           ${isMaster(currentUserSafe())?`<button class="iconBtn" title="Editar planta" onclick="formPlantaBaixa('${esc(pl.id)}')">✏</button>`:''}
         </div>
       </div>
@@ -7576,6 +7669,7 @@ function renderPlantas(){
     </div>`;
   plantaBindEventos(el);
   plantaObservarViewport(el);
+  plantaAplicarClusters(el); // v6.61 — recomputa clusters (render completo = dados/planta/zoom mudaram)
 }
 
 // Pausa a animação de pulso quando a planta sai do viewport (spec 5.2).
@@ -7588,14 +7682,134 @@ function plantaObservarViewport(root){
 }
 
 function plantaZoom(plantaId,fator){
-  if(!fator){plantasUI.zoom[plantaId]=1;plantasUI.pan[plantaId]={x:0,y:0}}
-  else plantasUI.zoom[plantaId]=Math.min(4,Math.max(0.4,(plantasUI.zoom[plantaId]||1)*fator));
-  renderPlantas();
+  if(!fator){plantasUI.zoom[plantaId]=1;plantasUI.pan[plantaId]={x:0,y:0};renderPlantas();return}
+  // Botões +/- (ação discreta): reaproveita a mesma matemática de zoom-no-cursor, centrada no viewport
+  // (sem clientX/clientY), com animação curta (item 12 do pedido).
+  plantaZoomAt(plantaId,(plantasUI.zoom[plantaId]||1)*fator,null,null,true);
+  plantaPosSettleZoom(plantaId);
+}
+// v6.61 — Zoom centrado no cursor/toque (item 2 do pedido de zoom interativo). Matemática clássica de
+// "zoom to point": sendo z0/z1 os fatores de escala antigo/novo, pan0 o pan atual e (cx,cy) a posição do
+// cursor relativa ao canto superior-esquerdo do viewport (que não se move), o novo pan é
+//   pan1 = (cx,cy) * (1 - z1/z0) + pan0 * (z1/z0)
+// — o ponto do desenho que estava sob o cursor permanece exatamente sob o cursor após o zoom. Puramente
+// visual: só mexe em plantasUI.zoom/pan e no transform CSS do .plantaCanvas; NUNCA em plantaX/plantaY.
+function plantaZoomAt(pid,novoZRaw,clientX,clientY,animate){
+  const vp=document.querySelector(`.plantaViewport[data-planta="${CSS.escape(pid)}"]`); if(!vp)return;
+  const cv=vp.querySelector('.plantaCanvas'); if(!cv)return;
+  const z0=plantasUI.zoom[pid]||1;
+  const z1=Math.min(PLANTA_ZOOM_MAX,Math.max(PLANTA_ZOOM_MIN,novoZRaw));
+  const pan0=plantasUI.pan[pid]||{x:0,y:0};
+  const rect=vp.getBoundingClientRect();
+  const cx=(clientX==null?rect.left+rect.width/2:clientX)-rect.left;
+  const cy=(clientY==null?rect.top+rect.height/2:clientY)-rect.top;
+  const ratio=z1/z0;
+  const pan1={x:cx*(1-ratio)+pan0.x*ratio,y:cy*(1-ratio)+pan0.y*ratio};
+  plantasUI.zoom[pid]=z1; plantasUI.pan[pid]=pan1;
+  // Transição CSS só em ações discretas (botões/clique de cluster) — item 12: durante roda/pinça contínuas
+  // a transição é OMITIDA de propósito para não introduzir atraso perceptível ao gesto.
+  if(animate){cv.classList.add('plantaCanvasAnim');setTimeout(()=>cv.classList.remove('plantaCanvasAnim'),260)}
+  else cv.classList.remove('plantaCanvasAnim');
+  cv.style.transform=`translate(${pan1.x}px,${pan1.y}px) scale(${z1})`;
+  cv.classList.toggle('plantaZoomOut',z1<0.8);
+  const pl=(db.plantas||[]).find(p=>p.id===pid); if(pl)plantaAtualizarEscalasNaTela(pl);
+}
+// Chamado quando um gesto de zoom/pan "assenta" (fim de roda com debounce, fim de pinça, fim de pan, clique
+// de +/-/cluster) — só então recomputamos clusters (item 10: nunca a cada pointermove/tick de roda).
+function plantaPosSettleZoom(pid){
+  const vp=document.querySelector(`.plantaViewport[data-planta="${CSS.escape(pid)}"]`);
+  const bloco=vp&&vp.closest('.plantaBloco');
+  plantaAplicarClusters(bloco||document);
+}
+// v6.61 — Agrupamento automático (item 7): dois ou mais marcadores cujo centro fica a menos de
+// PLANTA_CLUSTER_PX pixels de tela um do outro (na escala/pan atuais) viram um único selo "● N". Calculado
+// em espaço de TELA (getBoundingClientRect já reflete o transform aplicado), nunca mexendo em
+// plantaX/plantaY. Ao aumentar o zoom os marcadores se afastam na tela e o cluster se desfaz sozinho no
+// próximo recompute (chamado nos mesmos pontos de invalidação do cache do tooltip + fim de gesto).
+const PLANTA_CLUSTER_PX=32;
+function plantaAplicarClusters(scope){
+  const root=scope||document;
+  root.querySelectorAll('.plantaViewport').forEach(vp=>{
+    const cv=vp.querySelector('.plantaCanvas'); if(!cv)return;
+    cv.querySelectorAll('.plantaClusterBadge').forEach(b=>b.remove());
+    const pins=[...cv.querySelectorAll('.plantaPin')];
+    pins.forEach(p=>p.classList.remove('plantaClusterOculto'));
+    if(pins.length<2)return;
+    const pid=vp.dataset.planta;
+    const items=pins.map(p=>{const r=p.getBoundingClientRect();return {p,cx:r.left+r.width/2,cy:r.top+r.height/2}});
+    const used=new Set();
+    for(let i=0;i<items.length;i++){
+      if(used.has(i))continue;
+      const group=[i];
+      for(let j=i+1;j<items.length;j++){
+        if(used.has(j))continue;
+        if(Math.hypot(items[i].cx-items[j].cx,items[i].cy-items[j].cy)<PLANTA_CLUSTER_PX)group.push(j);
+      }
+      if(group.length>1){
+        group.forEach(ix=>{used.add(ix);items[ix].p.classList.add('plantaClusterOculto')});
+        const xs=group.map(ix=>parseFloat(items[ix].p.style.left)||0), ys=group.map(ix=>parseFloat(items[ix].p.style.top)||0);
+        const cxPct=xs.reduce((a,b)=>a+b,0)/xs.length, cyPct=ys.reduce((a,b)=>a+b,0)/ys.length;
+        const badge=document.createElement('div');
+        badge.className='plantaClusterBadge';
+        badge.style.left=cxPct+'%'; badge.style.top=cyPct+'%';
+        badge.title=group.length+' marcadores próximos — clique para aproximar';
+        badge.innerHTML=`<span class="pcCount">${group.length}</span>`;
+        badge.addEventListener('click',ev=>{
+          ev.stopPropagation();
+          plantaOcultarTooltipAgora();
+          const novo=Math.min(PLANTA_ZOOM_MAX,(plantasUI.zoom[pid]||1)*1.8);
+          plantaZoomAt(pid,novo,ev.clientX,ev.clientY,true); // item 8: zoom-to-point centrado no cluster
+          setTimeout(()=>plantaPosSettleZoom(pid),260);
+        });
+        cv.appendChild(badge);
+      } else used.add(i);
+    }
+  });
+}
+// v6.61 — Pinça (pinch-to-zoom) em telas de toque (item 11). Estado por planta guardado uma única vez em
+// um Map em nível de módulo (NÃO recriado a cada renderPlantas/plantaBindEventos) para não vazar listeners
+// de window a cada re-render; os listeners globais de pointermove/up/cancel também são registrados uma
+// única vez (plantaEnsureGestureListeners). Arrasto de 1 dedo continua usando o pan já existente.
+const _plantaPinchState=new Map(); // pid -> {touchPointers:Map<pointerId,{x,y}>, pinchStart:{dist,zoom}|null}
+let _plantaGestureListenersAdded=false;
+function plantaEstadoPinch(pid){
+  if(!_plantaPinchState.has(pid))_plantaPinchState.set(pid,{touchPointers:new Map(),pinchStart:null});
+  return _plantaPinchState.get(pid);
+}
+function plantaGestureLimpar(ev){
+  if(ev.pointerType!=='touch')return;
+  for(const [pid,st] of _plantaPinchState){
+    if(st.touchPointers.delete(ev.pointerId)&&st.touchPointers.size<2&&st.pinchStart){st.pinchStart=null;plantaPosSettleZoom(pid)}
+  }
+}
+function plantaEnsureGestureListeners(){
+  if(_plantaGestureListenersAdded)return; _plantaGestureListenersAdded=true;
+  window.addEventListener('pointermove',ev=>{
+    if(ev.pointerType!=='touch')return;
+    for(const [pid,st] of _plantaPinchState){
+      if(!st.touchPointers.has(ev.pointerId))continue;
+      st.touchPointers.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
+      if(st.pinchStart&&st.touchPointers.size>=2){
+        const pts=[...st.touchPointers.values()];
+        const dist=Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y);
+        const mid={x:(pts[0].x+pts[1].x)/2,y:(pts[0].y+pts[1].y)/2};
+        plantaZoomAt(pid,st.pinchStart.zoom*(dist/Math.max(1,st.pinchStart.dist)),mid.x,mid.y,false);
+      }
+    }
+  });
+  window.addEventListener('pointerup',plantaGestureLimpar);
+  window.addEventListener('pointercancel',plantaGestureLimpar);
 }
 
 // ---- Arrastar-e-soltar com Pointer Events (spec 4.3) ----
 let _plantaDrag=null;
 function plantaBindEventos(root){
+  // v6.62 — Esc sai do modo de inserção (item 9). Registrado uma única vez (guardado por
+  // window._plantaEscInserirBound), independente do handler global de Esc dos modais já existente.
+  if(!window._plantaEscInserirBound){
+    window._plantaEscInserirBound=true;
+    document.addEventListener('keydown',ev=>{ if(ev.key==='Escape'&&plantasUI.modoInserir)plantaSairModoInserir(); });
+  }
   root.querySelectorAll('.plantaChip').forEach(chip=>{
     chip.addEventListener('pointerdown',ev=>{
       if(!plantasUI.edit)return;
@@ -7636,24 +7850,70 @@ function plantaBindEventos(root){
       plantaMostrarTooltip(pin,kind,id_,true);
     });
   });
-  // Zoom com Ctrl+roda e pan por arrasto do fundo
+  // v6.61 — zoom com roda do mouse (SEM precisar de Ctrl, item 1), pan por arrasto do fundo (mouse/1 dedo,
+  // preservado) e pinça de 2 dedos em touch (item 11).
+  plantaEnsureGestureListeners();
   root.querySelectorAll('.plantaViewport').forEach(vp=>{
     const pid=vp.dataset.planta;
+    const pinchSt=plantaEstadoPinch(pid);
+    let wheelDebTimer=null;
     vp.addEventListener('wheel',ev=>{
-      if(!ev.ctrlKey)return;
-      ev.preventDefault();
-      plantasUI.zoom[pid]=Math.min(4,Math.max(0.4,(plantasUI.zoom[pid]||1)*(ev.deltaY<0?1.12:0.89)));
-      const cv=vp.querySelector('.plantaCanvas'); const z=plantasUI.zoom[pid]; const pan=plantasUI.pan[pid]||{x:0,y:0};
-      if(cv){cv.style.transform=`translate(${pan.x}px,${pan.y}px) scale(${z})`;cv.classList.toggle('plantaZoomOut',z<0.8)}
+      ev.preventDefault(); // item 1: nunca deixa a página rolar enquanto se faz zoom na planta
+      plantaOcultarTooltipAgora(); // item 9: tooltip some durante o zoom
+      const cur=plantasUI.zoom[pid]||1;
+      const fator=ev.deltaY<0?1.1:(1/1.1);
+      plantaZoomAt(pid,cur*fator,ev.clientX,ev.clientY,false); // sem transição — roda é contínua (item 12)
+      clearTimeout(wheelDebTimer);
+      wheelDebTimer=setTimeout(()=>plantaPosSettleZoom(pid),180); // item 10: clusters só recalculam ao "assentar"
     },{passive:false});
     vp.addEventListener('pointerdown',ev=>{
-      if(ev.target.closest('.plantaPin')||ev.target.closest('.plantaChip'))return;
+      if(ev.target.closest('.plantaPin')||ev.target.closest('.plantaChip')||ev.target.closest('.plantaClusterBadge'))return;
+      // v6.62 — modo de inserção por clique: enquanto ativo para ESTA planta, um clique (não-arrasto, mesmo
+      // limiar de 6px já usado em plantaIniciarDrag) captura a posição percentual pendente e abre o modal de
+      // seleção; nenhuma escrita em db.locais acontece aqui — só plantasUI.pendenteX/Y (estado efêmero).
+      if(plantasUI.modoInserir&&plantasUI.modoInserirPlantaId===pid){
+        const startI={x:ev.clientX,y:ev.clientY}; let movedI=false;
+        const moveI=e2=>{ if(Math.hypot(e2.clientX-startI.x,e2.clientY-startI.y)>6)movedI=true; };
+        const upI=e2=>{
+          window.removeEventListener('pointermove',moveI); window.removeEventListener('pointerup',upI);
+          if(movedI)return; // foi pan/arrasto, não um clique de inserção
+          const cv=vp.querySelector('.plantaCanvas'); if(!cv)return;
+          const rect=cv.getBoundingClientRect();
+          const x=Math.min(100,Math.max(0,(e2.clientX-rect.left)/rect.width*100));
+          const y=Math.min(100,Math.max(0,(e2.clientY-rect.top)/rect.height*100));
+          plantasUI.pendenteX=Math.round(x*100)/100; plantasUI.pendenteY=Math.round(y*100)/100;
+          plantaAbrirModalInsercao(pid);
+        };
+        window.addEventListener('pointermove',moveI); window.addEventListener('pointerup',upI);
+        return; // não entra no pan normal enquanto em modo de inserção
+      }
+      if(ev.pointerType==='touch'){
+        pinchSt.touchPointers.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
+        if(pinchSt.touchPointers.size===2){
+          const pts=[...pinchSt.touchPointers.values()];
+          pinchSt.pinchStart={dist:Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y),zoom:plantasUI.zoom[pid]||1};
+          plantaOcultarTooltipAgora();
+          return; // 2º dedo: vira pinça, não inicia pan de 1 dedo
+        }
+      }
+      if(pinchSt.pinchStart)return; // já em pinça (3º+ toque): ignora
       const z=plantasUI.zoom[pid]||1; if(z<=1)return;
       const start={x:ev.clientX,y:ev.clientY}; const pan0={...(plantasUI.pan[pid]||{x:0,y:0})};
       const cv=vp.querySelector('.plantaCanvas');
-      const move=e2=>{const nx=pan0.x+(e2.clientX-start.x),ny=pan0.y+(e2.clientY-start.y);plantasUI.pan[pid]={x:nx,y:ny};if(cv)cv.style.transform=`translate(${nx}px,${ny}px) scale(${z})`};
-      const upH=()=>{window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',upH)};
-      window.addEventListener('pointermove',move);window.addEventListener('pointerup',upH);
+      plantaOcultarTooltipAgora();
+      const move=e2=>{
+        if(pinchSt.touchPointers.has(e2.pointerId))pinchSt.touchPointers.set(e2.pointerId,{x:e2.clientX,y:e2.clientY});
+        if(pinchSt.pinchStart)return; // pinça assumiu o controle (2º dedo chegou durante o pan)
+        const nx=pan0.x+(e2.clientX-start.x),ny=pan0.y+(e2.clientY-start.y);
+        plantasUI.pan[pid]={x:nx,y:ny};
+        if(cv)cv.style.transform=`translate(${nx}px,${ny}px) scale(${z})`;
+      };
+      const upH=e2=>{
+        pinchSt.touchPointers.delete(e2.pointerId);
+        window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',upH);window.removeEventListener('pointercancel',upH);
+        plantaPosSettleZoom(pid);
+      };
+      window.addEventListener('pointermove',move);window.addEventListener('pointerup',upH);window.addEventListener('pointercancel',upH);
     });
   });
 }
@@ -7883,6 +8143,145 @@ function plantaLimparTodasInconsistencias(){
   save();
 }
 
+// =========================================================================
+// v6.62 — "ADICIONAR MARCADOR": modo de inserção por clique, restrito a pontos técnicos (db.locais)
+// ainda não posicionados NESTA planta. Não substitui o fluxo de arrastar-e-soltar já existente (que
+// cobre local/equip/flm) — é um caminho ALTERNATIVO focado em pontos técnicos, pedido explicitamente.
+// A exclusão de "já inserido" é sempre por local.id (nunca por nome), então dois registros com nomes
+// parecidos (ex.: "ROMMANEL SDAI" e "ROMMANEL CO2") são sempre tratados como itens independentes.
+// =========================================================================
+function plantaToggleModoInserir(plantaId){
+  if(plantasUI.modoInserir&&plantasUI.modoInserirPlantaId===plantaId){plantaSairModoInserir();return}
+  plantasUI.modoInserir=true; plantasUI.modoInserirPlantaId=plantaId;
+  plantasUI.pendenteX=null; plantasUI.pendenteY=null;
+  renderPlantas();
+}
+function plantaSairModoInserir(){
+  // Sair NUNCA grava nada: pendenteX/Y só existem em memória até uma confirmação explícita.
+  plantasUI.modoInserir=false; plantasUI.modoInserirPlantaId=null;
+  plantasUI.pendenteX=null; plantasUI.pendenteY=null;
+  closeModal();
+  renderPlantas();
+}
+// Classificação de status usada só no filtro do modal de inserção — reaproveita statusAgregadoLoja()
+// (mesma classificação/cor já usada nos pinos) e db.testes para "Nunca testado".
+function plantaStatusFiltroLocal(l){
+  const ag=statusAgregadoLoja(l.id);
+  if(ag.estado==='falha')return 'Com falha';
+  const temTeste=(db.testes||[]).some(t=>t.localId===l.id&&!t.excluido);
+  if(!temTeste)return 'Nunca testado';
+  return 'Em operação';
+}
+function plantaFiltrarPontosInsercao(plantaId){
+  const mf=plantasUI.modalInsercao; const pl=(db.plantas||[]).find(p=>p.id===plantaId);
+  const pisoPlanta=up(pl?.piso||'');
+  let base=(db.locais||[]).filter(l=>l.plantaId!==plantaId);
+  if(!mf.outrosPisos)base=base.filter(l=>up(pisoEfetivo(l)||l.piso||'')===pisoPlanta);
+  if(mf.q)base=filtrarRegistrosPorBusca(base,mf.q,l=>[l.nomeOficial,l.nome,l.luc].filter(Boolean).join(' '));
+  if(mf.sistema)base=base.filter(l=>(l.sistema||'')===mf.sistema);
+  if(mf.piso)base=base.filter(l=>(pisoEfetivo(l)||l.piso||'')===mf.piso);
+  if(mf.painel)base=base.filter(l=>l.painelId===mf.painel);
+  if(mf.laco)base=base.filter(l=>l.lacoId===mf.laco);
+  if(mf.flm)base=base.filter(l=>l.flmId===mf.flm);
+  if(mf.porta)base=base.filter(l=>l.portaId===mf.porta);
+  if(mf.status)base=base.filter(l=>plantaStatusFiltroLocal(l)===mf.status);
+  base=base.slice().sort((a,b)=>{
+    const key=x=>[pisoEfetivo(x)||x.piso||'',x.nomeOficial||x.nome||'',x.sistema||'',paiName(x.painelId),lacName(x.lacoId),flmById(x.flmId)?.endereco||'',(db.portas||[]).find(p=>p.id===x.portaId)?.numero||''].join('|');
+    return key(a).localeCompare(key(b),'pt-BR');
+  });
+  return base;
+}
+// Modal de seleção (item 2-5 do pedido). Refeito a cada mudança de filtro/inserção — sem cache — para
+// que contadores e lista fiquem sempre coerentes com o estado atual de db.locais (item 5/8).
+function plantaAbrirModalInsercao(plantaId){
+  const pl=(db.plantas||[]).find(p=>p.id===plantaId); if(!pl)return;
+  const mf=plantasUI.modalInsercao;
+  const pisoPlanta=up(pl.piso||'');
+  const disponiveisScope=(db.locais||[]).filter(l=>l.plantaId!==plantaId&&(mf.outrosPisos||up(pisoEfetivo(l)||l.piso||'')===pisoPlanta));
+  const jaInseridos=(db.locais||[]).filter(l=>l.plantaId===plantaId).length;
+  const totalPiso=(db.locais||[]).filter(l=>up(pisoEfetivo(l)||l.piso||'')===pisoPlanta).length;
+  const lista=plantaFiltrarPontosInsercao(plantaId);
+  const sistemas=unique((db.locais||[]).map(l=>l.sistema).filter(Boolean));
+  const pisos=unique((db.locais||[]).map(l=>pisoEfetivo(l)||l.piso).filter(Boolean));
+  const paineisOpts=(db.paineis||[]).map(p=>`<option value="${esc(p.id)}" ${mf.painel===p.id?'selected':''}>${esc(p.nome)}</option>`).join('');
+  const lacosOpts=(db.lacos||[]).filter(l=>!mf.painel||l.painelId===mf.painel).map(l=>`<option value="${esc(l.id)}" ${mf.laco===l.id?'selected':''}>${esc(l.nome)}</option>`).join('');
+  const flmsOpts=(db.flms||[]).filter(f=>!mf.laco||f.lacoId===mf.laco).map(f=>`<option value="${esc(f.id)}" ${mf.flm===f.id?'selected':''}>${esc(f.endereco||f.modelo||f.id)}</option>`).join('');
+  const portasOpts=(db.portas||[]).filter(p=>!mf.flm||p.flmId===mf.flm).map(p=>`<option value="${esc(p.id)}" ${mf.porta===p.id?'selected':''}>${esc(p.numero||p.id)}</option>`).join('');
+  const rows=lista.map(loc=>{
+    const partes=[loc.sistema,'Piso '+(pisoEfetivo(loc)||loc.piso||'—'),loc.painelId?('Painel '+paiName(loc.painelId)):'',loc.lacoId?('Laço '+lacName(loc.lacoId)):'',loc.flmId?('Módulo '+(flmById(loc.flmId)?.endereco||'')):'',loc.portaId?('Porta '+((db.portas||[]).find(p=>p.id===loc.portaId)?.numero||'')):''].filter(Boolean);
+    return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12.5px;padding:6px 0;border-bottom:1px dashed var(--l3a-border)">
+      <span><b>${esc(loc.nomeOficial||loc.nome)}</b>${loc.luc?' — LUC '+esc(loc.luc):''}<br><span class="mutedLine" style="font-size:11px">${esc(partes.join(' | '))}</span></span>
+      <button class="btn small" onclick="plantaSelecionarPontoInsercao('${esc(loc.id)}','${esc(plantaId)}')">Inserir aqui</button>
+    </div>`;
+  }).join('')||'<p class="mutedLine" style="font-size:12px">Nenhum ponto técnico disponível com esses filtros.</p>';
+  const focarBusca=plantasUI._focarBuscaInsercao; plantasUI._focarBuscaInsercao=false;
+  openModal(`<h2>Adicionar marcador — ${esc(pl.piso)}</h2>
+    <p class="mutedLine" style="font-size:12px">Posição do clique: ${plantasUI.pendenteX==null?'—':plantasUI.pendenteX+'%, '+plantasUI.pendenteY+'%'}</p>
+    <p style="font-size:12.5px"><b>Pontos disponíveis para inserir:</b> ${disponiveisScope.length} &nbsp; <b>Já inseridos nesta planta:</b> ${jaInseridos} &nbsp; <b>Total vinculado ao piso:</b> ${totalPiso}</p>
+    <div class="dsFilters" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">
+      <input id="mInsBusca" placeholder="Buscar nome/LUC..." value="${esc(mf.q)}" oninput="plantasUI.modalInsercao.q=this.value;plantasUI._focarBuscaInsercao=true;plantaAbrirModalInsercao('${esc(plantaId)}')" style="font-size:12px;flex:1;min-width:160px">
+      <select onchange="plantasUI.modalInsercao.sistema=this.value;plantaAbrirModalInsercao('${esc(plantaId)}')" style="font-size:12px">${selectOpts(sistemas,mf.sistema,'Todos os sistemas')}</select>
+      <select onchange="plantasUI.modalInsercao.piso=this.value;plantaAbrirModalInsercao('${esc(plantaId)}')" style="font-size:12px">${selectOpts(pisos,mf.piso,'Todos os pisos')}</select>
+      <select onchange="plantasUI.modalInsercao.painel=this.value;plantasUI.modalInsercao.laco='';plantasUI.modalInsercao.flm='';plantasUI.modalInsercao.porta='';plantaAbrirModalInsercao('${esc(plantaId)}')" style="font-size:12px"><option value="">Todos os painéis</option>${paineisOpts}</select>
+      <select onchange="plantasUI.modalInsercao.laco=this.value;plantasUI.modalInsercao.flm='';plantasUI.modalInsercao.porta='';plantaAbrirModalInsercao('${esc(plantaId)}')" style="font-size:12px"><option value="">Todos os laços</option>${lacosOpts}</select>
+      <select onchange="plantasUI.modalInsercao.flm=this.value;plantasUI.modalInsercao.porta='';plantaAbrirModalInsercao('${esc(plantaId)}')" style="font-size:12px"><option value="">Todos os módulos</option>${flmsOpts}</select>
+      <select onchange="plantasUI.modalInsercao.porta=this.value;plantaAbrirModalInsercao('${esc(plantaId)}')" style="font-size:12px"><option value="">Todas as portas</option>${portasOpts}</select>
+      <select onchange="plantasUI.modalInsercao.status=this.value;plantaAbrirModalInsercao('${esc(plantaId)}')" style="font-size:12px">${selectOpts(['Com falha','Em operação','Nunca testado'],mf.status,'Todos os status')}</select>
+    </div>
+    ${isMaster(currentUserSafe())?`<label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:8px"><input type="checkbox" ${mf.outrosPisos?'checked':''} onchange="plantasUI.modalInsercao.outrosPisos=this.checked;plantaAbrirModalInsercao('${esc(plantaId)}')"> Mostrar pontos de outros pisos</label>`:''}
+    <div style="max-height:340px;overflow:auto">${rows}</div>
+    <br><button class="btn secondary" onclick="closeModal()">Fechar (continuar inserindo)</button>
+    <button class="btn danger" onclick="plantaSairModoInserir()">Cancelar inserção</button>`);
+  if(focarBusca)setTimeout(()=>{const el=document.getElementById('mInsBusca'); if(el){el.focus();const v=el.value;el.value='';el.value=v;}},0);
+}
+function plantaSelecionarPontoInsercao(localId,plantaId){
+  if(plantasUI.pendenteX==null||plantasUI.pendenteY==null){alert('Clique num ponto da planta antes de selecionar o item.');return}
+  plantaConfirmarInsercao(localId,plantaId);
+}
+// Confirmação/gravação (item 7/10). Revalida duplicidade e piso antes de escrever — nunca confia
+// cegamente no filtro do modal (proteção contra sync concorrente, spec item 10).
+function plantaConfirmarInsercao(localId,plantaId){
+  const loc=localById(localId); const pl=(db.plantas||[]).find(p=>p.id===plantaId);
+  if(!loc||!pl){alert('Ponto técnico ou planta não encontrados.'); return}
+  if(loc.plantaId===plantaId){
+    alert('Este ponto técnico já possui marcador nesta planta.');
+    plantasUI._confirmadoOutroPiso=false;
+    plantaAbrirModalInsercao(plantaId);
+    return;
+  }
+  const pisoLoc=pisoEfetivo(loc)||n(loc.piso);
+  if(pisoLoc&&up(pl.piso||'')!==up(pisoLoc)&&!plantasUI._confirmadoOutroPiso){
+    plantaConfirmarOutroPiso(localId,plantaId);
+    return;
+  }
+  plantasUI._confirmadoOutroPiso=false;
+  loc.plantaId=plantaId;
+  loc.plantaX=plantasUI.pendenteX; loc.plantaY=plantasUI.pendenteY;
+  if(loc.escalaMarcador==null)loc.escalaMarcador=pl.escalaPadraoMarcador??1;
+  if(loc.escalaTexto==null)loc.escalaTexto=pl.escalaPadraoTexto??1;
+  loc.marcadorCriadoPor=(currentUser().nome||currentUser().email||'usuário');
+  loc.marcadorCriadoEm=isoNow();
+  try{logLocal('Plantas',loc.id,'inserir_marcador',`Ponto técnico "${loc.nomeOficial||loc.nome}" inserido na planta ${pl.piso} via "Adicionar marcador" (${loc.plantaX}%, ${loc.plantaY}%).`)}catch(e){}
+  plantasUI.pendenteX=null; plantasUI.pendenteY=null;
+  save(); // markDirty+persist+render (renderPlantas roda de novo, mas o #modal não é tocado por render())
+  plantaAbrirModalInsercao(plantaId); // item 8: lista/contadores atualizam SEM fechar o modal
+}
+// Confirmação de exceção de piso (item 6) — modal PRÓPRIO, nunca confirm() nativo. Só alcançável quando
+// "mostrar pontos de outros pisos" está marcado (só visível para Master/admin de plantas).
+function plantaConfirmarOutroPiso(localId,plantaId){
+  const loc=localById(localId); const pl=(db.plantas||[]).find(p=>p.id===plantaId); if(!loc||!pl)return;
+  openModal(`<h2>Confirmar</h2><p>O ponto selecionado pertence a outro piso. Deseja continuar?</p>
+    <p class="mutedLine" style="font-size:12px">Ponto: <b>${esc(loc.nomeOficial||loc.nome)}</b> — piso do ponto: ${esc(pisoEfetivo(loc)||loc.piso||'—')} — piso da planta: ${esc(pl.piso)}</p>
+    <button class="btn" onclick="plantaConfirmarOutroPisoOk('${esc(localId)}','${esc(plantaId)}')">Continuar mesmo assim</button>
+    <button class="btn secondary" onclick="plantaAbrirModalInsercao('${esc(plantaId)}')">Cancelar</button>`);
+}
+function plantaConfirmarOutroPisoOk(localId,plantaId){
+  const loc=localById(localId); const pl=(db.plantas||[]).find(p=>p.id===plantaId);
+  plantasUI._confirmadoOutroPiso=true;
+  try{logLocal('Plantas',localId,'excecao_piso',`Exceção de piso: ponto técnico "${loc?.nomeOficial||loc?.nome||localId}" (piso "${pisoEfetivo(loc)||loc?.piso||'—'}") inserido na planta do piso "${pl?.piso||'—'}" mediante confirmação explícita do usuário.`)}catch(e){}
+  plantaConfirmarInsercao(localId,plantaId);
+}
+
 // ---- v6.60 Feature Set A: painel "Escala da Planta" (Gerenciar Plantas) ----
 function plantaEscalaPainelHtml(pl){
   const em=Math.round((pl.escalaPadraoMarcador??1)*100), et=Math.round((pl.escalaPadraoTexto??1)*100);
@@ -7915,11 +8314,12 @@ function plantaSetEscalaPadrao(plantaId,campo,val){
 // Reaplica escalas nos pinos já no DOM (evita re-render completo a cada tick do slider).
 function plantaAtualizarEscalasNaTela(pl){
   const itens=plantaItens();
+  const zf=plantaZoomAutoFactor(plantasUI.zoom[pl.id]||1); // v6.61: multiplicador automático por zoom
   document.querySelectorAll(`.plantaBloco[data-planta-bloco="${CSS.escape(pl.id)}"] .plantaPin`).forEach(pinEl=>{
     const kind=pinEl.dataset.kind,id_=pinEl.dataset.id;
     const it=itens.find(x=>x.kind===kind&&x.id===id_); if(!it)return;
-    const dot=pinEl.querySelector('.pinDot'); if(dot)dot.style.transform=`scale(${plantaEscalaMarcador(it.ref,pl)})`;
-    const bd=pinEl.querySelector('.pinBadge'); if(bd)bd.style.transform=`scale(${plantaEscalaTexto(it.ref,pl)})`;
+    const dot=pinEl.querySelector('.pinDot'); if(dot)dot.style.transform=`scale(${plantaEscalaMarcador(it.ref,pl)*zf})`;
+    const bd=pinEl.querySelector('.pinBadge'); if(bd)bd.style.transform=`scale(${plantaEscalaTexto(it.ref,pl)*zf})`;
   });
 }
 function plantaRestaurarEscalaPlanta(plantaId){
@@ -7975,7 +8375,7 @@ function plantaMenuContexto(kind,id_){
   openModal(`<h2>Marcador</h2><div class="maisOpcoesLista">
     <button class="btn secondary" onclick="closeModal();plantaEditarMarcador('${kind}','${esc(id_)}')">Editar</button>
     <button class="btn secondary" onclick="closeModal();plantaDuplicarMarcador('${kind}','${esc(id_)}')">Duplicar</button>
-    <button class="btn danger" onclick="closeModal();plantaLimparPosicao('${kind}','${esc(id_)}')">Excluir (remover da planta)</button>
+    <button class="btn danger" onclick="closeModal();if(confirm('Remover este marcador da planta? O ponto técnico/cadastro continua existindo e pode ser inserido novamente depois (via Adicionar marcador, se for um ponto técnico).'))plantaLimparPosicao('${kind}','${esc(id_)}')">Excluir (remover da planta)</button>
     <button class="btn secondary" onclick="plantaCamada('${kind}','${esc(id_)}',1);closeModal()">Trazer para frente</button>
     <button class="btn secondary" onclick="plantaCamada('${kind}','${esc(id_)}',-1);closeModal()">Enviar para trás</button>
     <button class="btn secondary" onclick="plantaRestaurarEscalaMarcador('${kind}','${esc(id_)}');closeModal()">Restaurar escala (100%/100%)</button>
