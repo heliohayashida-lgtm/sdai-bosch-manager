@@ -832,8 +832,8 @@ tbody tr:last-child td{border-bottom:0}
 const KEY='sdai_bosch_manager_v4_flm_portas';
 const API_URL='https://script.google.com/macros/s/AKfycby45dTdw4g-pkcvY9sys3_gmvVcmnSyf6PZzJbRsbSFjhtuWbV1D5XSBEc-J1UtOBYftA/exec';
 const SYNC_KEY=KEY+':syncConfig';
-const emptyDB=()=>({empreendimento:{nome:'Empreendimento',cliente:'Cliente'},config:{appName:'Contratos L3A',subtitle:'Gestão operacional • SDAI • Contratos',logoData:''},usuarios:[{id:'admin-default',nome:'Administrador',email:'admin@local',perfil:'Administrador',senha:'1234',ativo:'Sim',criadoEm:''}],paineis:[],lacos:[],flms:[],portas:[],locais:[],equipamentos:[],falhas:[],planos:[],inconsistencias:[],imports:[]});
-let db=load(); let currentView='dashboard'; let filters={}; let _locaisMaisFiltrosOpen=false; let _localModalState={id:'',tab:'dados'};
+const emptyDB=()=>({empreendimento:{nome:'Empreendimento',cliente:'Cliente'},config:{appName:'Contratos L3A',subtitle:'Gestão operacional • SDAI • Contratos',logoData:''},usuarios:[{id:'admin-default',nome:'Administrador',email:'admin@local',perfil:'Administrador',senha:'1234',ativo:'Sim',criadoEm:''}],paineis:[],lacos:[],flms:[],portas:[],locais:[],equipamentos:[],falhas:[],planos:[],inconsistencias:[],imports:[],eventosOperacionais:[],logsAuditoria:[]});
+let db=load(); let currentView='dashboard'; let filters={}; let _locaisMaisFiltrosOpen=false; let _localModalState={id:'',tab:'dados'}; let _localHistoricoPeriodo=null;
 let searchRenderTimer=null;
 let lastSearchFocus=null;
 function onSearchInput(el){
@@ -1436,6 +1436,78 @@ function ultimaInspecaoLoja(l){
   if(!insp.length)return null;
   return insp.slice().sort((a,b)=>String(b.data||'').localeCompare(String(a.data||'')))[0];
 }
+// ---- Parte A: filtro de período por loja/área (2026-07) ----
+// dataEventoPorTipo(): função central que decide qual campo de data real usar para cada tipo de
+// evento, com fallback de prioridade para registros antigos. NUNCA usa a data atual como
+// substituto de data ausente — só os campos abaixo, na ordem de prioridade indicada.
+function dataEventoPorTipo(tipoEvento,obj){
+  if(!obj)return '';
+  switch(tipoEvento){
+    case 'teste': return obj.dataHora||obj.data||obj.criadoEm||obj.executadoEm||'';
+    case 'falhaAbertura': return obj.data||obj.criadoEm||obj.abertaEm||'';
+    case 'falhaResolucao': return obj.resolvidaEm||'';
+    case 'planoAbertura': return obj.criadoEm||obj.iniciadoEm||'';
+    case 'planoConclusao': return obj.concluidoEm||obj.atualizadoEm||obj.criadoEm||'';
+    default: return obj.data||obj.criadoEm||'';
+  }
+}
+// obterHistoricoLojaNoPeriodo(): junta, para UMA loja/área, todos os eventos reais (testes,
+// falhas abertas/resolvidas, planos abertos/concluídos) cuja data real caia dentro do intervalo
+// [dataInicial,dataFinal] (qualquer um dos dois pode ser vazio = sem limite naquele lado).
+// Nunca duplica o mesmo evento vindo de fontes diferentes: cada evento é gerado uma única vez a
+// partir da sua fonte de origem (inspeção, falha ou plano).
+function obterHistoricoLojaNoPeriodo(localId,dataInicial,dataFinal){
+  const l=db.locais.find(x=>x.id===localId);
+  const de=(dataInicial||'').slice(0,10), ate=(dataFinal||'').slice(0,10);
+  function inRange(dataStr){
+    if(!dataStr)return false;
+    const d=String(dataStr).slice(0,10);
+    if(de&&d<de)return false;
+    if(ate&&d>ate)return false;
+    return true;
+  }
+  const eventos=[];
+  ((l&&l.inspecoes)||[]).forEach(insp=>{
+    const d=dataEventoPorTipo('teste',insp);
+    if(inRange(d)){
+      eventos.push({id:'teste:'+insp.id,data:d,tipoEvento:'Teste',titulo:`Teste — ${insp.resultado||''}`,descricao:insp.observacoes||'',status:insp.resultado||'',responsavel:insp.responsavel||'',fotos:(insp.fotos||[]).length,origem:'Inspeção',origemId:insp.id});
+    }
+  });
+  const falhasLoja=(db.falhas||[]).filter(f=>f.localId===localId);
+  falhasLoja.forEach(f=>{
+    const dAb=dataEventoPorTipo('falhaAbertura',f);
+    if(inRange(dAb)){
+      eventos.push({id:'falhaAb:'+f.id,data:dAb,tipoEvento:'Falha aberta',titulo:`Falha — ${f.status||''}`,descricao:f.motivo||f.obs||'',status:f.status||'',responsavel:f.responsavel||'',fotos:0,origem:f.origem||'Falha',origemId:f.id});
+    }
+    const dRes=dataEventoPorTipo('falhaResolucao',f);
+    if(dRes&&inRange(dRes)){
+      eventos.push({id:'falhaRes:'+f.id,data:dRes,tipoEvento:'Falha resolvida',titulo:'Falha resolvida',descricao:f.motivo||f.obs||'',status:'Resolvida',responsavel:f.responsavel||'',fotos:0,origem:f.origem||'Falha',origemId:f.id});
+    }
+  });
+  const planosLoja=(db.planos||[]).filter(p=>falhasLoja.some(f=>f.id===p.falhaId));
+  planosLoja.forEach(p=>{
+    const dAb=dataEventoPorTipo('planoAbertura',p);
+    if(inRange(dAb)){
+      eventos.push({id:'planoAb:'+p.id,data:dAb,tipoEvento:'Plano aberto',titulo:`Plano de Ação — ${p.categoria||''}`,descricao:p.justificativa||'',status:p.situacao||'',responsavel:p.responsavel||'',fotos:0,origem:'Plano de Ação',origemId:p.id});
+    }
+    if(p.situacao==='Concluído'){
+      const dCo=dataEventoPorTipo('planoConclusao',p);
+      if(dCo&&inRange(dCo)){
+        eventos.push({id:'planoCo:'+p.id,data:dCo,tipoEvento:'Plano concluído',titulo:'Plano de Ação concluído',descricao:p.providencia||'',status:'Concluído',responsavel:p.responsavel||'',fotos:0,origem:'Plano de Ação',origemId:p.id});
+      }
+    }
+  });
+  eventos.sort((a,b)=>String(a.data||'').localeCompare(String(b.data||'')));
+  const totais={
+    testes:eventos.filter(e=>e.tipoEvento==='Teste').length,
+    falhasAbertas:eventos.filter(e=>e.tipoEvento==='Falha aberta').length,
+    falhasResolvidas:eventos.filter(e=>e.tipoEvento==='Falha resolvida').length,
+    planosAbertos:eventos.filter(e=>e.tipoEvento==='Plano aberto').length,
+    planosConcluidos:eventos.filter(e=>e.tipoEvento==='Plano concluído').length,
+    evidencias:eventos.reduce((s,e)=>s+(e.fotos||0),0)
+  };
+  return {localId,eventos,totais};
+}
 function localPossuiFalhaAberta(l){
   if(isFalhaStatus(l.status))return true;
   return (db.falhas||[]).some(f=>f.localId===l.id&&isFalhaStatus(f.status)&&!f.resolvidaEm);
@@ -1445,122 +1517,6 @@ function locaisResponsaveisDisponiveis(){
   const s2=(db.usuarios||[]).map(u=>u.nome).filter(Boolean);
   return unique(s1.concat(s2));
 }
-// ===================== HISTÓRICO OPERACIONAL POR PERÍODO (Lojas/Áreas) =====================
-// Função central de data por tipo de evento (item 3 da especificação): cada tipo de evento tem
-// sua prioridade própria de campos de data. Nunca usa a data atual como substituição — se nenhum
-// campo de data existir, o evento fica sem data e é automaticamente descartado de qualquer filtro
-// por período (mas não é apagado do sistema).
-function dataEventoPorTipo(tipoEvento,obj){
-  if(!obj)return '';
-  switch(tipoEvento){
-    case 'Teste': return obj.data||obj.criadoEm||obj.executadoEm||'';
-    case 'Falha aberta': return obj.data||obj.criadoEm||obj.abertaEm||'';
-    case 'Falha fechada': return obj.resolvidaEm||obj.data||obj.criadoEm||'';
-    case 'Plano aberto': return obj.criadoEm||obj.iniciadoEm||obj.atualizadoEm||obj.concluidoEm||'';
-    case 'Plano em andamento': return obj.atualizadoEm||obj.criadoEm||'';
-    case 'Plano concluído': return obj.concluidoEm||obj.atualizadoEm||obj.criadoEm||'';
-    default: return obj.data||obj.criadoEm||obj.atualizadoEm||obj.concluidoEm||'';
-  }
-}
-// listarEventosLojaCompleto(l): monta a lista COMPLETA (sem filtro de período) de eventos de
-// histórico operacional de uma loja/área, a partir das fontes reais já existentes no sistema:
-// l.inspecoes (Testes), db.falhas (Falha aberta/fechada) e db.planos (Plano aberto/em
-// andamento/concluído). É a ÚNICA função que sabe montar esse histórico consolidado — tanto
-// obterHistoricoLojaNoPeriodo() quanto o modal de Histórico da ficha da loja reaproveitam esta
-// mesma fonte, evitando lógica duplicada e listas divergentes.
-// Cuidado com duplicação: quando um Plano de Ação é concluído, o sistema também registra um NOVO
-// lançamento em db.falhas com status "Em operação" só para reabrir o item para operação (ver
-// concluirPlano()) — esse lançamento NÃO é uma "Falha aberta" (isFalhaStatus()==false) e por isso
-// não entra como evento aqui; a conclusão real já é representada pelo evento "Falha fechada" via
-// resolvidaEm do lançamento original da falha.
-function listarEventosLojaCompleto(l){
-  if(!l)return [];
-  const eventos=[];
-  (l.inspecoes||[]).forEach(insp=>{
-    eventos.push({
-      id:'teste:'+insp.id,data:dataEventoPorTipo('Teste',insp),tipoEvento:'Teste',
-      titulo:`Teste — ${insp.resultado||'—'}`,descricao:insp.observacoes||'',
-      status:insp.resultado||'',responsavel:insp.responsavel||'',
-      fotos:(insp.fotos||[]).concat(insp.videos||[],insp.documentos||[]),
-      origem:'Inspeção',origemId:insp.id
-    });
-  });
-  (db.falhas||[]).filter(f=>f.localId===l.id).forEach(f=>{
-    if(isFalhaStatus(f.status)){
-      eventos.push({
-        id:'falha-aberta:'+f.id,data:dataEventoPorTipo('Falha aberta',f),tipoEvento:'Falha aberta',
-        titulo:`Falha aberta — ${f.status}`,descricao:f.motivo||f.obs||'',
-        status:f.status,responsavel:f.responsavel||'',fotos:[],
-        origem:f.origem||'Falha',origemId:f.id
-      });
-      if(f.resolvidaEm){
-        eventos.push({
-          id:'falha-fechada:'+f.id,data:dataEventoPorTipo('Falha fechada',f),tipoEvento:'Falha fechada',
-          titulo:'Falha fechada',descricao:f.obs||'',
-          status:'Em operação',responsavel:f.responsavel||'',fotos:[],
-          origem:f.origem||'Falha',origemId:f.id
-        });
-      }
-    }
-  });
-  (db.planos||[]).filter(p=>{const fl=(db.falhas||[]).find(x=>x.id===p.falhaId); return (fl&&fl.localId===l.id)||p.local===l.nome;}).forEach(p=>{
-    if(p.criadoEm){
-      eventos.push({
-        id:'plano-aberto:'+p.id,data:dataEventoPorTipo('Plano aberto',p),tipoEvento:'Plano aberto',
-        titulo:'Plano de Ação aberto',descricao:p.categoria||'',
-        status:p.situacao||'',responsavel:p.responsavel||'',fotos:[],
-        origem:'Plano de Ação',origemId:p.id
-      });
-    }
-    if(p.situacao==='Em andamento'&&p.atualizadoEm){
-      eventos.push({
-        id:'plano-andamento:'+p.id,data:dataEventoPorTipo('Plano em andamento',p),tipoEvento:'Plano em andamento',
-        titulo:'Plano de Ação em andamento',descricao:p.providencia||'',
-        status:p.situacao||'',responsavel:p.responsavel||'',fotos:[],
-        origem:'Plano de Ação',origemId:p.id
-      });
-    }
-    if(p.situacao==='Concluído'&&p.concluidoEm){
-      eventos.push({
-        id:'plano-concluido:'+p.id,data:dataEventoPorTipo('Plano concluído',p),tipoEvento:'Plano concluído',
-        titulo:'Plano de Ação concluído',descricao:p.providencia||'',
-        status:p.situacao||'',responsavel:p.responsavel||'',fotos:[],
-        origem:'Plano de Ação',origemId:p.id
-      });
-    }
-  });
-  return eventos.filter(e=>!!e.data);
-}
-// obterHistoricoLojaNoPeriodo(localId,dataInicial,dataFinal): função central pedida na
-// especificação — devolve todos os eventos da loja dentro do intervalo [dataInicial,dataFinal]
-// (strings 'YYYY-MM-DD', qualquer um dos dois pode vir vazio/ausente), ordenados
-// cronologicamente, junto com os totais agregados usados nos KPIs e na tabela da aba Lojas/Áreas.
-// Datas inválidas/ausentes nunca são inventadas: eventos sem data (dataEventoPorTipo retornou '')
-// já são descartados em listarEventosLojaCompleto() e portanto nunca entram em nenhum período.
-function obterHistoricoLojaNoPeriodo(localId,dataInicial,dataFinal){
-  const totaisVazios={testes:0,falhasAbertas:0,falhasResolvidas:0,planosAbertos:0,planosConcluidos:0,evidencias:0};
-  const l=db.locais.find(x=>x.id===localId);
-  if(!l)return {localId,eventos:[],totais:totaisVazios};
-  const ini=dataInicial?String(dataInicial).slice(0,10):'';
-  const fim=dataFinal?String(dataFinal).slice(0,10):'';
-  const eventos=listarEventosLojaCompleto(l).filter(e=>{
-    const d=String(e.data||'').slice(0,10);
-    if(!d)return false;
-    if(ini&&d<ini)return false;
-    if(fim&&d>fim)return false;
-    return true;
-  }).sort((a,b)=>String(a.data).localeCompare(String(b.data)));
-  const totais={testes:0,falhasAbertas:0,falhasResolvidas:0,planosAbertos:0,planosConcluidos:0,evidencias:0};
-  eventos.forEach(e=>{
-    if(e.tipoEvento==='Teste'){totais.testes++;totais.evidencias+=(e.fotos||[]).length}
-    else if(e.tipoEvento==='Falha aberta')totais.falhasAbertas++;
-    else if(e.tipoEvento==='Falha fechada')totais.falhasResolvidas++;
-    else if(e.tipoEvento==='Plano aberto')totais.planosAbertos++;
-    else if(e.tipoEvento==='Plano concluído')totais.planosConcluidos++;
-  });
-  return {localId,eventos,totais};
-}
-
 // CORREÇÃO (busca de Lojas/Áreas travando/perdendo foco): renderLocais() foi dividida em duas
 // funções. renderLocais() monta a ESTRUTURA (KPIs, filtros, cabeçalho da tabela e o próprio
 // <input> de busca) uma única vez — ao entrar na aba, ou quando um filtro dropdown muda (o que já
@@ -1572,9 +1528,7 @@ function obterHistoricoLojaNoPeriodo(localId,dataInicial,dataFinal){
 function locaisRowsFiltradas(){
   let q=filters.locaisQ||'';
   let f=filters.locaisF||{};
-  const periodoIni=f.periodoIni||'';
-  const periodoFim=f.periodoFim||'';
-  const periodoAtivo=!!(periodoIni||periodoFim);
+  const periodoAtivo=!!(f.periodoDe||f.periodoAte);
   let rows0=db.locais.map(l=>({
     ...l,
     painel:paiName(l.painelId),laco:lacName(l.lacoId),
@@ -1583,10 +1537,7 @@ function locaisRowsFiltradas(){
     qtd:db.equipamentos.filter(e=>e.localId===l.id).length,
     _ultimaInspecao:ultimaInspecaoLoja(l),
     _possuiFalha:localPossuiFalhaAberta(l),
-    // Item 8 da especificação: o histórico do período NUNCA depende do status atual da loja —
-    // obterHistoricoLojaNoPeriodo() é calculado sobre os eventos reais (testes/falhas/planos),
-    // não sobre l.status.
-    _historicoPeriodo:periodoAtivo?obterHistoricoLojaNoPeriodo(l.id,periodoIni,periodoFim):null
+    _periodo:periodoAtivo?obterHistoricoLojaNoPeriodo(l.id,f.periodoDe,f.periodoAte):null
   }));
   const termo=normalizarBusca(q);
   let rows=rows0.filter(r=>{
@@ -1607,9 +1558,10 @@ function locaisRowsFiltradas(){
     if(f.falha==='nao'&&r._possuiFalha)return false;
     if(f.dataDe&&(!r._ultimaInspecao||String(r._ultimaInspecao.data||'').slice(0,10)<f.dataDe))return false;
     if(f.dataAte&&(!r._ultimaInspecao||String(r._ultimaInspecao.data||'').slice(0,10)>f.dataAte))return false;
-    // Filtro de período (histórico operacional completo): com período ativo, só entram lojas com
-    // pelo menos 1 evento no intervalo — combinado em AND com todos os filtros acima (item 9).
-    if(periodoAtivo&&(!r._historicoPeriodo||!r._historicoPeriodo.eventos.length))return false;
+    // Filtro de período (Parte A): a loja só aparece se tiver PELO MENOS UM evento real (teste,
+    // falha aberta/resolvida, plano aberto/concluído) dentro do intervalo — nunca filtra pelo
+    // status atual da loja. Combina em AND com todos os demais filtros acima.
+    if(periodoAtivo&&(!r._periodo||!r._periodo.eventos.length))return false;
     return true;
   });
   return rows;
@@ -1617,90 +1569,58 @@ function locaisRowsFiltradas(){
 function renderLocaisResultado(){
   const kpiEl=document.getElementById('locaisKpis');
   const tbodyEl=document.getElementById('locaisTbody');
-  const theadEl=document.getElementById('locaisThead');
   if(!kpiEl||!tbodyEl)return; // estrutura ainda não montada (aba não está ativa) - renderLocais() cuida disso
   const f=filters.locaisF||{};
-  const periodoAtivo=!!(f.periodoIni||f.periodoFim);
+  const periodoAtivo=!!(f.periodoDe||f.periodoAte);
   const rows=locaisRowsFiltradas();
   const total=rows.length;
-  const emOp=rows.filter(r=>!isFalhaStatus(r.status)).length;
-  const comFalha=rows.filter(r=>isFalhaStatus(r.status)).length;
   if(periodoAtivo){
-    // KPIs 6: com período selecionado, os KPIs contam SOMENTE eventos com data dentro do
-    // intervalo (nunca o status atual da loja) — ver obterHistoricoLojaNoPeriodo().
-    let testes=0,falhasAbertas=0,falhasResolvidas=0,planosConcluidos=0,totalEventos=0;
-    rows.forEach(r=>{
-      const t=(r._historicoPeriodo&&r._historicoPeriodo.totais)||{};
-      testes+=t.testes||0; falhasAbertas+=t.falhasAbertas||0; falhasResolvidas+=t.falhasResolvidas||0;
-      planosConcluidos+=t.planosConcluidos||0; totalEventos+=(r._historicoPeriodo&&r._historicoPeriodo.eventos.length)||0;
-    });
+    const testes=rows.reduce((s,r)=>s+(r._periodo?.totais.testes||0),0);
+    const falhasAbertas=rows.reduce((s,r)=>s+(r._periodo?.totais.falhasAbertas||0),0);
+    const falhasResolvidas=rows.reduce((s,r)=>s+(r._periodo?.totais.falhasResolvidas||0),0);
+    const planosConcluidos=rows.reduce((s,r)=>s+(r._periodo?.totais.planosConcluidos||0),0);
+    const totalEventos=rows.reduce((s,r)=>s+(r._periodo?.eventos.length||0),0);
     kpiEl.innerHTML=dsKpiStrip([
-      ['Lojas/Áreas encontradas',total,''],
-      ['Testes executados (período)',testes,''],
-      ['Falhas abertas (período)',falhasAbertas,falhasAbertas>0?'bad':'ok'],
-      ['Falhas resolvidas (período)',falhasResolvidas,'ok'],
-      ['Planos concluídos (período)',planosConcluidos,'ok'],
-      ['Total de eventos (período)',totalEventos,'']
-    ]);
-  }else{
-    // Sem período selecionado: KPIs gerais de sempre + 1 KPI extra de testes do mês atual, com
-    // legenda deixando claro que não é um total do período (item 6 da especificação).
-    const hojeStr=isoNow().slice(0,10);
-    const inicioMes=hojeStr.slice(0,7)+'-01';
-    let testesMes=0;
-    db.locais.forEach(l=>(l.inspecoes||[]).forEach(insp=>{
-      const d=String(dataEventoPorTipo('Teste',insp)||'').slice(0,10);
-      if(d&&d>=inicioMes&&d<=hojeStr)testesMes++;
-    }));
+      ['Lojas / Áreas encontradas',total,''],
+      ['Testes executados no período',testes,''],
+      ['Falhas abertas no período',falhasAbertas,falhasAbertas>0?'bad':'ok'],
+      ['Falhas resolvidas no período',falhasResolvidas,'ok'],
+      ['Planos concluídos no período',planosConcluidos,'ok'],
+      ['Total de eventos no período',totalEventos,'']
+    ])+`<p class="mutedLine" style="margin-top:6px">Período aplicado: ${esc(f.periodoDe||'—')} a ${esc(f.periodoAte||'—')}. Uma loja só aparece se tiver pelo menos um evento real (teste, falha ou plano) dentro do intervalo.</p>`;
+  } else {
+    const emOp=rows.filter(r=>!isFalhaStatus(r.status)).length;
+    const comFalha=rows.filter(r=>isFalhaStatus(r.status)).length;
     kpiEl.innerHTML=dsKpiStrip([
       ['Lojas / Áreas',total,''],
       ['Em operação',emOp,'ok'],
-      ['Com falha',comFalha,comFalha>0?'bad':'ok'],
-      ['Testes executados (mês atual)',testesMes,'']
-    ]);
-  }
-  if(theadEl){
-    theadEl.innerHTML=periodoAtivo
-      ? `<tr><th>Loja / Área</th><th>Localização</th><th style="text-align:center">Equipamentos</th><th>Status</th><th style="text-align:center">Eventos</th><th style="text-align:center">Testes</th><th style="text-align:center">Falhas abertas</th><th style="text-align:center">Falhas concluídas</th><th>Último evento</th><th>Ações</th></tr>`
-      : `<tr><th>Loja / Área</th><th>Localização</th><th style="text-align:center">Equipamentos</th><th>Status</th><th>Ações</th></tr>`;
+      ['Com falha',comFalha,comFalha>0?'bad':'ok']
+    ])+`<p class="mutedLine" style="margin-top:6px">Sem período selecionado — exibindo a listagem/contagens atuais (status vigente). Selecione "Período inicial/final" para ver eventos históricos.</p>`;
   }
   const trs=rows.map(r=>{
     const loc=dsLocHtml({painel:r.painel,piso:r.piso,laco:r.laco,tipo:r.flmEndereco?'Módulo '+r.flmEndereco:'',porta:r.portaNum});
-    const colunasPeriodo=periodoAtivo?(()=>{
-      const h=r._historicoPeriodo||{eventos:[],totais:{}};
-      const ultimo=h.eventos.length?h.eventos[h.eventos.length-1]:null;
-      const ultimoTxt=ultimo?(typeof fmtDataHoraTexto==='function'?fmtDataHoraTexto(ultimo.data):ultimo.data):'—';
-      return `<td style="text-align:center">${h.eventos.length}</td>
-      <td style="text-align:center">${h.totais.testes||0}</td>
-      <td style="text-align:center">${h.totais.falhasAbertas||0}</td>
-      <td style="text-align:center">${h.totais.falhasResolvidas||0}</td>
-      <td style="font-size:12px">${esc(ultimoTxt)}</td>`;
-    })():'';
+    const periodoInfo=periodoAtivo?`<div style="font-size:11px;color:var(--l3a-text-muted);margin-top:2px">${r._periodo.eventos.length} evento(s) • ${r._periodo.totais.testes} teste(s) • ${r._periodo.totais.falhasAbertas} falha(s) aberta(s) • ${r._periodo.totais.falhasResolvidas} resolvida(s) • último: ${esc((r._periodo.eventos[r._periodo.eventos.length-1]||{}).data||'—')}</div>`:'';
     return `<tr>
-      <td><div style="font-weight:700;font-size:13.5px">${esc(r.nome)}</div><div style="font-size:11px;color:var(--l3a-text-muted)">${esc(r.tipo||'—')}</div></td>
+      <td><div style="font-weight:700;font-size:13.5px">${esc(r.nome)}</div><div style="font-size:11px;color:var(--l3a-text-muted)">${esc(r.tipo||'—')}</div>${periodoInfo}</td>
       <td>${loc}</td>
       <td style="font-size:12.5px;text-align:center">${r.qtd}</td>
       <td>${dsBadgeHtml(r.status)}</td>
-      ${colunasPeriodo}
       <td><div class="dsIcoGroup">
         <button class="dsIco" onclick="openLocal('${r.id}')" title="Histórico">🕒</button>
-        ${periodoAtivo?`<button class="btn small secondary" onclick="abrirHistoricoPeriodoLocal('${r.id}')" title="Ver histórico do período">Ver histórico do período</button>`:''}
+        ${periodoAtivo?`<button class="btn small secondary" onclick="verHistoricoPeriodo('${r.id}')" title="Ver histórico do período">Ver histórico do período</button>`:''}
         <button class="btn small secondary" onclick="formInspecao('${r.id}')" title="Executar Teste">Executar Teste</button>
         <button class="dsIco" onclick="formLocal('${r.id}')" title="Editar">✏️</button>
         <button class="dsIco del" onclick="del('locais','${r.id}')" title="Excluir">🗑</button>
       </div></td>
     </tr>`;
   }).join('');
-  const colspan=periodoAtivo?10:5;
-  tbodyEl.innerHTML=trs||`<tr><td colspan="${colspan}"><div class="emptyState">${periodoAtivo?'Nenhuma loja/área com eventos no período selecionado.':'Nenhuma loja/área cadastrada.'}</div></td></tr>`;
+  tbodyEl.innerHTML=trs||`<tr><td colspan="5"><div class="emptyState">Nenhuma loja/área ${periodoAtivo?'com evento no período selecionado':'cadastrada'}.</div></td></tr>`;
 }
-// abrirHistoricoPeriodoLocal(): abre o modal/aba de Histórico já existente da ficha da loja
-// (openLocal) restrito ao mesmo período selecionado nos filtros da tabela (reaproveita
-// localModalHistoricoHtml, que já sabe filtrar por _localModalState.periodoIni/periodoFim).
-function abrirHistoricoPeriodoLocal(localId){
+// verHistoricoPeriodo(): abre a ficha da loja já na aba Histórico, com o filtro de período dos
+// filtros da tabela aplicado (aba Histórico já existente é reaproveitada — nenhuma tela nova).
+function verHistoricoPeriodo(localId){
   const f=filters.locaisF||{};
-  _localModalState={id:localId,tab:'historico',periodoIni:f.periodoIni||'',periodoFim:f.periodoFim||''};
-  openLocal(localId);
+  openLocal(localId,{de:f.periodoDe||'',ate:f.periodoAte||''});
 }
 // atualizarBuscaLocais(): chamada pelo listener 'input' do campo de busca de Lojas/Áreas. Só
 // atualiza o estado do filtro e, após um debounce curto (280ms), recalcula e repinta SOMENTE os
@@ -1711,14 +1631,6 @@ function atualizarBuscaLocais(valor){
   filters.locaisQ=valor;
   clearTimeout(searchRenderTimer);
   searchRenderTimer=setTimeout(renderLocaisResultado,280);
-}
-// atualizarPeriodoLocais(): chamada pelo evento 'change' dos inputs de Período inicial/final da
-// aba Lojas/Áreas. Por especificação (item 10 - performance), NUNCA chama render() completo: só
-// atualiza o estado do filtro e repinta KPIs + thead + tbody via renderLocaisResultado(), sem
-// recriar o campo de busca, o painel "Mais filtros" ou qualquer outra parte da tela.
-function atualizarPeriodoLocais(campo,valor){
-  filters.locaisF={...filters.locaisF,[campo]:valor};
-  renderLocaisResultado();
 }
 function renderLocais(){
   let q=filters.locaisQ||'';
@@ -1738,8 +1650,8 @@ function renderLocais(){
       <div class="field"><label>Piso</label><select onchange="filters.locaisF={...filters.locaisF,piso:this.value};render()">${selectOpts(pisosOpts,f.piso)}</select></div>
       <div class="field"><label>Painel</label><select onchange="filters.locaisF={...filters.locaisF,painel:this.value};render()">${selectOpts(paineisOpts,f.painel)}</select></div>
       <div class="field"><label>Laço</label><select onchange="filters.locaisF={...filters.locaisF,laco:this.value};render()">${selectOpts(lacosOpts,f.laco)}</select></div>
-      <div class="field"><label>Período inicial</label><input type="date" value="${esc(f.periodoIni||'')}" onchange="atualizarPeriodoLocais('periodoIni',this.value)"></div>
-      <div class="field"><label>Período final</label><input type="date" value="${esc(f.periodoFim||'')}" onchange="atualizarPeriodoLocais('periodoFim',this.value)"></div>
+      <div class="field"><label>Período inicial</label><input type="date" value="${esc(f.periodoDe||'')}" onchange="filters.locaisF={...filters.locaisF,periodoDe:this.value};renderLocaisResultado()"></div>
+      <div class="field"><label>Período final</label><input type="date" value="${esc(f.periodoAte||'')}" onchange="filters.locaisF={...filters.locaisF,periodoAte:this.value};renderLocaisResultado()"></div>
       <div class="dsFilterActions"><button class="btn small secondary" onclick="formLocal()">+ Nova loja/área</button></div>
     </div>
     <details class="card" style="padding:10px 14px" ${_locaisMaisFiltrosOpen?'open':''} ontoggle="_locaisMaisFiltrosOpen=this.open">
@@ -1755,7 +1667,7 @@ function renderLocais(){
     </details>
     <div class="dsTableWrap">
       <table class="dsTable">
-        <thead id="locaisThead"><tr><th>Loja / Área</th><th>Localização</th><th style="text-align:center">Equipamentos</th><th>Status</th><th>Ações</th></tr></thead>
+        <thead><tr><th>Loja / Área</th><th>Localização</th><th style="text-align:center">Equipamentos</th><th>Status</th><th>Ações</th></tr></thead>
         <tbody id="locaisTbody"></tbody>
       </table>
     </div>`;
@@ -2698,7 +2610,18 @@ function concluirPlano(i){let o=db.planos.find(x=>x.id===i); if(!o)return; o.sit
     // falha original também é marcada como resolvida, então ela some da aba Falhas Ativas assim que
     // o Plano de Ação é concluído, sem precisar recarregar a página (render() já roda via save()).
     f.resolvidaEm=f.resolvidaEm||isoNow();
-    let itemId=f.itemId||'';let isFlm=String(itemId).startsWith('flm:');let item=isFlm?flmById(String(itemId).slice(4)):db.equipamentos.find(e=>e.id===itemId);let loc=localById(f.localId||'');let statusAnterior=(item&&item.status)||f.status||'Falha'; if(item){item.status='Em operação';item.ultimaAlteracao=isoNow()} if(loc){loc.status='Em operação';loc.ultimaAlteracao=isoNow()} if(item||loc){db.falhas.push({id:id(),data:isoNow(),painelId:(item&&item.painelId)||f.painelId,lacoId:(item&&item.lacoId)||f.lacoId,piso:(item&&item.piso)||f.piso,tipo:isFlm?'Módulo':((item&&item.tipo)||f.tipo),itemId:f.itemId,itemNome:f.itemNome,localId:f.localId,status:'Em operação',statusAnterior,responsavel:o.responsavel,origem:'Plano de Ação',motivo:'Plano de ação concluído',obs:o.providencia,resolvidaEm:isoNow()});alert('Plano concluído. Status do equipamento e da loja atualizado para Em operação.')}else{alert('Plano concluído.')}} save()}
+    // CORREÇÃO (Parte B, saneamento de falhas duplicadas, 2026-07): concluirPlano() não cria mais
+    // nenhum registro sintético em db.falhas. Antes um segundo registro com status "Em operação"
+    // era empurrado para db.falhas só para marcar o retorno à operação, duplicando a base (falha
+    // original + falha artificial por conclusão de plano). Agora a falha original é apenas marcada
+    // como resolvida (resolvidaEm acima) e o evento de retorno à operação vai para
+    // db.eventosOperacionais (auditável), sem criar falha nova.
+    let itemId=f.itemId||'';let isFlm=String(itemId).startsWith('flm:');let item=isFlm?flmById(String(itemId).slice(4)):db.equipamentos.find(e=>e.id===itemId);let loc=localById(f.localId||'');let statusAnterior=(item&&item.status)||f.status||'Falha'; if(item){item.status='Em operação';item.ultimaAlteracao=isoNow()} if(loc){loc.status='Em operação';loc.ultimaAlteracao=isoNow()}
+    db.eventosOperacionais=db.eventosOperacionais||[];
+    db.eventosOperacionais.push({id:id(),data:isoNow(),tipoEvento:'Retorno a operação',falhaId:f.id,planoId:o.id,localId:f.localId,itemId:f.itemId,painelId:(item&&item.painelId)||f.painelId,lacoId:(item&&item.lacoId)||f.lacoId,statusAnterior,statusFinal:'Em operação',responsavel:o.responsavel,providencia:o.providencia,observacao:'Plano de ação concluído — falha original marcada como resolvida.'});
+    logLocal('Plano de Ação',o.id,'Conclusão de plano',`Falha ${f.id} marcada como resolvida (retorno a operação). Status anterior: ${statusAnterior} → Em operação.`);
+    alert(item||loc?'Plano concluído. Status do equipamento e da loja atualizado para Em operação.':'Plano concluído.');
+  } save()}
 
 function openEquip(i){let e=db.equipamentos.find(x=>x.id===i);let hist=db.falhas.filter(f=>f.itemId===i||f.localId===e.localId).sort((a,b)=>b.data.localeCompare(a.data));openModal(`<h2>${esc(e.tipo)} ${esc(e.endereco)}</h2><p><b>Loja:</b> ${esc(locName(e.localId))} • <b>Painel:</b> ${esc(paiName(e.painelId))} • <b>Laço:</b> ${esc(lacName(e.lacoId))}</p><h3>Histórico</h3><div class="timeline">${hist.map(h=>`<div class="tl"><b>${esc(h.status)}</b><br><small>${esc(h.data)} • ${esc(h.origem||'')}</small><p>${esc(h.motivo||h.obs||'Sem observação')}</p></div>`).join('')||'<p class="msg warn">Sem histórico.</p>'}</div>`)}
 function openLocal(i){let l=db.locais.find(x=>x.id===i);let hist=db.falhas.filter(f=>f.localId===i||f.itemId===i).sort((a,b)=>b.data.localeCompare(a.data));openModal(`<h2>${esc(l.nome)}</h2><p><b>Tipo:</b> ${esc(l.tipo)} • <b>Painel:</b> ${esc(paiName(l.painelId))} • <b>Laço:</b> ${esc(lacName(l.lacoId))} • <b>Piso:</b> ${esc(l.piso)}</p><h3>Histórico da loja/área</h3><div class="timeline">${hist.map(h=>`<div class="tl"><b>${esc(h.status)}</b><br><small>${esc(h.data)} • ${esc(h.itemNome||'')}</small><p>${esc(h.motivo||h.obs||'Sem observação')}</p></div>`).join('')||'<p class="msg warn">Sem histórico.</p>'}</div>`)}
@@ -2904,6 +2827,105 @@ async function revogarApiToken(){
     renderSistema();
   }catch(e){alert('Falha ao revogar token: '+e.message)}
 }
+// ---- Parte B2: auditoria e saneamento de falhas sintéticas geradas pelo bug de concluirPlano() ----
+// auditarFalhasDuplicadas(): DRY-RUN. Não altera nada em db — só analisa db.falhas e devolve um
+// relatório com 3 grupos: manter (falhas reais), migrarERemover (sintéticos com evidência forte) e
+// revisaoManual (suspeitos sem evidência suficiente, nunca removidos automaticamente).
+function auditarFalhasDuplicadas(){
+  const falhas=(db.falhas||[]).slice().sort((a,b)=>String(a.data||'').localeCompare(String(b.data||'')));
+  const manter=[],migrarERemover=[],revisaoManual=[];
+  falhas.forEach(f=>{
+    let evidencias=0;
+    const motivoNorm=up(n(f.motivo||''));
+    const origemNorm=up(n(f.origem||''));
+    const statusNorm=up(normalizeStatus(f.status||''));
+    if(statusNorm==='EM OPERAÇÃO'||statusNorm==='EM OPERACAO')evidencias++;
+    if(f.resolvidaEm)evidencias++;
+    if(origemNorm.includes('PLANO'))evidencias++;
+    if(motivoNorm.includes('PLANO DE AÇÃO CONCLUÍDO')||motivoNorm.includes('PLANO DE ACAO CONCLUIDO')||motivoNorm.includes('PLANO CONCLU'))evidencias++;
+    // falha anterior vinculada ao mesmo local/item (o "original" que o bug duplicou)
+    const anterior=falhas.find(o=>o.id!==f.id&&o.localId===f.localId&&(o.itemId||'')===(f.itemId||'')&&String(o.data||'')<String(f.data||''));
+    if(anterior)evidencias++;
+    // criado poucos minutos após a conclusão do plano vinculado à falha anterior
+    let proximoDeConclusaoDePlano=false;
+    if(anterior){
+      const planoAnterior=(db.planos||[]).find(p=>p.falhaId===anterior.id&&p.situacao==='Concluído'&&p.concluidoEm);
+      if(planoAnterior){
+        const tPlano=Date.parse(planoAnterior.concluidoEm)||0, tFalha=Date.parse(f.data)||0;
+        if(tPlano&&tFalha&&Math.abs(tFalha-tPlano)<=15*60*1000){evidencias++; proximoDeConclusaoDePlano=true}
+      }
+    }
+    const item={falha:f,evidencias,anteriorId:anterior?anterior.id:'',proximoDeConclusaoDePlano};
+    // Critério: NUNCA remover só por status="Em operação" isolado (evidencias mínimas ==1 vindo só
+    // do status não basta). Exige combinação de pelo menos 3 evidências, incluindo ter uma falha
+    // anterior vinculada ao mesmo local/item (ou seja, o registro é claramente um "extra").
+    if(evidencias>=3&&anterior){migrarERemover.push(item)}
+    else if(evidencias>=2){revisaoManual.push(item)}
+    else{manter.push(item)}
+  });
+  return{
+    executadoEm:isoNow(),
+    totalFalhas:falhas.length,
+    qtdSuspeitos:migrarERemover.length+revisaoManual.length,
+    qtdReaisPreservadas:manter.length,
+    qtdSinteticosRemover:migrarERemover.length,
+    qtdRevisaoManual:revisaoManual.length,
+    manter,migrarERemover,revisaoManual
+  };
+}
+// aplicarSaneamentoFalhas(relatorio): EXECUTA de fato — só deve ser chamada após confirmação
+// explícita do usuário (ver UI em renderSistema/modalAuditoriaFalhas). Faz backup completo do db
+// antes de qualquer alteração, migra cada sintético para db.eventosOperacionais/db.historico e só
+// então remove o registro de db.falhas. Recalcula os totais reaproveitando as funções já
+// existentes (render() atualiza Dashboard/Relatórios/Falhas a partir do db já saneado).
+function aplicarSaneamentoFalhas(relatorio){
+  if(!relatorio||!relatorio.migrarERemover)return;
+  db._backupAntesSaneamento=JSON.parse(JSON.stringify(db));
+  db.historico=db.historico||[]; db.eventosOperacionais=db.eventosOperacionais||[]; db.logsAuditoria=db.logsAuditoria||[];
+  const idsRemover=new Set();
+  relatorio.migrarERemover.forEach(item=>{
+    const f=item.falha;
+    const plano=(db.planos||[]).find(p=>p.falhaId===item.anteriorId&&p.situacao==='Concluído');
+    db.eventosOperacionais.push({
+      id:id(),data:isoNow(),tipoEvento:'Conclusão de plano migrada',falhaId:item.anteriorId||f.id,planoId:plano?plano.id:'',
+      localId:f.localId,itemId:f.itemId,statusAnterior:f.statusAnterior||'',statusFinal:f.status||'',
+      responsavel:f.responsavel||'',providencia:(plano&&plano.providencia)||f.obs||'',
+      observacao:'Registro sintético gerado pelo bug de concluirPlano() — migrado para histórico e removido de db.falhas no saneamento.',
+      evidencias:item.evidencias,origemRemovidaId:f.id,origemRemovidaSnapshot:f
+    });
+    idsRemover.add(f.id);
+  });
+  if(idsRemover.size){db.falhas=(db.falhas||[]).filter(f=>!idsRemover.has(f.id))}
+  db.logsAuditoria.push({
+    timestamp:isoNow(),usuario:(currentUser&&currentUser().email)||(currentUserSafe&&currentUserSafe().email)||'sistema',
+    resumo:`Saneamento de falhas duplicadas: ${idsRemover.size} sintético(s) migrado(s) e removido(s) de db.falhas. ${relatorio.qtdRevisaoManual} em revisão manual (não removidos). ${relatorio.qtdReaisPreservadas} falha(s) real(is) preservada(s).`
+  });
+  logLocal('Sistema','saneamento-falhas','Auditar e corrigir falhas duplicadas',`${idsRemover.size} sintético(s) removido(s) de db.falhas (migrados para db.eventosOperacionais).`);
+  persistLocal(); markDirty('saneamento de falhas duplicadas'); save();
+  alert(`Saneamento concluído: ${idsRemover.size} registro(s) sintético(s) migrado(s) e removido(s). ${relatorio.qtdRevisaoManual} suspeito(s) ficaram em revisão manual (não removidos automaticamente).`);
+}
+// UI: prévia em modal (dry-run) → revisão → confirmação explícita → execução. Nunca exclui em
+// silêncio: aplicarSaneamentoFalhas só roda a partir do botão "Confirmar e aplicar" deste modal.
+function abrirAuditoriaFalhas(){
+  const rel=auditarFalhasDuplicadas();
+  window._relatorioAuditoriaFalhas=rel;
+  const linha=item=>`<tr><td>${esc(item.falha.id)}</td><td>${esc(locName(item.falha.localId))}</td><td>${esc(item.falha.data||'')}</td><td>${esc(item.falha.status||'')}</td><td style="text-align:center">${item.evidencias}</td></tr>`;
+  openModal(`<h2>Auditar e corrigir falhas duplicadas</h2>
+  <p class="msg warn">Prévia (nada foi alterado ainda). Total de falhas: <b>${rel.totalFalhas}</b> • Falhas reais preservadas: <b>${rel.qtdReaisPreservadas}</b> • Sintéticos a remover (migrados p/ histórico): <b>${rel.qtdSinteticosRemover}</b> • Revisão manual: <b>${rel.qtdRevisaoManual}</b></p>
+  <h3>Serão migrados e removidos de db.falhas (${rel.migrarERemover.length})</h3>
+  <div class="dsTableWrap"><table class="dsTable"><thead><tr><th>ID</th><th>Loja/Área</th><th>Data</th><th>Status</th><th>Evidências</th></tr></thead><tbody>${rel.migrarERemover.map(linha).join('')||'<tr><td colspan="5">Nenhum.</td></tr>'}</tbody></table></div>
+  <h3 style="margin-top:14px">Revisão manual — não serão removidos automaticamente (${rel.revisaoManual.length})</h3>
+  <div class="dsTableWrap"><table class="dsTable"><thead><tr><th>ID</th><th>Loja/Área</th><th>Data</th><th>Status</th><th>Evidências</th></tr></thead><tbody>${rel.revisaoManual.map(linha).join('')||'<tr><td colspan="5">Nenhum.</td></tr>'}</tbody></table></div>
+  <br><button class="btn danger" onclick="confirmarSaneamentoFalhas()">Confirmar e aplicar saneamento (${rel.qtdSinteticosRemover})</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`);
+}
+function confirmarSaneamentoFalhas(){
+  const rel=window._relatorioAuditoriaFalhas;
+  if(!rel)return;
+  if(!confirm(`Confirma remover ${rel.qtdSinteticosRemover} registro(s) sintético(s) de db.falhas? Um backup completo (db._backupAntesSaneamento) é criado antes, e cada registro é migrado para db.eventosOperacionais antes de ser removido.`))return;
+  aplicarSaneamentoFalhas(rel);
+  closeModal();
+  render();
+}
 function renderSistema(){
  const el=document.getElementById('sistema'); if(!el)return; const c=syncCfg();
  el.innerHTML=`
@@ -2914,7 +2936,8 @@ function renderSistema(){
  </div>
  <div class="split2"><div class="premiumPanel"><h3>Autosync</h3><p>Define a gravação automática em segundo plano.</p><div class="formGrid" style="margin-top:14px"><div class="field"><label>Status</label><select onchange="setAutoEnabled(this.value==='Sim')"><option ${c.auto?'selected':''}>Sim</option><option ${!c.auto?'selected':''}>Não</option></select></div><div class="field"><label>Intervalo</label><select onchange="setAutoInterval(this.value)">${[15,30,60,120,300].map(s=>`<option value="${s}" ${Number(c.intervalSec||30)===s?'selected':''}>${s<60?s+' segundos':(s/60)+' minuto(s)'}</option>`).join('')}</select></div></div></div><div class="premiumPanel"><h3>Estrutura</h3><p>Banco separado por abas técnicas.</p><div class="compactHelp" style="margin-top:14px">Painéis, Laços, FLMs, Portas, Lojas/Áreas, Equipamentos, Falhas, Plano de Ação, Histórico, Importações e Usuários.</div></div></div>
  ${currentUserSafe().perfil==='Administrador'?`<div class="premiumPanel"><h3>Segurança da API</h3><p>O Apps Script só aceita ler/gravar a base com o token correto — protege contra acesso direto por quem descobrir a URL do backend. ${tokenStatusHtml()}</p><div class="formGrid" style="margin-top:14px"><div class="field" style="grid-column:1/-1"><label>Definir / atualizar token (mín. 8 caracteres, use algo aleatório)</label><input id="mNovoToken" type="password" placeholder="Ex.: um trecho longo e aleatório"></div></div><div class="premiumActions"><button class="btn" onclick="definirApiToken()">Salvar token</button> <button class="btn secondary" onclick="revogarApiToken()">Revogar token atual</button></div><p class="mutedLine" style="margin-top:8px">Se você usa o sistema em mais de um navegador/computador, precisa configurar o MESMO token em cada um deles depois de definido.</p></div>`:''}
- <div class="premiumPanel"><h3>Resumo da base</h3><div class="premiumGrid" style="margin-top:14px">${premiumStat('Painéis',db.paineis.length)}${premiumStat('Laços',db.lacos.length)}${premiumStat('FLMs',db.flms.length)}${premiumStat('Equipamentos',db.equipamentos.length)}${premiumStat('Falhas',db.falhas.length)}${premiumStat('Planos',db.planos.length)}${premiumStat('Usuários',(db.usuarios||[]).length)}${premiumStat('Banco',c.configured?'Google':'Local')}</div></div>`;
+ <div class="premiumPanel"><h3>Resumo da base</h3><div class="premiumGrid" style="margin-top:14px">${premiumStat('Painéis',db.paineis.length)}${premiumStat('Laços',db.lacos.length)}${premiumStat('FLMs',db.flms.length)}${premiumStat('Equipamentos',db.equipamentos.length)}${premiumStat('Falhas',db.falhas.length)}${premiumStat('Planos',db.planos.length)}${premiumStat('Usuários',(db.usuarios||[]).length)}${premiumStat('Banco',c.configured?'Google':'Local')}</div></div>
+ <div class="premiumPanel"><h3>Qualidade da base de falhas</h3><p>Audita db.falhas em busca de registros sintéticos criados pelo bug antigo de conclusão de Plano de Ação (duplicavam a falha original com status "Em operação"). Só remove após revisão e confirmação explícita; nada é excluído silenciosamente.</p><div class="premiumActions" style="margin-top:10px"><button class="btn secondary" onclick="abrirAuditoriaFalhas()">Auditar e corrigir falhas duplicadas</button></div></div>`;
 }
 function renderUsuarios(){
  const el=document.getElementById('usuarios'); if(!el)return;
@@ -4266,43 +4289,41 @@ function verInspecao(localId,i){
   ${insp.falhaGeradaId?`<p class="msg warn" style="margin-top:10px">Esta inspeção gerou a Falha/Plano de Ação vinculado (não conformidade).</p>`:''}
   <br><button class="btn secondary" onclick="_localModalState={id:'${localId}',tab:'historico'};openLocal('${localId}')">Voltar</button>`);
 }
-function localModalSetTab(tab){_localModalState.tab=tab;openLocal(_localModalState.id);}
+function localModalSetTab(tab){_localModalState.tab=tab; if(tab!=='historico')_localHistoricoPeriodo=null; openLocal(_localModalState.id);}
 function localModalDadosHtml(l){
   return `<p><b>LUC:</b> ${lucDisplayLocal(l)} • <b>Chave lógica:</b> ${esc(lucChaveLogicaLocal(l))} • <b>Tipo:</b> ${esc(l.tipo)} • <b>Painel:</b> ${esc(paiName(l.painelId))} • <b>Laço:</b> ${esc(lacName(l.lacoId))} • <b>Piso:</b> ${esc(l.piso)}</p>${l.nomeOriginalCadastro?`<p class="note"><b>Nome antigo:</b> ${esc(l.nomeOriginalCadastro)}</p>`:''}<p><b>Status atual:</b> ${dsBadgeHtml(l.status)}</p><div class="toolbar"><button class="btn small" onclick="formInspecao('${l.id}')">Executar Teste</button><button class="btn small secondary" onclick="formLocal('${l.id}')">Editar cadastro</button></div>`;
 }
 function localModalHistoricoHtml(l){
+  // Quando _localHistoricoPeriodo está definido (ver verHistoricoPeriodo/openLocal), a aba
+  // Histórico reaproveita obterHistoricoLojaNoPeriodo() para mostrar só os eventos do intervalo
+  // escolhido na tabela de Lojas/Áreas; sem período, mantém o comportamento original (tudo).
+  const periodoAtivo=_localHistoricoPeriodo&&(_localHistoricoPeriodo.de||_localHistoricoPeriodo.ate);
+  const filtroHtml=`<div class="dsFilters" style="margin-bottom:10px">
+    <div class="field"><label>De</label><input type="date" value="${esc((_localHistoricoPeriodo&&_localHistoricoPeriodo.de)||'')}" onchange="_localHistoricoPeriodo={de:this.value,ate:(_localHistoricoPeriodo&&_localHistoricoPeriodo.ate)||''};openLocal('${l.id}',_localHistoricoPeriodo)"></div>
+    <div class="field"><label>Até</label><input type="date" value="${esc((_localHistoricoPeriodo&&_localHistoricoPeriodo.ate)||'')}" onchange="_localHistoricoPeriodo={de:(_localHistoricoPeriodo&&_localHistoricoPeriodo.de)||'',ate:this.value};openLocal('${l.id}',_localHistoricoPeriodo)"></div>
+    ${periodoAtivo?`<div class="dsFilterActions"><button class="btn small secondary" onclick="_localHistoricoPeriodo=null;openLocal('${l.id}')">Limpar período</button></div>`:''}
+  </div>`;
+  if(periodoAtivo){
+    const hist=obterHistoricoLojaNoPeriodo(l.id,_localHistoricoPeriodo.de,_localHistoricoPeriodo.ate);
+    if(!hist.eventos.length)return filtroHtml+'<p class="msg warn">Sem eventos registrados no período selecionado.</p>';
+    return filtroHtml+`<div class="timeline">${hist.eventos.slice().reverse().map(ev=>`<div class="tl"><b>${esc(ev.tipoEvento)}</b> • <small>${esc(ev.data||'')} • ${esc(ev.responsavel||'—')}</small><p>${esc(ev.titulo)}${ev.descricao?' — '+esc(ev.descricao):''}</p>${ev.origem==='Inspeção'?`<button class="btn small secondary" onclick="verInspecao('${l.id}','${ev.origemId}')">Ver detalhes</button>`:''}</div>`).join('')}</div>`;
+  }
   const insp=(l.inspecoes||[]).map(x=>({tipo:'Inspeção/Teste',data:x.data,responsavel:x.responsavel,
     resumo:`Resultado: ${x.resultado}${x.observacoes?' — '+x.observacoes:''}`,ref:x.id}));
   const falhas=(db.falhas||[]).filter(f=>f.localId===l.id).map(f=>({tipo:'Falha',data:f.data,responsavel:f.responsavel,
     resumo:`${f.status}${f.motivo?' — '+f.motivo:''}`,ref:f.id}));
   const planos=(db.planos||[]).filter(p=>falhas.some(f=>f.ref===p.falhaId)).map(p=>({tipo:'Plano de Ação',data:p.criadoEm,
     responsavel:p.responsavel,resumo:`${p.situacao} — ${p.categoria||''}`,ref:p.id}));
-  let eventos=insp.concat(falhas,planos).sort((a,b)=>String(b.data||'').localeCompare(String(a.data||'')));
-  // Filtro de período (item 5 da especificação: "Ver histórico do período" reaproveita esta aba,
-  // passando o intervalo de datas via _localModalState.periodoIni/periodoFim). Sem período
-  // selecionado, o comportamento é exatamente o de antes (histórico completo).
-  const periodoIni=_localModalState.periodoIni||'';
-  const periodoFim=_localModalState.periodoFim||'';
-  const periodoAtivo=!!(periodoIni||periodoFim);
-  let banner='';
-  if(periodoAtivo){
-    eventos=eventos.filter(ev=>{
-      const d=String(ev.data||'').slice(0,10);
-      if(!d)return false;
-      if(periodoIni&&d<periodoIni)return false;
-      if(periodoFim&&d>periodoFim)return false;
-      return true;
-    });
-    banner=`<p class="msg warn">Histórico filtrado do período de ${esc(periodoIni||'—')} até ${esc(periodoFim||'—')}. <button class="btn small secondary" onclick="_localModalState.periodoIni='';_localModalState.periodoFim='';openLocal('${l.id}')">Ver histórico completo</button></p>`;
-  }
-  if(!eventos.length)return banner+`<p class="msg warn">Sem eventos registrados${periodoAtivo?' no período selecionado.':'.'}</p>`;
-  return banner+`<div class="timeline">${eventos.map(ev=>`<div class="tl"><b>${esc(ev.tipo)}</b> • <small>${esc(ev.data||'')} • ${esc(ev.responsavel||'—')}</small><p>${esc(ev.resumo)}</p>${ev.tipo==='Inspeção/Teste'?`<button class="btn small secondary" onclick="verInspecao('${l.id}','${ev.ref}')">Ver detalhes</button>`:''}</div>`).join('')}</div>`;
+  const eventos=insp.concat(falhas,planos).sort((a,b)=>String(b.data||'').localeCompare(String(a.data||'')));
+  if(!eventos.length)return filtroHtml+'<p class="msg warn">Sem eventos registrados.</p>';
+  return filtroHtml+`<div class="timeline">${eventos.map(ev=>`<div class="tl"><b>${esc(ev.tipo)}</b> • <small>${esc(ev.data||'')} • ${esc(ev.responsavel||'—')}</small><p>${esc(ev.resumo)}</p>${ev.tipo==='Inspeção/Teste'?`<button class="btn small secondary" onclick="verInspecao('${l.id}','${ev.ref}')">Ver detalhes</button>`:''}</div>`).join('')}</div>`;
 }
-function openLocal(i){
+function openLocal(i,periodo){
   ensureLucSchema();
   let l=db.locais.find(x=>x.id===i); if(!l)return;
   l.inspecoes=l.inspecoes||[];
-  _localModalState={id:i,tab:_localModalState.id===i?_localModalState.tab:'dados',periodoIni:_localModalState.id===i?(_localModalState.periodoIni||''):'',periodoFim:_localModalState.id===i?(_localModalState.periodoFim||''):''};
+  if(periodo){_localHistoricoPeriodo=periodo; _localModalState={id:i,tab:'historico'};}
+  else{_localModalState={id:i,tab:_localModalState.id===i?_localModalState.tab:'dados'};}
   const tab=_localModalState.tab;
   const tabs=[['dados','Dados'],['historico','Histórico']];
   const tabsHtml=tabs.map(([k,label])=>`<button class="btn small ${tab===k?'':'secondary'}" onclick="localModalSetTab('${k}')">${label}</button>`).join(' ');
