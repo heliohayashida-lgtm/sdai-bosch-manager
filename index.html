@@ -1,5 +1,6 @@
 <!doctype html>
-<!-- build: 2026-07-12 v6.70 - MÓDULO PLANTAS: botão "⚙ Configurações" por planta substitui o slider flutuante
+<!-- build: 2026-07-12 v6.71 - MÓDULO PLANTAS: correção puramente visual/CSS da barra de ferramentas por planta (.plantaBlocoHead), sem tocar em nenhuma lógica de negócio além de 2 chamadas mínimas de exclusividade cruzada entre modos (detalhado abaixo). PROBLEMA: a classe genérica .btn é azul/primary por padrão em TODO o app (fundo azul mesmo sem .primary explícito); vários botões do cabeçalho de planta usavam só "btn small" sem "secondary", então ficavam permanentemente azuis mesmo sendo ações de disparo único (não estados), e o botão "Modo posicionamento" ficava sempre com a MESMA aparência azul estivesse ativo ou não, porque a regra .plantaModoPosBtnAtivo (especificidade 0,1,0, uma classe) nunca teria conseguido vencer .btn.secondary (0,2,0) se essa classe tivesse sido usada — o botão nunca tinha nem "secondary" aplicado. CORREÇÃO: nova regra CSS escopada só a `.plantaBlocoHead .btn` (nunca `.btn` global, para não vazar para Falhas/Testes/Plano/Lojas/Backup/etc.) definindo aparência NEUTRA (fundo var(--l3a-surface), borda var(--l3a-border), texto var(--l3a-primary-700), sem sombra) como padrão para QUALQUER botão dentro do cabeçalho de planta, e uma regra mais específica `.plantaBlocoHead .btn.plantaModoPosBtnAtivo` (0,3,0, vence a neutra) reaplicando o azul sólido + texto branco + box-shadow sutil (0 0 0 2px, halo suave — indicador secundário único, sem stack de vários efeitos) só quando ativo. BOTÕES AUDITADOS: "＋"/"−"/"⟲" (zoom, `.iconBtn`) e "🖼 Trocar imagem"/"✏ Editar planta" (`.iconBtn`) já eram neutros por padrão (branco, borda cinza) — CONFIRMADOS sem alteração, nunca carregam classe de "ativo", pois nunca escrevem em estado persistente, só chamam plantaZoom()/uploadPlantaArquivo()/formPlantaBaixa() e retornam. "🔍 Ajustar à tela" (plantaMostrarTodosMarcadores) usava "btn small" cru → agora neutro pela regra escopada (era o principal bug: parecia "ativo" sem nunca ter sido). "✏ Modo posicionamento" já tinha o binding condicional correto no HTML (modoPosAtivoAqui=plantasUI.edit===pl.id, existente desde v6.69) — o gap era só de especificidade CSS, agora corrigido; confirmado por planta (plantasUI.edit é escalar único, só uma planta por vez já ficava azul, comportamento de dados preservado). "📍 Adicionar marcador" idem: fora do modo de inserção usa "btn small" (agora neutro); dentro do modo, o próprio HTML já troca para um botão "danger" vermelho "✕ Cancelar inserção" (padrão existente desde v6.62, mantido de propósito — já é um indicador de estado inequívoco e distinto do neutro, decisão deliberada de não reescrever esse padrão só para forçar azul onde vermelho já comunica "ativo, clique para sair" com mais clareza). "⚙ Configurações" (.plantaCfgBtn/.plantaCfgBtnAtivo, v6.70) já estava com o binding correto (plantasUI.cfgAberto===pl.id) e como sua regra ativa já tinha especificidade 0,2,0 (duas classes), continuou vencendo a nova regra neutra (0,2,0 também, mas definida DEPOIS no arquivo) sem qualquer ajuste — CONFIRMADO por leitura, sem mudança. "Recolher" do painel lateral usa classe própria .plantaSideCollapseBtn (fora de .plantaBlocoHead, escopo não tocado) — já neutro, sem alteração. EXCLUSIVIDADE CRUZADA ENTRE TIPOS DE MODO (item 4/8 do pedido, única mudança de lógica desta rodada): plantaToggleModoPosicionamento() agora chama plantaSairModoInserir() antes de ativar, SE plantasUI.modoInserir estiver true; plantaToggleModoInserir() agora chama plantaSairModoPosicionamento() antes de ativar, SE plantasUI.edit estiver truthy — ambas reaproveitando as funções de saída JÁ EXISTENTES (v6.69/v6.62), sem estado novo, garantindo "nunca dois modos ativos ao mesmo tempo" também ENTRE modo posicionamento e modo inserir (já era garantido DENTRO de cada tipo, por plantasUI.edit e plantasUI.modoInserirPlantaId serem campos escalares únicos). CURSOR (polish, item 6): nova regra `.plantaBlocoModoPosAtivo .plantaPin{cursor:move}` (aplicada só quando aquele bloco de planta tem o modo posicionamento ativo, via a classe .plantaBlocoModoPosAtivo já existente desde v6.69) — cursor de mão sobre os marcadores arrastáveis; regra de crosshair para modo inserir (`.plantaModoInserir .plantaCanvas{cursor:crosshair}`) JÁ EXISTIA desde v6.62, confirmada sem alteração. NADA MAIS TOCADO: nenhuma função de negócio, evento de drag/drop, atalho de teclado, sincronização, cálculo de escala/zoom ou classe fora de `.plantaBlocoHead`/`.plantaBlocoModoPosAtivo` foi alterada; .btn/.btn.primary/.btn.secondary GLOBAIS permanecem 100% intactos (Falhas/Testes/Plano/Lojas/Backup/etc. continuam idênticos). node --check validado sem erros (zero) logo após esta mudança. GAP HONESTO: não testado em navegador real (ambiente sem display) — validação por leitura de código + especificidade CSS calculada manualmente + node --check; risco residual de detalhe visual fino (ex.: contraste do halo em telas muito claras) não pode ser 100% descartado sem QA visual manual. -->
+<!-- build anterior: 2026-07-12 v6.70 - MÓDULO PLANTAS: botão "⚙ Configurações" por planta substitui o slider flutuante
 .plantaScaleControl (v6.64) que ficava fixo no topo-direita de cada viewport sobrepondo desenho/marcadores/
 legenda em plantas com muitos pinos ou telas estreitas. REMOVIDO: markup do scaleCtrl (const removida de
 renderPlantas()), CSS .plantaScaleControl{...}, e a função plantaSetEscalaRapida() (só existia para esse
@@ -823,6 +824,19 @@ input[type=checkbox],input[type=radio]{accent-color:var(--l3a-primary)}
    ficar inequívoco qual planta está ativa mesmo sem ler o rótulo. */
 .plantaBlocoModoPosAtivo{border-color:var(--l3a-primary);box-shadow:0 0 0 2px rgba(11,95,173,.18)}
 .plantaModoPosBtnAtivo{background:var(--l3a-primary);border-color:var(--l3a-primary);color:#fff;font-weight:800}
+/* v6.71: botões do cabeçalho de cada bloco de planta (.plantaBlocoHead) ficam NEUTROS por padrão, mesmo
+   usando a classe genérica .btn (que é azul/primary por padrão em todo o resto do app) — escopado só a
+   .plantaBlocoHead para não vazar para Falhas/Testes/Plano/Lojas etc. */
+.plantaBlocoHead .btn{background:var(--l3a-surface);color:var(--l3a-primary-700);border:1px solid var(--l3a-border);box-shadow:none;font-weight:700}
+.plantaBlocoHead .btn:hover{background:var(--l3a-hover);border-color:var(--l3a-border-strong);box-shadow:none}
+.plantaBlocoHead .btn:active{box-shadow:none}
+.plantaBlocoHead .btn.danger{background:var(--l3a-danger);color:#fff;border-color:var(--l3a-danger)}
+.plantaBlocoHead .btn.danger:hover{background:#992019}
+.plantaBlocoHead .btn.plantaModoPosBtnAtivo{background:var(--l3a-primary);color:#fff;border-color:var(--l3a-primary);font-weight:800;box-shadow:0 0 0 2px rgba(11,95,173,.18)}
+.plantaBlocoHead .btn.plantaModoPosBtnAtivo:hover{background:var(--l3a-primary-600)}
+/* cursor de apoio: em modo posicionamento os marcadores viram "move"; em modo inserir (regra já existente
+   em .plantaModoInserir .plantaCanvas) o canvas vira crosshair */
+.plantaBlocoModoPosAtivo .plantaPin{cursor:move}
 .plantaBlocoHead{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;border-bottom:1px solid var(--l3a-border);flex-wrap:wrap}
 /* v6.69 — cabeçalho por planta sticky abaixo do header principal do app (.top tem 72px de altura e
    z-index:40 — ver linha ~502); usamos top:72px e z-index:6 (bem abaixo de modais/tooltips/drawers, que
@@ -9039,6 +9053,7 @@ function plantaLimparTodasInconsistencias(){
 // deixar estado "meio aplicado" de uma planta vazando para outra.
 function plantaToggleModoPosicionamento(plantaId){
   if(plantasUI.edit===plantaId){ plantaSairModoPosicionamento(); return; }
+  if(plantasUI.modoInserir)plantaSairModoInserir(); // v6.71: garante exclusividade entre os dois TIPOS de modo (nunca dois ativos ao mesmo tempo)
   plantasUI.edit=plantaId;
   plantasUI.selecionado=null;
   renderPlantas();
@@ -9050,6 +9065,7 @@ function plantaSairModoPosicionamento(){
 }
 function plantaToggleModoInserir(plantaId){
   if(plantasUI.modoInserir&&plantasUI.modoInserirPlantaId===plantaId){plantaSairModoInserir();return}
+  if(plantasUI.edit)plantaSairModoPosicionamento(); // v6.71: garante exclusividade entre os dois TIPOS de modo (nunca dois ativos ao mesmo tempo)
   plantasUI.modoInserir=true; plantasUI.modoInserirPlantaId=plantaId;
   plantasUI.pendenteX=null; plantasUI.pendenteY=null;
   renderPlantas();
