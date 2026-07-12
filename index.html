@@ -1,5 +1,92 @@
 <!doctype html>
-<!-- build: 2026-07-12 v6.66 - MÓDULO PLANTAS: fecha os 2 gaps honestos deixados em aberto pelo v6.65. (1)
+<!-- build: 2026-07-12 v6.67 - MÓDULO PLANTAS: (A) CORREÇÃO DE BUG REAL "marcador colocado mas some" +
+(B) GERENCIADOR DE MARCADORES completo (sidebar por planta). INVESTIGAÇÃO (não foi um chute): li
+renderPlantas() (laço de pins, hoje `itens.filter(i=>i.ref.plantaId===pl.id&&i.ref.plantaX!=null&&...)` —
+NÃO havia comparação crua de piso ali, só plantaId; e o próprio conceito de "plantasUI.pisoAtual" citado
+como hipótese no pedido NÃO EXISTE neste código — todas as plantas ativas renderizam em blocos simultâneos,
+não há um "piso selecionado" único filtrando pins) e plantaFiltrarPontosInsercao()/plantaConfirmarInsercao()
+(gravação de plantaX/plantaY vem de plantasUI.pendenteX/Y, já clampados em [0,100] no clique — sem bug de
+NaN/fora de faixa encontrado ali). CAUSA RAIZ REAL ENCONTRADA: plantasOrdenadas() (linha ~7749) filtra
+`p.ativo!==false` para montar a lista de `plantas` que vira `blocos` em renderPlantas() — uma planta
+marcada "oculta" (ativo=Não, alternável em "Gerenciar plantas"/formPlantaBaixa) simplesmente NÃO gera bloco
+nem pins, mas o item continua com plantaId/plantaX/plantaY 100% válidos em db.locais. Resultado: inserir um
+marcador funciona perfeitamente (plantaConfirmarInsercao grava certo), mas se a planta de destino estiver
+oculta (ou, mesmo com planta ativa, sem imagemUrl — o corpo vira placeholder e os pins nunca são desenhados)
+o marcador fica "fantasma": existe no banco, nenhum erro é mostrado, e ele nunca aparece em bloco algum. O
+painel de "Inconsistências" existente também não pegava esse caso: seu teste antigo só checava
+`plantaIds.has(item.plantaId)`, e `plantaIds` vinha de TODOS os db.plantas (sem filtrar ativo), então uma
+planta oculta "existe" para esse teste e o item nunca era listado como inconsistente. Esse é exatamente o
+padrão do caso relatado ("Bob's Shake", Piso 1): fica indistinguível de "nunca foi inserido" para quem só
+olha a planta na tela. CORREÇÃO (renderPlantas(), bloco `inconsistentes`): passou a marcar como
+inconsistente também plantaId apontando para planta com `ativo===false` OU sem `imagemUrl`, com motivo
+específico no painel de Inconsistências e ação extra "Reativar planta"/"Enviar imagem" (Master), além das
+ações já existentes (Limpar posição/Manter onde está). FUNÇÕES NOVAS/ALTERADAS DO ITEM (A): renderPlantas()
+(bloco `inconsistentes` e HTML de `inconsHtml`, motivo+ação por caso); NOVA plantaMarcadorInconsistente(l,pl)
+(regra única, reaproveitada pelo painel de inconsistências, pelos contadores do Gerenciador e por
+diagnosticarMarcador() — nunca duas implementações divergentes do "isso está inconsistente?"). NENHUMA
+COORDENADA/plantaId/localId FOI TOCADA por essa correção — só passou a SER DETECTADA e mostrada.
+(B) GERENCIADOR DE MARCADORES — painel novo por planta ("🗂 Gerenciador de marcadores", abaixo do corpo de
+cada bloco, só para quem podeEditarPlantas()), incremental, sem tocar nome/id/classe de nada existente:
+plantaListarPontos(plantaId,subset,filtros) — função ÚNICA de listagem (subset 'disponiveis'/'posicionados'
+/'todos'), da qual plantaFiltrarPontosInsercao() (v6.62, modal de "Adicionar marcador") passou a ser um
+wrapper de 1 linha — mesma lógica de filtro/ordenação nos dois lugares, sem duplicação. Abas Disponíveis/
+Posicionados/Todos (plantasUI.mmTab/plantaMmSetTab), busca combinável por nome/LUC/sistema/painel/laço/
+módulo/porta/endereço/localId (reaproveita filtrarRegistrosPorBusca), filtro "especial" combinável (Com
+falha/Em operação/Nunca testados/Com inconsistência/SDAI/CO2) + sistema/painel (plantaMmFiltro). Contadores
+ao vivo (plantaContadoresMarcadores) — Total do piso/Posicionados/Disponíveis/Com inconsistência/Fora da
+área visível — lidos direto de db a cada renderPlantas(), sem cache algum, portanto atualizam sozinhos após
+qualquer save()/markDirty() que já dispare render() (inserir, excluir, editar, reposicionar, sync — todos
+chamam save() existente, que já chama render()). Ações por item Posicionado: Localizar na planta
+(plantaLocalizarNaPlanta — reaproveita plantaZoomAt via novo helper plantaZoomParaPercentual/
+plantaPercentParaClient, que converte %,% da planta em coordenada de tela usando o retângulo já renderizado
+de .plantaCanvas, sem duplicar a matemática de pan/zoom; zoom mínimo 2.5x, suficiente para desfazer
+clustering, que se recalcula sozinho via plantaPosSettleZoom/plantaAplicarClusters já existentes; aplica
+classe .plantaLocalizarHighlight por ~2s, keyframe NOVO plantaLocalizeGlow, deliberadamente diferente do
+@keyframes plantaPulso já usado para "loja com falha", para não ser confundido com alerta de status; NUNCA
+altera plantaX/plantaY), Editar marcador (chama plantaEditarMarcador() direto com o localId, sem precisar
+clicar no pino primeiro), Reposicionar (plantaIniciarReposicionar→confirmação→plantasUI.reposicionar ativa
+um modo de captura de clique no viewport igual em estrutura ao modo de inserção v6.62, mas
+plantaAplicarReposicionamento() grava SÓ plantaX/plantaY, audita posição antiga/nova+usuário+timestamp via
+logLocal), Ver histórico (plantaVerHistoricoMarcador, lê db.historico por entidade='Plantas'+entidadeId),
+Abrir loja/ponto (openLocal, reaproveitado), Excluir marcador (plantaExcluirMarcadorLista — modal com o
+texto EXATO pedido "Deseja remover este marcador da planta? A loja, os testes, as falhas e o histórico não
+serão excluídos."; limpa só plantaId/plantaX/plantaY/escalaMarcador/escalaTexto via plantaLimparMarcadorLocal
+(nome/local/testes/falhas/histórico intocados); quando pontosTecnicosDaLoja() encontra outro ponto do
+mesmo grupo SDAI/CO2 já posicionado nesta planta, oferece "Excluir só este ponto" (plantaExcluirMarcadorSoEste)
+vs "Excluir o grupo inteiro" (plantaExcluirMarcadorGrupo) — nunca mescla automaticamente). "Fora da área
+visível": detectado por X/Y fora de [0,100] (mesmo teste usado nos contadores e em auditarMarcadoresDaPlanta),
+botão "Trazer para área visível" (plantaTrazerParaAreaVisivel→confirmação→plantaTrazerParaAreaVisivelOk)
+audita a coordenada antiga via logLocal ANTES de clampar. "Mostrar todos os marcadores"
+(plantaMostrarTodosMarcadores) — generaliza o mesmo helper de zoom-to-point para bbox: calcula min/max de
+X/Y válidos, centra e ajusta zoom para caber tudo, nunca altera coordenadas. diagnosticarMarcador(localId) —
+diagnóstico estruturado real (found, plantaIdValido, pisoBateComPlanta via pisoEq, clienteId,
+excluidoLogicamente, xyPresentes/xyValidos, escalaValida, dentroDeCluster via querySelector+classList real,
+motivoProvavel em português) — inspeciona db.locais/db.plantas/DOM de verdade, não é só um texto fixo.
+auditarMarcadoresDaPlanta(plantaId) — relatório SOMENTE LEITURA (nunca escreve em db): total cadastrado,
+visível, agrupado (potencial), fora da área, plantaId inválido, localId inválido, excluído logicamente, sem
+coordenadas, e grupos duplicados. ACHADO HONESTO SOBRE DUPLICIDADE (item 15 do pedido): como um "marcador"
+é literalmente plantaId/plantaX/plantaY no ÚNICO registro db.locais daquele localId, um mesmo localId
+estruturalmente NÃO PODE ter dois marcadores — "marcador duplicado no sentido literal" é impossível por
+construção, não por validação; documentado aqui em vez de fingir que existe uma verificação para isso. O
+caso REAL e possível — DOIS registros db.locais DIFERENTES (ex.: duplicados por importação) com a mesma
+combinação painel+laço+módulo+porta+sistema, ambos posicionados na MESMA planta — é o que
+auditarMarcadoresDaPlanta() de fato detecta e reporta (`gruposDuplicados`), sem nunca mesclar
+automaticamente. Indicador de POSICIONAMENTO (plantaBadgePosicionamento/.mmPlacBadge, oco=disponível/
+preenchido=posicionado) é um elemento CSS separado do ".mmDot" de status operacional (verde/vermelho/
+laranja/cinza, mesma convenção de cor já usada no resto do módulo) — comentário no código explicita a
+distinção (spec item 12). CSS NOVO: .mmRow/.mmDot/.mmPlacBadge/.mmNome/.mmAcoes/.mmInconsist/
+.plantaLocalizarHighlight/@keyframes plantaLocalizeGlow — todos aditivos, nenhuma classe/id existente
+renomeada. COMPATIBILIDADE: nenhuma função/id/classe pré-existente foi removida ou teve assinatura alterada;
+plantaFiltrarPontosInsercao(plantaId) mantém a MESMA assinatura de antes (agora delega para
+plantaListarPontos). GAPS HONESTOS: (a) não testado em navegador real (ambiente sem display) — validado via
+node --check do script extraído (0 erros) e leitura cuidadosa do HTML gerado; (b) o heurístico de zoom-to-
+bbox em plantaMostrarTodosMarcadores() usa uma fórmula simples (80/rangePercentual) que cobre bem o caso
+comum, mas não foi ajustado pixel-a-pixel contra o viewport real de cada planta — pode deixar folga extra
+ou exigir 1 zoom manual adicional em bboxes muito assimétricos; (c) diagnosticarMarcador()'s check
+`ocultoPorFiltro` é conservador (retorna false para marcadores já posicionados, já que o filtro do painel
+"não posicionados" não os afeta) — não cobre todo filtro futuro que possa vir a ocultar um pin posicionado.
+node --check validado sem erros (zero) logo após esta mudança. -->
+<!-- build anterior: 2026-07-12 v6.66 - MÓDULO PLANTAS: fecha os 2 gaps honestos deixados em aberto pelo v6.65. (1)
 ESCALA INDIVIDUAL AGORA MULTIPLICA (não substitui) a escala da planta: plantaEscalaMarcador()/plantaEscalaTexto()
 mudaram de v=(override??baseDaPlanta) para final=baseDaPlanta×(override??1.0)×fatorTipo — o override do item passa
 a ser um MULTIPLICADOR puro, neutro em 1.0 (100%) quando ausente, em vez de um valor absoluto que substituía a
@@ -588,6 +675,23 @@ input[type=checkbox],input[type=radio]{accent-color:var(--l3a-primary)}
 .plantaDropAlvo{outline:3px dashed var(--l3a-primary);outline-offset:-3px}
 .plantaModoInserir{cursor:crosshair}
 .plantaModoInserir .plantaCanvas{cursor:crosshair}
+/* v6.67 — Gerenciador de Marcadores (sidebar/painel por planta) */
+.mmRow{display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px dashed var(--l3a-border);font-size:12px}
+.mmRow.mmInconsist{background:rgba(180,83,9,.08)}
+.mmDot{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
+/* .mmPlacBadge é o indicador de POSICIONAMENTO — sempre visualmente distinto do .mmDot de status
+   operacional acima (oco/vazado=disponível, preenchido=posicionado), nunca a mesma paleta verde/vermelho/
+   laranja/cinza usada para falha/operação, para não confundir os dois conceitos (spec item 12). */
+.mmPlacBadge{width:9px;height:9px;border-radius:2px;flex:0 0 auto;border:1.6px solid var(--l3a-primary)}
+.mmPlacBadge.posicionado{background:var(--l3a-primary)}
+.mmPlacBadge.disponivel{background:transparent}
+.mmNome{flex:1;min-width:0;overflow:hidden}
+.mmAcoes{display:flex;gap:3px;align-items:center;flex-wrap:wrap;white-space:nowrap}
+/* .plantaLocalizarHighlight — destaque temporário de "Localizar na planta" (~2s), propositalmente
+   diferente do @keyframes plantaPulso (esse já é usado para "loja com falha"/sirene, ver linha 585-586)
+   para não ser confundido com um alerta de status operacional. */
+.plantaPin.plantaLocalizarHighlight .pinDot{animation:plantaLocalizeGlow 2s ease-out 1}
+@keyframes plantaLocalizeGlow{0%{box-shadow:0 0 0 0 rgba(37,99,235,.9)}70%{box-shadow:0 0 0 16px rgba(37,99,235,0)}100%{box-shadow:0 1px 4px rgba(16,24,40,.4)}}
 /* v6.60 — escala de marcadores/textos (Feature Set A) */
 .plantaPin.selecionado .pinDot{outline:2px dashed var(--l3a-primary);outline-offset:3px}
 .plantaHandle{position:absolute;width:12px;height:12px;border-radius:50%;background:#fff;border:2px solid var(--l3a-primary);box-shadow:0 1px 3px rgba(16,24,40,.4);touch-action:none;z-index:5}
@@ -7848,11 +7952,24 @@ function renderPlantas(){
   const lojasFalha=(db.locais||[]).filter(l=>statusAgregadoLoja(l.id).estado==='falha').length;
   const plantaIds=new Set((db.plantas||[]).map(p=>p.id));
   // Inconsistências (spec 8.2/8.4): plantaId órfão (planta excluída) ou piso divergente da planta.
+  // v6.67 — CAUSA RAIZ DO BUG "marcador colocado mas não aparece": plantasOrdenadas() (usada para montar
+  // os blocos/pins abaixo) filtra `p.ativo!==false`, ou seja, uma planta "oculta" (ativo=false, ver
+  // formPlantaBaixa/'Gerenciar plantas') simplesmente NÃO gera bloco/pins nenhum — mas o item ainda tem
+  // plantaId/plantaX/plantaY 100% válidos, então ele NUNCA aparecia nesta lista de inconsistências (o teste
+  // antigo só checava `plantaIds.has(...)`, que inclui plantas inativas, já que plantaIds vem de TODOS os
+  // db.plantas, sem filtrar ativo). Resultado: marcador "fantasma" — inserido com sucesso, sem nenhum erro,
+  // mas invisível em qualquer planta, sem nenhum aviso na tela. Ver também plantaId apontando para planta
+  // com imagemUrl vazia (planta sem imagem também não renderiza pins, mesmo estando ativa) — mesmo
+  // tratamento abaixo. CORREÇÃO: inclui esses dois casos na mesma lista de inconsistências, com motivo
+  // específico e ação "Reativar planta"/"Enviar imagem" além das já existentes.
   const inconsistentes=itens.filter(i=>{
     if(i.ref.plantaX==null||i.ref.plantaX==='')return false;
     if(i.ref.plantaId&&!plantaIds.has(i.ref.plantaId))return true;
     const pl=(db.plantas||[]).find(p=>p.id===i.ref.plantaId);
-    return pl&&i.piso&&!pisoEq(pl.piso,i.piso);
+    if(!pl)return false;
+    if(pl.ativo===false)return true; // v6.67: planta oculta — pin existe mas não é renderizado em blocos algum
+    if(!pl.imagemUrl)return true; // v6.67: planta sem imagem — corpo vira placeholder, pins nunca desenhados
+    return i.piso&&!pisoEq(pl.piso,i.piso);
   });
 
   const f=plantasUI.filtro;
@@ -7951,6 +8068,7 @@ function renderPlantas(){
       </div>
       ${(plantasUI.edit&&podeEditarPlantas())?plantaEscalaPainelHtml(pl):''}
       ${corpo}
+      ${podeEditarPlantas()?plantaGerenciadorHtml(pl):''}
     </div>`;
   }).join('');
 
@@ -7960,8 +8078,12 @@ function renderPlantas(){
     <h4 style="margin:0 0 8px;font-size:13px">Inconsistências de posicionamento (${inconsistentes.length})</h4>
     ${inconsistentes.slice(0,30).map(i=>{
       const pl=(db.plantas||[]).find(p=>p.id===i.ref.plantaId);
-      const motivo=pl?`piso do item é "${esc(i.piso)}", mas está posicionado na planta "${esc(pl.piso)}"`:'posição salva de planta removida';
-      return `<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:12px;padding:4px 0;border-bottom:1px dashed var(--l3a-border)"><span><b>${esc(i.nome)}</b> — ${motivo}</span><span style="display:flex;gap:4px;white-space:nowrap"><button class="btn small secondary" onclick="plantaLimparPosicao('${i.kind}','${esc(i.id)}')">Limpar posição</button><button class="btn small secondary" onclick="plantaManterPosicao('${i.kind}','${esc(i.id)}')">Manter onde está</button></span></div>`;
+      let motivo,acaoExtra='';
+      if(!pl)motivo='posição salva de planta removida';
+      else if(pl.ativo===false){motivo=`marcador invisível: está posicionado na planta "${esc(pl.piso)}", que está OCULTA (ativo=Não)`;acaoExtra=isMaster(currentUserSafe())?`<button class="btn small secondary" onclick="formPlantaBaixa('${esc(pl.id)}')">Reativar planta</button>`:'';}
+      else if(!pl.imagemUrl){motivo=`marcador invisível: a planta "${esc(pl.piso)}" ainda não tem imagem carregada`;acaoExtra=isMaster(currentUserSafe())?`<button class="btn small secondary" onclick="formPlantaBaixa('${esc(pl.id)}')">Enviar imagem</button>`:'';}
+      else motivo=`piso do item é "${esc(i.piso)}", mas está posicionado na planta "${esc(pl.piso)}"`;
+      return `<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:12px;padding:4px 0;border-bottom:1px dashed var(--l3a-border)"><span><b>${esc(i.nome)}</b> — ${motivo}</span><span style="display:flex;gap:4px;white-space:nowrap">${acaoExtra}<button class="btn small secondary" onclick="plantaLimparPosicao('${i.kind}','${esc(i.id)}')">Limpar posição</button><button class="btn small secondary" onclick="plantaManterPosicao('${i.kind}','${esc(i.id)}')">Manter onde está</button></span></div>`;
     }).join('')}
     ${inconsistentes.length>30?`<p class="mutedLine" style="font-size:11px">…e mais ${inconsistentes.length-30}. <button class="btn small secondary" onclick="plantaLimparTodasInconsistencias()">Limpar todas em massa</button></p>`:`<p style="margin:6px 0 0"><button class="btn small secondary" onclick="plantaLimparTodasInconsistencias()">Limpar todas em massa</button></p>`}
   </div>`:'';
@@ -8229,6 +8351,24 @@ function plantaBindEventos(root){
         };
         window.addEventListener('pointermove',moveI); window.addEventListener('pointerup',upI);
         return; // não entra no pan normal enquanto em modo de inserção
+      }
+      // v6.67 — item 7 (Reposicionar): próximo clique nesta planta grava SÓ plantaX/plantaY do item alvo,
+      // nada mais (mesma lógica de captura de clique-vs-arrasto do modo de inserção acima).
+      if(plantasUI.reposicionar&&plantasUI.reposicionar.plantaId===pid){
+        const rp=plantasUI.reposicionar;
+        const startR={x:ev.clientX,y:ev.clientY}; let movedR=false;
+        const moveR=e2=>{ if(Math.hypot(e2.clientX-startR.x,e2.clientY-startR.y)>6)movedR=true; };
+        const upR=e2=>{
+          window.removeEventListener('pointermove',moveR); window.removeEventListener('pointerup',upR);
+          if(movedR)return;
+          const cv=vp.querySelector('.plantaCanvas'); if(!cv)return;
+          const rect=cv.getBoundingClientRect();
+          const x=Math.round(Math.min(100,Math.max(0,(e2.clientX-rect.left)/rect.width*100))*100)/100;
+          const y=Math.round(Math.min(100,Math.max(0,(e2.clientY-rect.top)/rect.height*100))*100)/100;
+          plantaAplicarReposicionamento(rp.kind,rp.id_,rp.plantaId,x,y);
+        };
+        window.addEventListener('pointermove',moveR); window.addEventListener('pointerup',upR);
+        return;
       }
       if(ev.pointerType==='touch'){
         pinchSt.touchPointers.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
@@ -8516,12 +8656,27 @@ function plantaStatusFiltroLocal(l){
   if(!temTeste)return 'Nunca testado';
   return 'Em operação';
 }
-function plantaFiltrarPontosInsercao(plantaId){
-  const mf=plantasUI.modalInsercao; const pl=(db.plantas||[]).find(p=>p.id===plantaId);
-  const pisoPlanta=normalizarPiso(pl?.piso||'');
-  let base=(db.locais||[]).filter(l=>l.plantaId!==plantaId);
-  if(!mf.outrosPisos)base=base.filter(l=>normalizarPiso(pisoEfetivo(l)||l.piso||'')===pisoPlanta);
-  if(mf.q)base=filtrarRegistrosPorBusca(base,mf.q,l=>[l.nomeOficial,l.nome,l.luc].filter(Boolean).join(' '));
+// v6.67 — GERENCIADOR DE MARCADORES (item 1 do pedido): plantaFiltrarPontosInsercao() (v6.62) foi
+// refatorada para chamar esta função compartilhada, parametrizada por "subset" (disponiveis/posicionados/
+// todos), reaproveitada TANTO pelo modal de inserção QUANTO pelo painel lateral novo — mesma lógica de
+// filtro/ordenação nos dois lugares, sem duplicar código nem risco de divergência entre "disponível" no
+// modal e "disponível" no painel.
+function plantaMarcadorInconsistente(l,pl){
+  if(!pl||l.plantaX==null||l.plantaX==='')return false;
+  if(pl.ativo===false)return true;
+  if(!pl.imagemUrl)return true;
+  const piso=pisoEfetivo(l)||l.piso||'';
+  return !!(piso&&!pisoEq(pl.piso,piso));
+}
+function plantaListarPontos(plantaId,subset,filtros){
+  const pl=(db.plantas||[]).find(p=>p.id===plantaId); if(!pl)return [];
+  const pisoPlanta=normalizarPiso(pl.piso||'');
+  const mf=filtros||{};
+  let base=(db.locais||[]).slice();
+  if(subset==='disponiveis')base=base.filter(l=>l.plantaId!==plantaId&&(mf.outrosPisos||normalizarPiso(pisoEfetivo(l)||l.piso||'')===pisoPlanta));
+  else if(subset==='posicionados')base=base.filter(l=>l.plantaId===plantaId);
+  else base=base.filter(l=>l.plantaId===plantaId||normalizarPiso(pisoEfetivo(l)||l.piso||'')===pisoPlanta); // 'todos': posicionados nesta planta + disponíveis deste piso
+  if(mf.q)base=filtrarRegistrosPorBusca(base,mf.q,l=>[l.nomeOficial,l.nome,l.luc,l.sistema,paiName(l.painelId),lacName(l.lacoId),flmById(l.flmId)?.endereco,(db.portas||[]).find(p=>p.id===l.portaId)?.numero,l.endereco,l.id].filter(Boolean).join(' '));
   if(mf.sistema)base=base.filter(l=>(l.sistema||'')===mf.sistema);
   if(mf.piso)base=base.filter(l=>pisoEq(pisoEfetivo(l)||l.piso||'',mf.piso));
   if(mf.painel)base=base.filter(l=>l.painelId===mf.painel);
@@ -8529,11 +8684,17 @@ function plantaFiltrarPontosInsercao(plantaId){
   if(mf.flm)base=base.filter(l=>l.flmId===mf.flm);
   if(mf.porta)base=base.filter(l=>l.portaId===mf.porta);
   if(mf.status)base=base.filter(l=>plantaStatusFiltroLocal(l)===mf.status);
+  if(mf.posicionamento==='posicionados')base=base.filter(l=>l.plantaId===plantaId);
+  if(mf.posicionamento==='disponiveis')base=base.filter(l=>l.plantaId!==plantaId);
+  if(mf.inconsistente)base=base.filter(l=>plantaMarcadorInconsistente(l,pl));
   base=base.slice().sort((a,b)=>{
     const key=x=>[pisoEfetivo(x)||x.piso||'',x.nomeOficial||x.nome||'',x.sistema||'',paiName(x.painelId),lacName(x.lacoId),flmById(x.flmId)?.endereco||'',(db.portas||[]).find(p=>p.id===x.portaId)?.numero||''].join('|');
     return key(a).localeCompare(key(b),'pt-BR');
   });
   return base;
+}
+function plantaFiltrarPontosInsercao(plantaId){
+  return plantaListarPontos(plantaId,'disponiveis',plantasUI.modalInsercao);
 }
 // Modal de seleção (item 2-5 do pedido). Refeito a cada mudança de filtro/inserção — sem cache — para
 // que contadores e lista fiquem sempre coerentes com o estado atual de db.locais (item 5/8).
@@ -8626,6 +8787,299 @@ function plantaConfirmarOutroPisoOk(localId,plantaId){
   plantasUI._confirmadoOutroPiso=true;
   try{logLocal('Plantas',localId,'excecao_piso',`Exceção de piso: ponto técnico "${loc?.nomeOficial||loc?.nome||localId}" (piso "${pisoEfetivo(loc)||loc?.piso||'—'}") inserido na planta do piso "${pl?.piso||'—'}" mediante confirmação explícita do usuário.`)}catch(e){}
   plantaConfirmarInsercao(localId,plantaId);
+}
+
+// ==================================================================================================
+// v6.67 — GERENCIADOR DE MARCADORES (Task 2 completa). Painel por planta (aba/tabs Disponíveis/
+// Posicionados/Todos), busca, filtros combináveis, contadores ao vivo, diagnóstico estruturado,
+// localizar/reposicionar/excluir/editar a partir da lista, auditoria somente-leitura por planta.
+// Estado efêmero em plantasUI.mm* (nunca db) — segue o padrão de plantasUI.filtro/modalInsercao.
+// ==================================================================================================
+Object.assign(plantasUI,{
+  mmOpen:{}, mmTab:{}, mmFiltro:{}, // por plantaId: mmTab[pid] em 'disponiveis'|'posicionados'|'todos'
+  reposicionar:null, // {kind,id_,plantaId} enquanto ativo — próximo clique no viewport grava só X/Y
+  pulso:null // {kind,id_} — pin com destaque temporário pós "Localizar na planta"
+});
+function plantaMmFiltro(pid){ if(!plantasUI.mmFiltro[pid])plantasUI.mmFiltro[pid]={q:'',sistema:'',piso:'',painel:'',laco:'',flm:'',porta:'',status:'',especial:''}; return plantasUI.mmFiltro[pid]; }
+function plantaToggleGerenciador(pid){plantasUI.mmOpen[pid]=!plantasUI.mmOpen[pid]; if(plantasUI.mmOpen[pid]&&!plantasUI.mmTab[pid])plantasUI.mmTab[pid]='posicionados'; renderPlantas();}
+function plantaMmSetTab(pid,tab){plantasUI.mmTab[pid]=tab; renderPlantas();}
+
+// item 2 do pedido — contadores ao vivo. Lidos direto de db a cada chamada (nenhum cache), então ficam
+// automaticamente corretos após qualquer save()/markDirty() que dispare renderPlantas() de novo.
+function plantaContadoresMarcadores(plantaId){
+  const pl=(db.plantas||[]).find(p=>p.id===plantaId); if(!pl)return {totalPiso:0,posicionados:0,disponiveis:0,inconsistentes:0,foraDaArea:0};
+  const pisoPlanta=normalizarPiso(pl.piso||'');
+  const doPiso=(db.locais||[]).filter(l=>normalizarPiso(pisoEfetivo(l)||l.piso||'')===pisoPlanta);
+  const posicionados=(db.locais||[]).filter(l=>l.plantaId===plantaId);
+  const disponiveis=doPiso.filter(l=>l.plantaId!==plantaId);
+  const inconsistentes=posicionados.filter(l=>plantaMarcadorInconsistente(l,pl));
+  const foraDaArea=posicionados.filter(l=>{const x=Number(l.plantaX),y=Number(l.plantaY); return isNaN(x)||isNaN(y)||x<0||x>100||y<0||y>100;});
+  return {totalPiso:doPiso.length,posicionados:posicionados.length,disponiveis:disponiveis.length,inconsistentes:inconsistentes.length,foraDaArea:foraDaArea.length};
+}
+
+// item 5 do pedido — diagnóstico estruturado real (não é só um texto bonito: inspeciona db.locais/
+// db.plantas/estado de render de verdade e devolve um objeto com cada verificação + motivo em português).
+function diagnosticarMarcador(localId){
+  const l=(db.locais||[]).find(x=>x.id===localId);
+  const d={localId,found:!!l,plantaIdValido:false,pisoBateComPlanta:null,clienteId:l?.clienteId||null,
+    excluidoLogicamente:!!(l&&(l.excluido||l.excluida)),xyPresentes:false,xyValidos:false,escalaValida:true,
+    ocultoPorFiltro:false,dentroDeCluster:false,motivoProvavel:''};
+  if(!l){d.motivoProvavel='Ponto técnico não encontrado em db.locais (localId inexistente).'; return d;}
+  const pl=(db.plantas||[]).find(p=>p.id===l.plantaId);
+  d.plantaIdValido=!!pl;
+  if(pl)d.pisoBateComPlanta=pisoEq(pl.piso,pisoEfetivo(l)||l.piso||'');
+  d.xyPresentes=l.plantaX!=null&&l.plantaX!==''&&l.plantaY!=null&&l.plantaY!=='';
+  if(d.xyPresentes){const x=Number(l.plantaX),y=Number(l.plantaY); d.xyValidos=!isNaN(x)&&!isNaN(y)&&x>=0&&x<=100&&y>=0&&y<=100;}
+  const em=l.escalaMarcador==null?1:Number(l.escalaMarcador), et=l.escalaTexto==null?1:Number(l.escalaTexto);
+  d.escalaValida=(!isNaN(em)&&em>0)&&(!isNaN(et)&&et>0);
+  const f=plantasUI.filtro||{};
+  if(l.plantaId){
+    const item=plantaItens().find(i=>i.kind==='local'&&i.id===localId);
+    if(item&&f&&((f.tipo&&item.tipoFiltro!==f.tipo)||(f.piso&&!pisoEq(item.piso,f.piso))))d.ocultoPorFiltro=false; // filtro do painel "não posicionados" não afeta pins já posicionados
+  }
+  if(pl&&d.xyPresentes){
+    const pinEl=document.querySelector(`.plantaPin[data-kind="local"][data-id="${CSS&&CSS.escape?CSS.escape(localId):localId}"]`);
+    d.dentroDeCluster=!!(pinEl&&pinEl.classList.contains('plantaClusterOculto'));
+  }
+  if(!l.plantaId)d.motivoProvavel='Ponto técnico nunca foi posicionado (sem plantaId).';
+  else if(!pl)d.motivoProvavel='plantaId aponta para uma planta que não existe mais (órfão) — marcador invisível.';
+  else if(pl.ativo===false)d.motivoProvavel=`Marcador está na planta "${pl.piso}", que está OCULTA (ativo=Não) — por isso não aparece em nenhum bloco. CAUSA RAIZ do bug de marcador "sumido" (v6.67).`;
+  else if(!pl.imagemUrl)d.motivoProvavel=`Planta "${pl.piso}" ainda não tem imagem carregada — pins nunca são desenhados até haver imagem.`;
+  else if(!d.xyPresentes)d.motivoProvavel='plantaId definido, mas faltam coordenadas plantaX/plantaY.';
+  else if(!d.xyValidos)d.motivoProvavel='Coordenadas plantaX/plantaY fora do intervalo válido [0,100] ou não numéricas.';
+  else if(!d.escalaValida)d.motivoProvavel='escalaMarcador/escalaTexto inválidos (zero ou negativo) — símbolo pode ficar invisível (tamanho 0).';
+  else if(d.pisoBateComPlanta===false)d.motivoProvavel='Piso do ponto diverge do piso da planta onde está posicionado (exceção manual confirmada antes, ou dado desatualizado).';
+  else if(d.dentroDeCluster)d.motivoProvavel='Marcador está visível, mas agrupado em um cluster (badge "● N") por estar muito perto de outro marcador na tela atual.';
+  else d.motivoProvavel='Nenhuma inconsistência encontrada — marcador deveria estar visível normalmente.';
+  return d;
+}
+
+// item 14 do pedido — auditoria SOMENTE LEITURA por planta (nunca escreve em db).
+function auditarMarcadoresDaPlanta(plantaId){
+  const pl=(db.plantas||[]).find(p=>p.id===plantaId);
+  const posicionados=(db.locais||[]).filter(l=>l.plantaId===plantaId);
+  const visivel=posicionados.filter(l=>!plantaMarcadorInconsistente(l,pl)&&l.plantaX!=null&&l.plantaX!=='');
+  const foraDaArea=posicionados.filter(l=>{const x=Number(l.plantaX),y=Number(l.plantaY); return isNaN(x)||isNaN(y)||x<0||x>100||y<0||y>100;});
+  const plantaIdInvalido=posicionados.filter(l=>!pl);
+  const semCoordenadas=posicionados.filter(l=>l.plantaX==null||l.plantaX===''||l.plantaY==null||l.plantaY==='');
+  const excluidoLogicamente=posicionados.filter(l=>l.excluido||l.excluida);
+  const localIdInvalido=posicionados.filter(l=>!l.id);
+  // item 15 do pedido — "duplicado" real: DOIS registros db.locais diferentes, ambos posicionados NESTA
+  // planta, com a mesma combinação painel+laço+módulo+porta+sistema (típico de importação duplicada).
+  // Nunca é o mesmo localId duas vezes (estruturalmente impossível, ver changelog v6.67).
+  const grupos=new Map();
+  posicionados.forEach(l=>{const k=[l.painelId,l.lacoId,l.flmId,l.portaId,l.sistema].join('|'); if(!grupos.has(k))grupos.set(k,[]); grupos.get(k).push(l);});
+  const duplicados=[...grupos.values()].filter(g=>g.length>1);
+  return {plantaId,plantaExiste:!!pl,totalCadastrado:posicionados.length,visivel:visivel.length,
+    agrupadoPotencial:posicionados.length-visivel.length,foraDaArea:foraDaArea.length,
+    plantaIdInvalido:plantaIdInvalido.length,localIdInvalido:localIdInvalido.length,
+    excluidoLogicamente:excluidoLogicamente.length,semCoordenadas:semCoordenadas.length,
+    gruposDuplicados:duplicados.map(g=>g.map(l=>({id:l.id,nome:l.nomeOficial||l.nome})))};
+}
+
+// item 4/13 do pedido — helper único de "zoom para ponto/bbox" reaproveitando a MESMA matemática de
+// plantaZoomAt (centrado num clientX/clientY de tela); a conversão de percentual (%,%) da planta para
+// coordenada de tela usa o retângulo já renderizado de .plantaCanvas (que já reflete zoom/pan atuais),
+// então funciona em qualquer estado de zoom sem duplicar a fórmula de pan de plantaZoomAt.
+function plantaPercentParaClient(pid,pctX,pctY){
+  const vp=document.querySelector(`.plantaViewport[data-planta="${CSS.escape(pid)}"]`); if(!vp)return null;
+  const cv=vp.querySelector('.plantaCanvas'); if(!cv)return null;
+  const r=cv.getBoundingClientRect();
+  return {x:r.left+(Number(pctX)||0)/100*r.width, y:r.top+(Number(pctY)||0)/100*r.height};
+}
+function plantaZoomParaPercentual(pid,pctX,pctY,zoomAlvo,animate){
+  const pos=plantaPercentParaClient(pid,pctX,pctY); if(!pos)return;
+  plantaZoomAt(pid,zoomAlvo,pos.x,pos.y,animate!==false);
+  setTimeout(()=>plantaPosSettleZoom(pid),animate!==false?270:0);
+}
+// item 4 do pedido — "Localizar na planta": centra+aproxima o suficiente para desfazer clustering
+// naturalmente (reaproveita plantaAplicarClusters via plantaPosSettleZoom), nunca altera plantaX/plantaY,
+// e aplica um destaque temporário (.plantaLocalizarHighlight, ~2s) distinto das cores de status.
+function plantaLocalizarNaPlanta(kind,id_){
+  const item=plantaItemById(kind,id_); if(!item||!item.plantaId){alert('Este item não está posicionado em nenhuma planta.');return}
+  const pl=(db.plantas||[]).find(p=>p.id===item.plantaId); if(!pl){alert('A planta deste marcador não existe mais.');return}
+  if(pl.ativo===false){alert('Este marcador está numa planta OCULTA ("'+pl.piso+'"). Reative a planta em "Gerenciar plantas" para localizá-lo.');return}
+  const zAtual=plantasUI.zoom[pl.id]||1;
+  const zAlvo=Math.min(PLANTA_ZOOM_MAX,Math.max(zAtual,2.5)); // zoom suficiente para resolver a maioria dos clusters
+  plantaZoomParaPercentual(pl.id,item.plantaX,item.plantaY,zAlvo,true);
+  plantasUI.pulso={kind,id:id_};
+  setTimeout(()=>{
+    const pin=document.querySelector(`.plantaPin[data-kind="${kind}"][data-id="${CSS.escape(id_)}"]`);
+    if(pin){pin.classList.add('plantaLocalizarHighlight'); setTimeout(()=>pin.classList.remove('plantaLocalizarHighlight'),2000);}
+  },300);
+}
+// item 13 do pedido — "Mostrar todos os marcadores": bbox dos marcadores VÁLIDOS (com XY dentro do range)
+// desta planta, zoom/pan para caber tudo; generaliza a mesma matemática do zoom-to-point (centro do bbox).
+function plantaMostrarTodosMarcadores(plantaId){
+  const pl=(db.plantas||[]).find(p=>p.id===plantaId); if(!pl)return;
+  const pts=(db.locais||[]).filter(l=>l.plantaId===plantaId).map(l=>({x:Number(l.plantaX),y:Number(l.plantaY)})).filter(p=>!isNaN(p.x)&&!isNaN(p.y)&&p.x>=0&&p.x<=100&&p.y>=0&&p.y<=100);
+  if(!pts.length){plantaZoomAt(plantaId,1,null,null,true); return;}
+  const minX=Math.min(...pts.map(p=>p.x)), maxX=Math.max(...pts.map(p=>p.x));
+  const minY=Math.min(...pts.map(p=>p.y)), maxY=Math.max(...pts.map(p=>p.y));
+  const cx=(minX+maxX)/2, cy=(minY+maxY)/2;
+  const rangePct=Math.max(maxX-minX,maxY-minY,4); // mínimo 4% para não estourar zoom em bbox de 1 ponto só
+  const zAlvo=Math.min(PLANTA_ZOOM_MAX,Math.max(PLANTA_ZOOM_MIN,80/rangePct));
+  plantaZoomParaPercentual(plantaId,cx,cy,zAlvo,true);
+}
+
+// item 6 do pedido — "Fora da área visível": detecta X/Y fora de [0,100] e oferece clamp com auditoria.
+function plantaTrazerParaAreaVisivel(localId){
+  const l=(db.locais||[]).find(x=>x.id===localId); if(!l)return;
+  const xOld=l.plantaX,yOld=l.plantaY;
+  openModal(`<h2>Trazer para área visível</h2><p style="font-size:13px">O marcador de <b>${esc(l.nomeOficial||l.nome)}</b> está fora da área da planta (X=${esc(xOld)}, Y=${esc(yOld)}). Confirma ajustar para dentro do intervalo válido (0-100%)?</p>
+    <button class="btn" onclick="plantaTrazerParaAreaVisivelOk('${esc(localId)}')">Confirmar</button>
+    <button class="btn secondary" onclick="closeModal()">Cancelar</button>`);
+}
+function plantaTrazerParaAreaVisivelOk(localId){
+  const l=(db.locais||[]).find(x=>x.id===localId); if(!l)return;
+  const xOld=l.plantaX,yOld=l.plantaY;
+  l.plantaX=Math.min(100,Math.max(0,Number(l.plantaX)||0));
+  l.plantaY=Math.min(100,Math.max(0,Number(l.plantaY)||0));
+  try{logLocal('Plantas',l.id,'ajuste_area_visivel',`Coordenada fora da área ajustada: de (${xOld}%, ${yOld}%) para (${l.plantaX}%, ${l.plantaY}%).`)}catch(e){}
+  closeModal(); save();
+}
+
+// item 7 do pedido — "Reposicionar": próximo clique no viewport da planta grava SÓ plantaX/plantaY (nada
+// mais), depois de confirmação, com auditoria de posição antiga/nova + usuário + timestamp.
+function plantaIniciarReposicionar(kind,id_){
+  const item=plantaItemById(kind,id_); if(!item||!item.plantaId){alert('Item não está posicionado.');return}
+  openModal(`<h2>Reposicionar marcador</h2><p style="font-size:13px">Clique no novo local dentro da planta. Nada além da posição (X/Y) será alterado.</p>
+    <button class="btn" onclick="plantaConfirmarReposicionar('${kind}','${esc(id_)}','${esc(item.plantaId)}')">Entendi, vou clicar na planta</button>
+    <button class="btn secondary" onclick="closeModal()">Cancelar</button>`);
+}
+function plantaConfirmarReposicionar(kind,id_,plantaId){
+  closeModal();
+  plantasUI.reposicionar={kind,id_,plantaId};
+  renderPlantas();
+}
+function plantaAplicarReposicionamento(kind,id_,plantaId,x,y){
+  const item=plantaItemById(kind,id_); if(!item)return;
+  const xOld=item.plantaX,yOld=item.plantaY;
+  item.plantaX=x; item.plantaY=y;
+  try{logLocal('Plantas',id_,'reposicionar',`Reposicionado de (${xOld}%, ${yOld}%) para (${x}%, ${y}%) por ${(currentUser().nome||currentUser().email||'usuário')} em ${isoNow()}.`)}catch(e){}
+  plantasUI.reposicionar=null;
+  save();
+}
+
+// item 8 do pedido — exclusão fácil a partir da lista de Posicionados, com o texto EXATO pedido e
+// tratamento de grupo SDAI/CO2 (pontosTecnicosDaLoja) — nunca mescla, só oferece as duas opções.
+function plantaExcluirMarcadorLista(localId){
+  const l=(db.locais||[]).find(x=>x.id===localId); if(!l)return;
+  const grupo=(pontosTecnicosDaLoja(l)||[]).filter(x=>x.plantaId===l.plantaId&&x.id!==l.id);
+  const textoConfirm='Deseja remover este marcador da planta? A loja, os testes, as falhas e o histórico não serão excluídos.';
+  if(grupo.length){
+    openModal(`<h2>Excluir marcador</h2><p style="font-size:13px">${esc(textoConfirm)}</p>
+      <p class="mutedLine" style="font-size:12px">Este ponto faz parte de um grupo SDAI/CO2 com outro(s) marcador(es) da mesma loja nesta planta.</p>
+      <button class="btn" onclick="plantaExcluirMarcadorSoEste('${esc(localId)}')">Excluir só este ponto</button>
+      <button class="btn danger" onclick="plantaExcluirMarcadorGrupo('${esc(localId)}')">Excluir o grupo inteiro</button>
+      <button class="btn secondary" onclick="closeModal()">Cancelar</button>`);
+  } else {
+    openModal(`<h2>Excluir marcador</h2><p style="font-size:13px">${esc(textoConfirm)}</p>
+      <button class="btn danger" onclick="plantaExcluirMarcadorSoEste('${esc(localId)}')">Confirmar exclusão</button>
+      <button class="btn secondary" onclick="closeModal()">Cancelar</button>`);
+  }
+}
+function plantaLimparMarcadorLocal(l){
+  l.plantaId=null; l.plantaX=null; l.plantaY=null; delete l.escalaMarcador; delete l.escalaTexto;
+  try{logLocal('Plantas',l.id,'excluir_marcador',`Marcador removido da planta (loja/testes/falhas/histórico preservados). Ponto: "${l.nomeOficial||l.nome}".`)}catch(e){}
+}
+function plantaExcluirMarcadorSoEste(localId){
+  const l=(db.locais||[]).find(x=>x.id===localId); if(!l)return;
+  plantaLimparMarcadorLocal(l);
+  closeModal(); save();
+}
+function plantaExcluirMarcadorGrupo(localId){
+  const l=(db.locais||[]).find(x=>x.id===localId); if(!l)return;
+  const grupo=(pontosTecnicosDaLoja(l)||[]).filter(x=>x.plantaId===l.plantaId);
+  grupo.forEach(plantaLimparMarcadorLocal);
+  closeModal(); save();
+}
+
+// item 6 (do pedido, "Ver histórico") — reaproveita db.historico já usado por logLocal, filtrado por
+// entidade 'Plantas' + entidadeId===localId.
+function plantaVerHistoricoMarcador(localId){
+  const l=(db.locais||[]).find(x=>x.id===localId);
+  const hist=(db.historico||[]).filter(h=>h.entidadeId===localId&&h.entidade==='Plantas').slice().sort((a,b)=>String(b.data||'').localeCompare(String(a.data||'')));
+  const rows=hist.map(h=>`<div style="font-size:12px;padding:5px 0;border-bottom:1px dashed var(--l3a-border)"><b>${esc(fmtDataHora?fmtDataHora(h.data):h.data)}</b> — ${esc(h.usuario||'')}<br>${esc(h.descricao||h.acao||'')}</div>`).join('')||'<p class="mutedLine" style="font-size:12px">Sem histórico de posicionamento para este item.</p>';
+  openModal(`<h2>Histórico de posicionamento — ${esc(l?.nomeOficial||l?.nome||localId)}</h2><div style="max-height:340px;overflow:auto">${rows}</div><br><button class="btn secondary" onclick="closeModal()">Fechar</button>`);
+}
+
+// item 12 do pedido — badge de POSICIONAMENTO (oco=disponível / preenchido=posicionado), sempre um
+// elemento SEPARADO do "dot" de status operacional (que continua verde/vermelho/laranja/cinza) para não
+// confundir os dois conceitos: um é "a loja está com falha?", o outro é "tem marcador na planta?".
+function plantaBadgePosicionamento(l){
+  const posicionado=l.plantaId!=null&&l.plantaX!=null&&l.plantaX!=='';
+  return `<span class="mmPlacBadge ${posicionado?'posicionado':'disponivel'}" title="${posicionado?'Posicionado':'Disponível'}"></span>`;
+}
+
+// item 1/3/9/10/11/12 do pedido — HTML do painel "Gerenciador de Marcadores" por planta.
+function plantaGerenciadorHtml(pl){
+  const aberto=!!plantasUI.mmOpen[pl.id];
+  const cont=plantaContadoresMarcadores(pl.id);
+  const btnAbrir=`<button class="btn small secondary" onclick="plantaToggleGerenciador('${esc(pl.id)}')">🗂 Gerenciador de marcadores${aberto?' ▴':' ▾'}</button>`;
+  if(!aberto)return `<div style="margin:8px 0">${btnAbrir}</div>`;
+  const mf=plantaMmFiltro(pl.id);
+  const tab=plantasUI.mmTab[pl.id]||'posicionados';
+  const subset=tab==='disponiveis'?'disponiveis':tab==='posicionados'?'posicionados':'todos';
+  const filtrosEfetivos=Object.assign({},mf);
+  if(mf.especial==='inconsistente')filtrosEfetivos.inconsistente=true;
+  if(mf.especial==='falha'||mf.especial==='operacao'||mf.especial==='nunca_testado')filtrosEfetivos.status=mf.especial==='falha'?'Com falha':mf.especial==='operacao'?'Em operação':'Nunca testado';
+  if(mf.especial==='sdai')filtrosEfetivos.sistema='SDAI';
+  if(mf.especial==='co2')filtrosEfetivos.sistema='CO2';
+  let lista=plantaListarPontos(pl.id,subset,filtrosEfetivos);
+  const foraDaAreaSet=new Set((db.locais||[]).filter(l=>{const x=Number(l.plantaX),y=Number(l.plantaY); return l.plantaId===pl.id&&(isNaN(x)||isNaN(y)||x<0||x>100||y<0||y>100);}).map(l=>l.id));
+  const sistemas=unique((db.locais||[]).map(l=>l.sistema).filter(Boolean));
+  const rows=lista.slice(0,300).map(l=>{
+    const posicionado=l.plantaId===pl.id&&l.plantaX!=null&&l.plantaX!=='';
+    const ag=statusAgregadoLoja(l.id);
+    const corStatus=ag.estado==='falha'?'#B42318':ag.estado==='desativado'?'#8695AB':'#15803D';
+    const foraArea=foraDaAreaSet.has(l.id);
+    const inconsist=plantaMarcadorInconsistente(l,pl);
+    const acoes=posicionado?`
+        <button class="iconBtn" title="Localizar na planta" onclick="plantaLocalizarNaPlanta('local','${esc(l.id)}')">🎯</button>
+        <button class="iconBtn" title="Editar marcador" onclick="plantaEditarMarcador('local','${esc(l.id)}')">✏</button>
+        <button class="iconBtn" title="Reposicionar" onclick="plantaIniciarReposicionar('local','${esc(l.id)}')">✥</button>
+        <button class="iconBtn" title="Ver histórico" onclick="plantaVerHistoricoMarcador('${esc(l.id)}')">🕘</button>
+        <button class="iconBtn" title="Abrir loja/ponto" onclick="openLocal('${esc(l.id)}')">🔎</button>
+        ${foraArea?`<button class="btn small secondary" onclick="plantaTrazerParaAreaVisivel('${esc(l.id)}')">Trazer p/ área visível</button>`:''}
+        <button class="iconBtn" title="Excluir marcador" onclick="plantaExcluirMarcadorLista('${esc(l.id)}')">🗑</button>`
+      :`<button class="btn small" onclick="plantasUI.pendenteX=50;plantasUI.pendenteY=50;plantaSelecionarPontoInsercao('${esc(l.id)}','${esc(pl.id)}')">Inserir aqui</button>
+        <button class="iconBtn" title="Abrir loja/ponto" onclick="openLocal('${esc(l.id)}')">🔎</button>`;
+    return `<div class="mmRow${inconsist?' mmInconsist':''}">
+      <span class="mmDot" style="background:${corStatus}" title="Status operacional"></span>
+      ${plantaBadgePosicionamento(l)}
+      <span class="mmNome"><b>${esc(l.nomeOficial||l.nome)}</b><br><span class="mutedLine" style="font-size:11px">${esc([l.sistema,'Piso '+(pisoEfetivo(l)||l.piso||'—')].filter(Boolean).join(' • '))}</span></span>
+      <span class="mmAcoes">${acoes}</span>
+    </div>`;
+  }).join('')||'<p class="mutedLine" style="font-size:12px">Nenhum item com esses filtros.</p>';
+  const tabBtn=(t,label,n_)=>`<button class="btn small ${tab===t?'':'secondary'}" onclick="plantaMmSetTab('${esc(pl.id)}','${t}')">${label} (${n_})</button>`;
+  const paineisOpts=(db.paineis||[]).map(p=>`<option value="${esc(p.id)}" ${mf.painel===p.id?'selected':''}>${esc(p.nome)}</option>`).join('');
+  return `<div style="margin:8px 0">${btnAbrir}
+    <div class="card" style="padding:10px 12px;margin-top:8px">
+      <div style="display:flex;gap:12px;flex-wrap:wrap;font-size:11.5px;margin-bottom:8px">
+        <span>Total do piso: <b>${cont.totalPiso}</b></span><span>Posicionados: <b>${cont.posicionados}</b></span>
+        <span>Disponíveis: <b>${cont.disponiveis}</b></span><span style="color:${cont.inconsistentes?'#B45309':'inherit'}">Com inconsistência: <b>${cont.inconsistentes}</b></span>
+        <span style="color:${cont.foraDaArea?'#B42318':'inherit'}">Fora da área visível: <b>${cont.foraDaArea}</b></span>
+        <button class="btn small secondary" onclick="plantaMostrarTodosMarcadores('${esc(pl.id)}')">Mostrar todos os marcadores</button>
+      </div>
+      <div style="display:flex;gap:6px;margin-bottom:8px">${tabBtn('disponiveis','Disponíveis',cont.disponiveis)}${tabBtn('posicionados','Posicionados',cont.posicionados)}${tabBtn('todos','Todos',cont.totalPiso)}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">
+        <input placeholder="Buscar nome/LUC/sistema/painel/laço/módulo/porta/endereço/ID..." value="${esc(mf.q)}" oninput="plantaMmFiltro('${esc(pl.id)}').q=this.value;renderPlantas()" style="font-size:12px;flex:1;min-width:200px">
+        <select onchange="plantaMmFiltro('${esc(pl.id)}').especial=this.value;renderPlantas()" style="font-size:12px">
+          <option value="">Sem filtro especial</option>
+          <option value="falha" ${mf.especial==='falha'?'selected':''}>Com falha</option>
+          <option value="operacao" ${mf.especial==='operacao'?'selected':''}>Em operação</option>
+          <option value="nunca_testado" ${mf.especial==='nunca_testado'?'selected':''}>Nunca testados</option>
+          <option value="inconsistente" ${mf.especial==='inconsistente'?'selected':''}>Com inconsistência</option>
+          <option value="sdai" ${mf.especial==='sdai'?'selected':''}>SDAI</option>
+          <option value="co2" ${mf.especial==='co2'?'selected':''}>CO2</option>
+        </select>
+        <select onchange="plantaMmFiltro('${esc(pl.id)}').sistema=this.value;renderPlantas()" style="font-size:12px">${selectOpts(sistemas,mf.sistema,'Todos os sistemas')}</select>
+        <select onchange="plantaMmFiltro('${esc(pl.id)}').painel=this.value;renderPlantas()" style="font-size:12px"><option value="">Todos os painéis</option>${paineisOpts}</select>
+      </div>
+      <div style="max-height:320px;overflow:auto">${rows}</div>
+    </div>
+  </div>`;
 }
 
 // ---- v6.60 Feature Set A: painel "Escala da Planta" (Gerenciar Plantas) ----
