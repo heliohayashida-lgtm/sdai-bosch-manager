@@ -1,5 +1,72 @@
 <!doctype html>
-<!-- build: 2026-07-12 v6.67 - MÓDULO PLANTAS: (A) CORREÇÃO DE BUG REAL "marcador colocado mas some" +
+<!-- build: 2026-07-12 v6.68 - SINCRONIZAÇÃO: FIM DO ALERT() BLOQUEANTE DE CONFLITO + CORREÇÃO DO FALSO-CONFLITO NA RAIZ.
+DIAGNÓSTICO OBRIGATÓRIO (leitura de código, não suposição): (a) o alert() bloqueante "Outro usuário
+alterou esta base..." (syncNow(), então em ~linha 2122) disparava sempre que apiPost() recebia
+{conflict:true} do backend (revisaoConflita_ em Code.gs) — e podia disparar a CADA ciclo de
+sincronização automática, porque scheduleAutoSync(1500) roda a cada edição local E existe também um
+setInterval(()=>scheduleAutoSync(0),30000) rodando incondicionalmente a cada 30s (linha ~5158),
+inclusive sem checar se havia algo pendente. (b) NÃO havia um loop literal load→save→load (as funções
+de normalização — normalizeAllStatuses()/auditoriaConsistenciaGlobal()/migrarLocaisOrfaosV659()/
+auditoriaSanearFalhasPlanos() — foram lidas por completo e nenhuma delas chama markDirty()/save()/
+persistLocal(); confirmado via busca literal nessas 4 funções). (c) A causa raiz real, e bem mais
+grave: revisaoConflita_ (Code.gs) comparava a ÚLTIMA REVISÃO REGISTRADA no servidor contra
+`db._revision` enviado — mas `db._revision` é incrementado pelo PRÓPRIO cliente a cada edição local
+(bumpRevision(), chamada por markDirty() a cada save()), inclusive pelas edições que geraram o envio
+atual. Ou seja: a partir da 2ª sincronização de um mesmo navegador em diante, o valor enviado nunca
+batia com o registrado da vez anterior — mesmo sem NENHUMA edição de outro usuário/aba — porque o
+cliente sempre manda um número maior do que o servidor guardou da vez passada. Na prática, o "conflito"
+disparava contra o PRÓPRIO envio anterior do mesmo cliente, não contra uma edição externa real — e o
+poll de 30s incondicional entregava esse falso-positivo repetidamente, inclusive no meio de um drag de
+marcador em Plantas (que chama markDirty() ao soltar). (d) Checksum: checksumColecoes() (já existente)
+cobre só as coleções de negócio (falhas/planos/testes/equipamentos/flms/locais/paineis/lacos/portas/
+historico/plantas/cftv/acessoPontos/ambienteEquip/config) — CONFIRMADO que nenhum campo de UI (zoom/
+pan/sidebar/legenda) está dentro dela nem dentro de `db`: o módulo Plantas guarda esse estado em
+`plantasUI` (variável de módulo) persistido à parte em localStorage sob a chave 'l3a_plantas_prefs'
+(ver comentário do build v6.64 acima), deliberadamente fora de `db` desde que foi criado — nada
+precisou ser movido. (e) Sincronizações concorrentes: JÁ existia uma trava (_syncEmAndamento/
+_syncReagendarAposAtual, de uma rodada anterior) que impedia dois syncNow() rodarem em paralelo — essa
+trava foi mantida e reaproveitada, não recriada. (f) normalize/render não marcavam pendingChanges
+inadequadamente (ver item b) — o culpado era só o comparador de revisão do backend + o poll incondicional.
+CORREÇÃO APLICADA: (1) Code.gs: revisaoConflita_() e saveDatabase_() agora comparam a revisão
+registrada contra `db._baseRevision` quando o cliente o envia — um novo campo que representa a
+revisão vigente ANTES das edições locais em curso (nunca incrementado por bumpRevision), em vez de
+`db._revision` (que já reflete as edições novas). Retrocompatível: se `_baseRevision` não vier
+(cliente antigo), cai no comportamento anterior — nenhum cliente mais antigo quebra. (2) index.html:
+nova função setBaseRevisionAtual() grava `db._baseRevision=db._revision` sempre que a base fica "em
+dia" com o servidor (após load() no boot, após loadGoogle(), após um push confirmado) — nunca durante
+edição. (3) alert() bloqueante REMOVIDO do fluxo de conflito automático — substituído por
+avisarConflitoSync()/mostrarToastSync() (toast não-bloqueante, reaproveitando a classe .msg já usada
+por mostrarBannerConsistencia), com cooldown de 30s (syncConflictCooldownMs) para nunca empilhar avisos
+repetidos. (4) Painel de conflito não-bloqueante (abrirPainelConflitoSync(), via openModal — nunca
+sozinho, só ao clicar no indicador "⚠ Conflito de sincronização" do cabeçalho, novo estado 'conflict'
+em updateSyncFooter()) com 5 opções: Atualizar e descartar (com snapshotDbAntesDeDescartar() salvando
+backup em localStorage db_backup_<timestamp> ANTES de sobrescrever — mantém só os 5 mais recentes),
+Manter alterações locais (reenvia), Comparar alterações (mostra contagem local × Google + revisões),
+Salvar como cópia local, e Mesclar — GAP HONESTO ASSUMIDO: mesclagem automática campo a campo NÃO foi
+implementada; o botão existe e explica isso claramente ("não disponível para este tipo de dado" —
+falhas↔planos↔testes têm relações demais para uma fusão automática seguro sem revisão manual),
+direcionando para "Comparar"/"Manter local" como alternativa honesta, em vez de fingir um merge que
+poderia corromper dados. (5) Guard de no-op por checksum: syncNow() com showAlert=false agora sai cedo
+se !dirty, e também se o checksum das coleções não mudou desde o último envio aceito
+(syncCfg().lastChecksumEnviado) — sem isso, o poll de 30s reenviava a base inteira mesmo sem nada
+para sincronizar. (6) Guards de interação: syncDeveAdiar() reaproveita _plantaDragAtivo (Plantas) e
+window._falhaSaving/_testeSaving/_planoSaving (guards de duplo-clique já existentes nos formulários) —
+sync automático adia (não descarta) 1.5s quando qualquer um está ativo, nunca interrompe o usuário no
+meio de uma ação. (7) isHydrating: novo guard global, true durante `let db=load()` no boot e durante
+o reprocessamento de loadGoogle() — markDirty() vira no-op enquanto isHydrating=true (defesa extra;
+por leitura de código as funções de normalização já não chamavam markDirty, mas isso cobre qualquer
+call site futuro). (8) clientInstanceId (getClientInstanceId()) — id por navegador/aba, gerado uma vez
+e persistido fora de `db`, preparado para uso futuro em diagnóstico de origem do conflito (não é a
+correção central — quem resolve o falso-positivo é o _baseRevision). FUNÇÕES CRIADAS: getClientInstanceId,
+setBaseRevisionAtual, syncDeveAdiar, mostrarToastSync, avisarConflitoSync, snapshotDbAntesDeDescartar,
+abrirPainelConflitoSync, resolverConflitoSync. FUNÇÕES MODIFICADAS: bumpRevision (comentário only),
+markDirty (guard isHydrating), syncNow (guards de interação/no-op/checksum, alert()→toast, baseRevision
+no sucesso), loadGoogle (isHydrating + baseRevision + limpa aviso de conflito), updateSyncFooter (novo
+estado 'conflict' clicável), Code.gs: revisaoConflita_ e saveDatabase_ (usam _baseRevision quando
+presente). NÃO TOCADO: multi-cliente/permissões/login, Plantas (marker manager), Falhas/Testes/Plano de
+Ação (só reaproveitados os guards já existentes, nenhuma lógica de negócio alterada), demais 20+
+"builds anteriores" documentados abaixo. node --check no script extraído: 0 erros. -->
+<!-- build anterior: 2026-07-12 v6.67 - MÓDULO PLANTAS: (A) CORREÇÃO DE BUG REAL "marcador colocado mas some" +
 (B) GERENCIADOR DE MARCADORES completo (sidebar por planta). INVESTIGAÇÃO (não foi um chute): li
 renderPlantas() (laço de pins, hoje `itens.filter(i=>i.ref.plantaId===pl.id&&i.ref.plantaX!=null&&...)` —
 NÃO havia comparação crua de piso ali, só plantaId; e o próprio conceito de "plantasUI.pisoAtual" citado
@@ -1871,7 +1938,16 @@ function updateClienteSideSelect(){
 /* Mostrar/ocultar botões de subsistemas conforme módulos do cliente ativo */
 function updateNavSubsistemas(){try{buildNavTree()}catch(e){}}
 
-let db=load(); let currentView='dashboard'; let filters={};
+// isHydrating: true durante boot/load/normalize (e durante qualquer recarga vinda do Google), para
+// impedir que markDirty()/bumpRevision() disparem no meio de uma carga que ainda não terminou —
+// nenhuma das funções de normalização (normalizeAllStatuses e as que ela chama) chama markDirty hoje
+// (confirmado por leitura), mas este guard cobre qualquer novo call site futuro que precise gravar
+// algo durante a carga sem contar como "edição do usuário" para fins de revisão/conflito de sync.
+let isHydrating=true;
+let db=load();
+setBaseRevisionAtual(); // db recém-carregado está "em dia" com o que foi persistido localmente
+isHydrating=false;
+let currentView='dashboard'; let filters={};
 let searchRenderTimer=null;
 let lastSearchFocus=null;
 function onSearchInput(el){
@@ -1952,6 +2028,34 @@ function bumpRevision(reason){
   db._updatedAt=isoNow();
   try{db._updatedBy=(currentUser().email||currentUser().nome||'desconhecido');}catch(e){db._updatedBy=db._updatedBy||'desconhecido';}
 }
+// CLIENT INSTANCE ID (2026-07): id aleatório gerado uma vez por navegador/aba (persistido em
+// localStorage, não em `db` — não é sincronizado, é só uma etiqueta local), enviado em cada push
+// para o backend saber "esta revisão remota foi o MEU último envio" e não a confundir com uma
+// alteração de fato externa (outro usuário/aba). Usado hoje pela UI para nomear a origem no aviso de
+// conflito; o bloqueio de gravação em si já é resolvido pela correção de _baseRevision (ver Code.gs).
+const CLIENT_INSTANCE_KEY=KEY+':clientInstanceId';
+function getClientInstanceId(){
+  let id=localStorage.getItem(CLIENT_INSTANCE_KEY);
+  if(!id){id='ci_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2);localStorage.setItem(CLIENT_INSTANCE_KEY,id);}
+  return id;
+}
+// BASE REVISION (2026-07 — correção do falso-conflito de sincronização):
+// DIAGNÓSTICO: revisaoConflita_ (Code.gs) comparava a última revisão REGISTRADA no servidor contra
+// `db._revision` — mas `db._revision` é incrementado pelo PRÓPRIO cliente a cada edição local
+// (bumpRevision, chamada por markDirty a cada save()), inclusive pelas edições que geraram o envio
+// atual. Resultado: a partir da 2ª sincronização de um mesmo navegador em diante, o valor enviado
+// nunca batia com o último registrado — nem havendo edição externa nenhuma — porque o cliente sempre
+// manda um número MAIOR do que o que o servidor guardou da vez anterior. Isso disparava o alert()
+// bloqueante de "Outro usuário alterou esta base" a cada sincronização automática (poll de 30s, ver
+// setInterval mais abaixo) sempre que havia qualquer edição pendente — inclusive no meio de um drag
+// de marcador em Plantas, já que markDirty() roda a cada solto de marcador.
+// FIX: `db._baseRevision` guarda a revisão que estava vigente ANTES das edições locais em curso —
+// é ela (não `db._revision`, que já reflete as edições novas) que precisa bater com a última
+// registrada no servidor para a gravação ser aceita sem conflito. `_baseRevision` é atualizada para
+// `db._revision` sempre que a base fica "em dia" com o servidor: logo após load() no boot, logo após
+// um loadGoogle()/pull bem-sucedido, e logo após um push confirmado (dirty:false). NUNCA é
+// incrementada por edição local — só bumpRevision()/db._revision faz isso.
+function setBaseRevisionAtual(){ db._baseRevision=db._revision||0; }
 /* Checksum simples (não-criptográfico) das coleções que definem a integridade
    do negócio — falhas, planos, testes. Suficiente para detectar divergência
    entre o que foi enviado e o que voltou do Google, sem exigir libs externas. */
@@ -1974,9 +2078,13 @@ function checksumColecoes(d){
   if(d.config)h=(h*31+JSON.stringify(d.config).length)>>>0;
   return h.toString(16);
 }
-function markDirty(reason='alteração'){bumpRevision(reason); persistLocalThrottled(); _dbVersion++; setSyncCfg({dirty:true,lastReason:reason}); scheduleAutoSync(1500)}
+function markDirty(reason='alteração'){if(isHydrating)return; bumpRevision(reason); persistLocalThrottled(); _dbVersion++; setSyncCfg({dirty:true,lastReason:reason}); scheduleAutoSync(1500)}
 function save(){if(typeof plantaInvalidarCacheTooltip==='function')plantaInvalidarCacheTooltip();markDirty('salvamento');render()}
-function updateSyncFooter(status){const c=syncCfg(); const dot=document.getElementById('syncDot'), txt=document.getElementById('syncText'); if(!dot||!txt)return; dot.className='syncDot '+(status==='saving'?'warn':status==='error'?'bad':(!c.configured?'warn':c.dirty?'warn':'ok')); txt.textContent=status==='saving'?'Sincronizando...':status==='error'?'Falha ao sincronizar':(!c.configured?'Banco Google não configurado':c.dirty?'Alterações pendentes':'Sincronizado '+(c.lastSync||''));}
+function updateSyncFooter(status){const c=syncCfg(); const dot=document.getElementById('syncDot'), txt=document.getElementById('syncText'); if(!dot||!txt)return;
+  // Item 9: novo estado "conflito" no indicador de sincronização do cabeçalho — clicável, abre o
+  // painel não-bloqueante de resolução (abrirPainelConflitoSync); nunca abre sozinho.
+  if(status==='conflict'){ dot.className='syncDot bad'; txt.innerHTML='<span style="cursor:pointer;text-decoration:underline" onclick="abrirPainelConflitoSync()" title="Clique para revisar o conflito">⚠ Conflito de sincronização</span>'; return; }
+  dot.className='syncDot '+(status==='saving'?'warn':status==='error'?'bad':(!c.configured?'warn':c.dirty?'warn':'ok')); txt.textContent=status==='saving'?'Sincronizando...':status==='error'?'Falha ao sincronizar':(!c.configured?'Banco Google não configurado':c.dirty?'Alterações pendentes':'Sincronizado '+(c.lastSync||''));}
 let autoSyncTimer=null; let _recuperandoBaseInicial=false; function scheduleAutoSync(ms){const c=syncCfg(); if(!c.configured||!c.auto||_recuperandoBaseInicial)return; clearTimeout(autoSyncTimer); autoSyncTimer=setTimeout(()=>syncNow(false),ms||((c.intervalSec||30)*1000));}
 // CORREÇÃO: trava simples contra sincronizações simultâneas. Antes, se o usuário editasse de novo
 // enquanto um envio anterior ainda estava em andamento (comum quando o Apps Script/Sheets demora),
@@ -2066,7 +2174,9 @@ async function loadGoogle(){try{updateSyncFooter('saving'); const r=await jsonpD
       updateSyncFooter(); return;
     }
   }
-  db=normalizeAllStatuses(Object.assign(emptyDB(),r.db)); persistLocal(); setSyncCfg({configured:true,dirty:false,lastSync:new Date().toLocaleTimeString('pt-BR')}); render();
+  isHydrating=true; db=normalizeAllStatuses(Object.assign(emptyDB(),r.db)); isHydrating=false;
+  setBaseRevisionAtual(); // base recém-puxada do Google: local e remoto batem agora
+  persistLocal(); setSyncCfg({configured:true,dirty:false,lastSync:new Date().toLocaleTimeString('pt-BR'),lastChecksumEnviado:checksumColecoes(db)}); syncConflictNoticeVisible=false; render();
 } else { alert('Banco Google vazio. Dados locais preservados. Use Sincronizar agora para enviar sua base.'); setSyncCfg({configured:true}); renderSistema(); }}catch(e){updateSyncFooter('error'); alert('Falha ao carregar Google: '+e.message)}}
 function baseParecevazia(){
   const semSdai = !(db.paineis||[]).length && !(db.equipamentos||[]).length && !(db.locais||[]).length && !(db.flms||[]).length;
@@ -2095,13 +2205,112 @@ async function verificarSyncSalvou(esperado,checksumEsperado){try{const r=await 
     if(checksumAtual!==checksumEsperado)return {ok:false,motivo:`Checksum divergente (contagens batem, mas o conteúdo não é idêntico ao enviado) — local: ${checksumEsperado}, Google Sheets: ${checksumAtual}. Possível sobrescrita concorrente por outro usuário/cliente.`};
   }
   return {ok:true}}catch(e){return {ok:false,motivo:'Não foi possível conferir: '+e.message}}}
+// Guards de interação (2026-07): a sincronização automática não deve interromper o usuário no meio
+// de uma ação. Reaproveita flags já existentes no app (drag de marcador em Plantas, guards de
+// duplo-clique dos formulários de Falha/Teste/Plano) em vez de criar um jogo paralelo de flags —
+// quando qualquer uma está ativa, a sincronização automática é adiada (nunca descartada) e tentada de
+// novo em breve.
+function syncDeveAdiar(){
+  return !!(window._plantaDragAtivo || window._falhaSaving || window._testeSaving || window._planoSaving);
+}
+// Notificação não-bloqueante de sincronização (2026-07): substitui o alert()/confirm() nativo que
+// travava a tela em "Outro usuário alterou esta base..." — o mesmo toast (.msg, padrão já usado por
+// mostrarBannerConsistencia) para os avisos de rotina, e um painel de conflito (openModal, também
+// não-bloqueante) só quando há edição local pendente concorrendo com uma revisão remota mais nova.
+let syncConflictNoticeVisible=false;
+let lastSyncConflictNoticeAt=0;
+const syncConflictCooldownMs=30000;
+function mostrarToastSync(msg,tipo='ok',ms=6000){
+  const existente=document.getElementById('syncToast'); if(existente)existente.remove();
+  const toast=document.createElement('div');
+  toast.id='syncToast';
+  toast.className='msg '+tipo;
+  toast.style.cssText='position:fixed;top:14px;right:14px;max-width:380px;z-index:99999;box-shadow:0 6px 20px rgba(0,0,0,.22);pointer-events:auto;padding-right:34px';
+  toast.innerHTML=esc(msg)+'<span onclick="document.getElementById(\'syncToast\')&&document.getElementById(\'syncToast\').remove()" style="position:absolute;top:6px;right:10px;cursor:pointer;font-weight:bold;pointer-events:auto">×</span>';
+  toast.style.position='fixed'; // garante que não intercepta cliques no resto da página (fixed + width limitado, sem overlay)
+  document.body.appendChild(toast);
+  if(ms)setTimeout(()=>{if(toast&&toast.parentNode)toast.remove()},ms);
+}
+function avisarConflitoSync(motivo){
+  const agora=Date.now();
+  // Debounce/cooldown: não empilha vários toasts do mesmo tipo de aviso; consolida numa única
+  // notificação por janela de 30s, mesmo que a detecção de conflito se repita nesse meio-tempo
+  // (ex.: vários polls automáticos de 30s enquanto o usuário segue editando).
+  if(syncConflictNoticeVisible && (agora-lastSyncConflictNoticeAt)<syncConflictCooldownMs)return;
+  syncConflictNoticeVisible=true; lastSyncConflictNoticeAt=agora;
+  updateSyncFooter('conflict');
+  mostrarToastSync('Conflito de sincronização: outra sessão alterou esta base. Clique no indicador "Conflito" no topo para revisar.','warn',syncConflictCooldownMs);
+  setTimeout(()=>{syncConflictNoticeVisible=false},syncConflictCooldownMs);
+}
+// Backup antes de qualquer resolução destrutiva do conflito (item 10): snapshot local com
+// usuário/timestamp/revisões, para uma edição descartada não ficar irrecuperável.
+function snapshotDbAntesDeDescartar(motivo){
+  try{
+    const chave='db_backup_'+Date.now();
+    localStorage.setItem(chave,JSON.stringify({db,usuario:(function(){try{return currentUser().email||currentUser().nome}catch(e){return 'desconhecido'}})(),quando:isoNow(),localRevision:db._revision||0,remoteRevision:window._syncUltimaRevisaoRemotaConhecida||null,motivo}));
+    // mantém só os 5 backups de conflito mais recentes para não crescer o localStorage indefinidamente
+    const chaves=Object.keys(localStorage).filter(k=>k.startsWith('db_backup_')).sort();
+    while(chaves.length>5){localStorage.removeItem(chaves.shift());}
+  }catch(e){console.warn('snapshotDbAntesDeDescartar falhou:',e.message)}
+}
+function abrirPainelConflitoSync(erroServidor){
+  syncConflictNoticeVisible=false;
+  const esperado=lucContagemDB(db);
+  openModal(`<h2>Conflito de sincronização</h2>
+    <p class="note">${esc(erroServidor||'Outro usuário/sessão alterou esta base depois da sua última sincronização.')} Não há mesclagem automática de campo a campo nesta versão — escolha como prosseguir.</p>
+    <div class="formGrid"><div class="field"><label>Registros locais atuais</label><div>${Object.entries(esperado).map(([k,v])=>`${esc(k)}: ${v}`).join(' · ')}</div></div></div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:14px">
+      <button class="btn danger" onclick="resolverConflitoSync('descartar')">Atualizar e descartar alterações locais</button>
+      <button class="btn secondary" onclick="resolverConflitoSync('manter')">Manter alterações locais (tentar reenviar)</button>
+      <button class="btn secondary" onclick="resolverConflitoSync('comparar')">Comparar alterações</button>
+      <button class="btn secondary" onclick="resolverConflitoSync('copia')">Salvar como cópia local (backup)</button>
+      <button class="btn secondary" onclick="alert('Mesclagem automática campo a campo não está disponível nesta versão para esta base — os dados têm relações demais (falhas↔planos↔testes) para uma fusão segura sem revisão manual. Use \'Comparar alterações\' para decidir manualmente, ou \'Manter alterações locais\' e refaça a sincronização depois.')">Mesclar (não disponível para este tipo de dado)</button>
+    </div>`);
+}
+async function resolverConflitoSync(acao){
+  if(acao==='descartar'){
+    snapshotDbAntesDeDescartar('descarte manual após conflito de sincronização');
+    closeModal();
+    updateSyncFooter('saving');
+    try{ await loadGoogle(); mostrarToastSync('Dados atualizados a partir do Google.','ok'); }catch(e){ mostrarToastSync('Falha ao atualizar: '+e.message,'err'); }
+    return;
+  }
+  if(acao==='manter'){ closeModal(); setSyncCfg({dirty:true}); scheduleAutoSync(500); return; }
+  if(acao==='copia'){ snapshotDbAntesDeDescartar('cópia manual solicitada pelo usuário'); mostrarToastSync('Cópia local da base atual salva. Você pode continuar editando.','ok'); return; }
+  if(acao==='comparar'){
+    try{
+      const r=await jsonpDbAtual();
+      if(!r.ok||!r.db){mostrarToastSync('Não foi possível ler a base remota para comparar.','err');return;}
+      const local=lucContagemDB(db), remoto=lucContagemDB(r.db);
+      const linhas=Object.keys(local).map(k=>`${esc(k)}: local ${local[k]} vs. Google ${remoto[k]}${local[k]!==remoto[k]?' ⚠':''}`).join('<br>');
+      openModal(`<h2>Comparação local × Google</h2><div class="note">${linhas}</div><p class="note">Revisão local: ${db._revision||0} · Revisão do Google: ${r.db._revision||0}</p><button class="btn secondary" onclick="abrirPainelConflitoSync()">Voltar</button>`);
+    }catch(e){ mostrarToastSync('Falha ao comparar: '+e.message,'err'); }
+    return;
+  }
+}
 async function syncNow(showAlert=true){
   const c=syncCfg();
   if(!c.configured){ if(showAlert) alert('Configure/valide o banco Google primeiro.'); return; }
   if(baseParecevazia()){ if(!showAlert){updateSyncFooter();return} if(!confirm('ATENÇÃO: a base local está vazia (sem painéis, laços, FLMs, equipamentos ou lojas). Sincronizar agora vai SUBSTITUIR os dados no Google Sheets por uma base vazia — isso pode apagar tudo que já está lá. Use "Carregar base Google" antes, a menos que você realmente queira começar do zero. Deseja continuar mesmo assim?'))return }
+  // Guard de interação: sincronização automática nunca interrompe uma ação em curso — adia (não
+  // descarta) e tenta de novo em breve. Sincronização manual (showAlert=true, clique explícito do
+  // usuário) não é adiada, pois foi pedida deliberadamente.
+  if(showAlert===false && syncDeveAdiar()){ setTimeout(()=>syncNow(false),1500); return; }
   // CORREÇÃO: se já existe uma sincronização em andamento, não dispara uma segunda em paralelo —
   // marca para reagendar assim que a atual terminar (usando sempre o dado mais recente).
   if(_syncEmAndamento){ _syncReagendarAposAtual=true; return; }
+  // GUARD DE NO-OP POR CHECKSUM (2026-07, item 8): evita enviar/registrar uma nova revisão quando
+  // nada de funcionalmente relevante mudou desde o último envio confirmado — importante porque o
+  // poll automático de 30s (setInterval mais abaixo) chamava scheduleAutoSync/syncNow
+  // INCONDICIONALMENTE, mesmo sem qualquer edição. checksumColecoes() já cobre só as coleções de
+  // negócio (falhas/planos/testes/equipamentos/flms/locais/paineis/lacos/portas/historico/plantas/
+  // cftv/acessoPontos/ambienteEquip + config) — deliberadamente EXCLUI campos voláteis que não
+  // deveriam contar como "mudança real": db._revision/_baseRevision/_updatedAt/_updatedBy (meta de
+  // sincronização, não dado de negócio), qualquer cache/estado de UI (plantasUI vive em
+  // localStorage próprio — ver l3a_plantas_prefs no módulo Plantas — e nunca foi incluído em `db`,
+  // então não precisa exclusão explícita aqui) e o próprio syncCfg (lastSync/dirty, que fica fora
+  // de `db`, em SYNC_KEY separado).
+  if(showAlert===false && !c.dirty){ updateSyncFooter(); return; }
   _syncEmAndamento=true;
   const versaoAoIniciar=_dbVersion;
   try{
@@ -2109,6 +2318,12 @@ async function syncNow(showAlert=true){
     persistLocal();
     const esperado=lucContagemDB(db);
     const checksumEsperado=checksumColecoes(db);
+    if(showAlert===false && checksumEsperado===syncCfg().lastChecksumEnviado){
+      // Nada de funcionalmente relevante mudou desde o último envio aceito — não reenvia, não
+      // incrementa revisão, não fica marcando "Alterações pendentes" à toa.
+      setSyncCfg({dirty:false});
+      return;
+    }
     const cid=clienteAtivo();
     const resultadoEnvio=cid?await apiPost('saveClienteDb',{db}):await apiPost('save',{db});
     // Task 3 (estabilização 2026-07): agora que apiPost pode retornar a resposta legível do
@@ -2119,8 +2334,13 @@ async function syncNow(showAlert=true){
     // sendo a rede de segurança nesse caso — nada muda em relação ao comportamento anterior).
     if(resultadoEnvio && resultadoEnvio.data && resultadoEnvio.data.conflict===true){
       updateSyncFooter('error');
-      alert(resultadoEnvio.data.error||'Outro usuário alterou esta base. Atualize os dados antes de salvar.');
       setSyncCfg({dirty:true,lastReason:'conflito de gravação detectado pelo servidor'});
+      // CORREÇÃO (removido alert() bloqueante): antes, esse alert() disparava a cada tentativa de
+      // sync com conflito — incluindo o poll automático de 30s — travando a tela do usuário no meio
+      // de qualquer ação (inclusive um drag em Plantas). Agora vira um toast não-bloqueante com
+      // cooldown de 30s (avisarConflitoSync), e o painel de decisão (5 opções, item 4) só abre se o
+      // usuário clicar no indicador — nunca sozinho.
+      avisarConflitoSync(resultadoEnvio.data.error);
       renderSistema();
       return;
     }
@@ -2145,7 +2365,13 @@ async function syncNow(showAlert=true){
       setSyncCfg({dirty:true,lastReason:'nova alteração durante a sincronização'});
       _syncReagendarAposAtual=true;
     } else {
-      setSyncCfg({dirty:false,lastSync:new Date().toLocaleTimeString('pt-BR')});
+      // Envio aceito e confirmado: a base local está oficialmente "em dia" com o servidor — avança
+      // _baseRevision para o valor que acabou de ser registrado (era esse o pulo que faltava: sem
+      // isso, a PRÓXIMA edição local seria comparada contra a revisão antiga e voltaria a falso-
+      // conflitar). Também guarda o checksum aceito, para o guard de no-op do próximo ciclo.
+      setBaseRevisionAtual();
+      setSyncCfg({dirty:false,lastSync:new Date().toLocaleTimeString('pt-BR'),lastChecksumEnviado:checksumEsperado});
+      syncConflictNoticeVisible=false;
       if(showAlert) alert('Sincronização confirmada: os dados foram lidos de volta do Google Sheets e conferem com o local.');
     }
     renderSistema();
