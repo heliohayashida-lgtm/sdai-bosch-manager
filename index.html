@@ -1,5 +1,52 @@
 <!doctype html>
-<!-- build: 2026-07-12 v6.68 - SINCRONIZAÇÃO: FIM DO ALERT() BLOQUEANTE DE CONFLITO + CORREÇÃO DO FALSO-CONFLITO NA RAIZ.
+<!-- build: 2026-07-12 v6.69 - MÓDULO PLANTAS: "Modo posicionamento" deixa de ser um controle único e global
+no topo da tela Plantas e passa a ser POR PLANTA/PISO, no cabeçalho de cada bloco.
+DIAGNÓSTICO: existiam DOIS conceitos distintos de "posicionamento" na tela Plantas antes desta mudança —
+(1) plantasUI.edit (checkbox único "✏️ Modo posicionamento", renderizado uma única vez acima de todos os
+blocos, linha ~8329 da versão anterior): controla arrastar item da lista lateral para uma planta, seleção
+de marcador (mostra alças de redimensionar) e exibição do painel "Escala da Planta" — este SIM era o
+controle verdadeiramente global e sem nenhum conceito de planta-alvo, exatamente o bug relatado (dava pra
+arrastar/redimensionar em QUALQUER planta ao mesmo tempo, mesmo tendo várias na tela); (2) plantasUI.modoInserir
++ modoInserirPlantaId ("📍 Adicionar marcador", v6.62): esse JÁ era por planta desde que foi criado — cada
+bloco tem seu próprio botão, escopado ao plantaId daquele bloco, com botão "✕ Cancelar inserção" quando
+ativo naquela planta específica; não precisou de nenhuma mudança estrutural. Ou seja, o controle que
+precisava ser corrigido era (1), não (2) — mantidos como DOIS botões distintos no cabeçalho (não são a
+mesma função: um habilita arrastar/selecionar/redimensionar marcadores já existentes, o outro entra em
+modo de clique-para-inserir um marcador novo), lado a lado, sem sobreposição de estado incoerente entre eles.
+IMPLEMENTAÇÃO: em vez de criar um objeto de estado paralelo, o campo plantasUI.edit foi reaproveitado —
+passou de boolean para guardar o plantaId da planta atualmente em modo de posicionamento (ou null). Como é
+um único campo escalar, a regra "só uma planta ativa por vez" sai de graça: plantaToggleModoPosicionamento(id)
+simplesmente sobrescreve o valor, o que automaticamente "desativa" a planta anterior (nenhum código de
+outro bloco precisa saber disso — todo header lê plantasUI.edit===pl.id a cada renderPlantas()). Comparações
+antigas como `if(!plantasUI.edit)` continuam funcionando sem alteração (string não-vazia é truthy). Pontos
+tornados por-planta: alças de redimensionar (linha ~8278, exige plantasUI.edit===pl.id), painel "Escala da
+Planta" (linha ~8324, mesma condição), destaque visual do bloco inteiro (.plantaBlocoModoPosAtivo, borda +
+sombra azul) e do próprio botão (.plantaModoPosBtnAtivo, preenchido, texto "● Posicionamento ativo").
+Arrastar-e-soltar da lista lateral: o gesto pode COMEÇAR com qualquer planta ativa (mantém plantasUI.edit
+truthy como gate), mas ao passar sobre um plantaViewport que NÃO é o ativo, a planta não é mais marcada como
+alvo válido (.plantaDropAlvo não é aplicado) e soltar ali é tratado exatamente como soltar fora de qualquer
+planta — cancela, nada é gravado (dupla trava: no cálculo do alvo durante o arrasto E de novo no drop, por
+segurança). plantaCliquePino() passou a comparar plantasUI.edit com o plantaId do PRÓPRIO item clicado antes
+de entrar em modo seleção — clicar num pino de uma planta fora de modo de posicionamento abre o detalhe
+normalmente, como sempre foi. Desativação: mesmo botão (toggle), Esc (extensão do listener já existente de
+Esc do modo de inserção, agora também chama plantaSairModoPosicionamento()), trocar a planta ativa (implícito
+pelo campo escalar) e sair da tela Plantas via navigate() (novo guard: currentView==='plantas' && view
+diferente de 'plantas' zera plantasUI.edit/selecionado/modoInserir/pendenteX/Y). Nenhum marcador incompleto
+pode ser criado por esta mudança — pendenteX/Y de inserção nunca são tocados pelo modo de posicionamento (são
+dois estados independentes). REMOÇÃO: o checkbox único do topo da tela (acima da legenda) foi removido da
+renderização — a função continua acessível só via plantaToggleModoPosicionamento(plantaId) por planta, sem
+controle redundante duplicado. HEADER STICKY: adicionado position:sticky;top:72px;z-index:6 em
+.plantaBlocoHead (72px = altura real de .top, linha ~502, que usa z-index:40; modais/drawers/tooltips do
+app partem de z-index:90+ — 6 fica bem abaixo de tudo isso, então nunca cobre o header nem qualquer modal
+aberto). Também adicionado botão "🔍 Ajustar à tela" no cabeçalho de cada planta (reaproveita
+plantaMostrarTodosMarcadores(plantaId) já existente, chamado antes só pelo gerenciador no rodapé do bloco).
+GAPS HONESTOS: não foi criado nenhum teste automatizado (o projeto não tem suíte de testes); a cobertura de
+"planta ativa" no arrasto foi validada por leitura de código, não por teste manual em navegador real — o
+padrão de dupla trava (highlight + drop) foi escolhido justamente para minimizar risco de um caminho não
+coberto. Compatibilidade: plantaX/plantaY/plantaId/localId, testes/falhas/históricos, escalas, zoom,
+clustering e print/export NÃO foram tocados — mudança 100% de controle/escopo de UI. node --check no script
+extraído: 0 erros. -->
+<!-- build anterior: 2026-07-12 v6.68 - SINCRONIZAÇÃO: FIM DO ALERT() BLOQUEANTE DE CONFLITO + CORREÇÃO DO FALSO-CONFLITO NA RAIZ.
 DIAGNÓSTICO OBRIGATÓRIO (leitura de código, não suposição): (a) o alert() bloqueante "Outro usuário
 alterou esta base..." (syncNow(), então em ~linha 2122) disparava sempre que apiPost() recebia
 {conflict:true} do backend (revisaoConflita_ em Code.gs) — e podia disparar a CADA ciclo de
@@ -712,7 +759,15 @@ input[type=checkbox],input[type=radio]{accent-color:var(--l3a-primary)}
 .plantaChip .cNome{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
 .plantaChip .cSub{display:block;font-size:10.5px;color:var(--l3a-text-muted);font-weight:400}
 .plantaBloco{background:var(--l3a-surface);border:1px solid var(--l3a-border);border-radius:14px;margin-bottom:18px;overflow:hidden}
+/* v6.69 — destaque do bloco/piso que está com o Modo posicionamento ativo, além do texto do botão, para
+   ficar inequívoco qual planta está ativa mesmo sem ler o rótulo. */
+.plantaBlocoModoPosAtivo{border-color:var(--l3a-primary);box-shadow:0 0 0 2px rgba(11,95,173,.18)}
+.plantaModoPosBtnAtivo{background:var(--l3a-primary);border-color:var(--l3a-primary);color:#fff;font-weight:800}
 .plantaBlocoHead{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;border-bottom:1px solid var(--l3a-border);flex-wrap:wrap}
+/* v6.69 — cabeçalho por planta sticky abaixo do header principal do app (.top tem 72px de altura e
+   z-index:40 — ver linha ~502); usamos top:72px e z-index:6 (bem abaixo de modais/tooltips/drawers, que
+   partem de z-index:90+) para nunca cobrir o header nem qualquer modal aberto. */
+.plantaBlocoHead{position:sticky;top:72px;z-index:6;background:var(--l3a-surface)}
 .plantaBlocoHead h3{margin:0;font-size:15px;font-weight:800}
 .plantaBlocoHead .pMeta{font-size:11.5px;color:var(--l3a-text-muted)}
 .plantaZoomBtns{display:flex;gap:4px}
@@ -1770,6 +1825,16 @@ function buildNavTree(){
   tree.innerHTML=html;
 }
 function navigate(view){
+  // v6.69: sair da tela Plantas encerra qualquer Modo posicionamento/inserção ativo (item 5 do pedido) —
+  // nunca deixa "meio aplicado" ao voltar depois para outra tela e retornar.
+  if(currentView==='plantas'&&view!=='plantas'){
+    try{
+      if(typeof plantasUI!=='undefined'){
+        plantasUI.edit=null; plantasUI.selecionado=null;
+        if(plantasUI.modoInserir){plantasUI.modoInserir=false;plantasUI.modoInserirPlantaId=null;plantasUI.pendenteX=null;plantasUI.pendenteY=null;}
+      }
+    }catch(e){}
+  }
   currentView=view;
   // Persiste a última tela acessada para este cliente (exceto Clientes, que é
   // ponto de partida quando ainda não há cliente selecionado).
@@ -8037,7 +8102,15 @@ function openLocalBlocosHtml(l,testes,hist){
    renderPlantas() é PURA (lê db, escreve HTML); estado efêmero de UI vive
    em plantasUI e é reaplicado a cada re-render.
    ========================================================================= */
-const plantasUI={edit:false,zoom:{},pan:{},filtro:{tipo:'',piso:'',q:''},selecionado:null,
+// v6.69 — "Modo posicionamento" (plantasUI.edit) deixou de ser um único checkbox global no topo da tela
+// para virar um controle POR PLANTA/PISO no cabeçalho de cada bloco (ver renderPlantas). Em vez de criar um
+// objeto paralelo, o mesmo campo `edit` foi reaproveitado: agora guarda o plantaId da planta atualmente em
+// modo de posicionamento (ou null se nenhuma estiver ativa), em vez de true/false — como só UMA planta pode
+// estar ativa por vez, um único campo escalar já garante sozinho a regra de "só uma ativa globalmente"
+// (setar `edit` para uma nova planta automaticamente "desativa" a anterior, pois o campo só guarda um id).
+// Comparações como `if(!plantasUI.edit)` continuam funcionando (string não-vazia é truthy, ''/null é falsy);
+// onde é preciso saber SE é uma planta específica, compara-se `plantasUI.edit===pl.id`.
+const plantasUI={edit:null,zoom:{},pan:{},filtro:{tipo:'',piso:'',q:''},selecionado:null,
   // v6.62 — modo de inserção por clique ("Adicionar marcador"): modoInserir/modoInserirPlantaId controlam
   // se o próximo clique no viewport captura uma posição pendente (pendenteX/Y, NUNCA gravada em db.locais
   // até a confirmação explícita no modal de seleção). modalInsercao guarda os filtros combináveis do modal.
@@ -8249,7 +8322,7 @@ function renderPlantas(){
       // O nome/detalhes completos passam a viver exclusivamente no tooltip de hover (renderTooltipMarcador).
       const escM=plantaClampEscalaFinal(plantaEscalaMarcador(i.ref,pl,i.tipoFiltro)*zf), escT=plantaClampEscalaFinal(plantaEscalaTexto(i.ref,pl,i.tipoFiltro)*zf);
       const selecionado=plantasUI.selecionado&&plantasUI.selecionado.kind===i.kind&&plantasUI.selecionado.id===i.id;
-      const handles=(plantasUI.edit&&podeEditarPlantas()&&selecionado)?`<div class="plantaHandle hMarcador" data-handle="marcador" title="Redimensionar marcador"></div><div class="plantaHandle hTexto" data-handle="texto" title="Redimensionar texto (badge)"></div>`:'';
+      const handles=(plantasUI.edit===pl.id&&podeEditarPlantas()&&selecionado)?`<div class="plantaHandle hMarcador" data-handle="marcador" title="Redimensionar marcador"></div><div class="plantaHandle hTexto" data-handle="texto" title="Redimensionar texto (badge)"></div>`:'';
       const badge=badgeN?`<span class="pinBadge" style="transform:scale(${escT});transform-origin:center">${badgeN}</span>`:'';
       const zi=10+(Number(i.ref.zIndexPlanta)||0);
       return `<div class="plantaPin ${cls}${selecionado?' selecionado':''}" data-kind="${i.kind}" data-id="${esc(i.id)}" data-local-id="${esc(i.kind==='local'?i.id:(i.ref.localId||''))}" style="left:${i.ref.plantaX}%;top:${i.ref.plantaY}%;margin-left:${dx}px;margin-top:${dy}px;z-index:${zi}">${badge}<span class="pinDot" style="transform:scale(${escM});transform-origin:center">${inner}</span>${handles}</div>`;
@@ -8278,7 +8351,8 @@ function renderPlantas(){
           ${pl.uploadFalhou?'<b>Falha no envio da imagem.</b>':'Nenhuma imagem carregada para esta planta.'}
           ${podeEditarPlantas()?`<label class="btn secondary small" style="cursor:pointer">${pl.uploadFalhou?'Tentar novamente':'Enviar imagem / PDF'}<input type="file" accept="image/*,.pdf" style="display:none" onchange="uploadPlantaArquivo('${esc(pl.id)}',this.files[0]);this.value=''"></label>`:''}
         </div></div>`;
-    return `<div class="plantaBloco" data-planta-bloco="${esc(pl.id)}">
+    const modoPosAtivoAqui=plantasUI.edit===pl.id;
+    return `<div class="plantaBloco${modoPosAtivoAqui?' plantaBlocoModoPosAtivo':''}" data-planta-bloco="${esc(pl.id)}">
       <div class="plantaBlocoHead">
         <div><h3>${esc(pl.titulo||('Planta — '+pl.piso))}</h3><span class="pMeta">${esc(pl.piso)} • ${pins.length} pino(s)</span></div>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
@@ -8287,12 +8361,14 @@ function renderPlantas(){
             <button class="iconBtn" title="Afastar" onclick="plantaZoom('${esc(pl.id)}',0.8)">−</button>
             <button class="iconBtn" title="Restaurar" onclick="plantaZoom('${esc(pl.id)}',0)">⟲</button>
           </div>
+          ${podeEditarPlantas()&&pl.imagemUrl?`<button class="btn small" onclick="plantaMostrarTodosMarcadores('${esc(pl.id)}')" title="Ajustar zoom para mostrar todos os marcadores">🔍 Ajustar à tela</button>`:''}
+          ${podeEditarPlantas()?`<button class="btn small${modoPosAtivoAqui?' plantaModoPosBtnAtivo':''}" onclick="plantaToggleModoPosicionamento('${esc(pl.id)}')" title="Ativa arrastar itens da lista, selecionar e redimensionar marcadores nesta planta">${modoPosAtivoAqui?'● Posicionamento ativo':'✏ Modo posicionamento'}</button>`:''}
           ${podeEditarPlantas()&&pl.imagemUrl?`<label class="iconBtn" title="Trocar imagem" style="cursor:pointer">🖼<input type="file" accept="image/*,.pdf" style="display:none" onchange="uploadPlantaArquivo('${esc(pl.id)}',this.files[0]);this.value=''"></label>`:''}
           ${podeEditarPlantas()&&pl.imagemUrl?(plantasUI.modoInserir&&plantasUI.modoInserirPlantaId===pl.id?`<button class="btn small danger" onclick="plantaSairModoInserir()">✕ Cancelar inserção</button>`:`<button class="btn small" onclick="plantaToggleModoInserir('${esc(pl.id)}')">📍 Adicionar marcador</button>`):''}
           ${isMaster(currentUserSafe())?`<button class="iconBtn" title="Editar planta" onclick="formPlantaBaixa('${esc(pl.id)}')">✏</button>`:''}
         </div>
       </div>
-      ${(plantasUI.edit&&podeEditarPlantas())?plantaEscalaPainelHtml(pl):''}
+      ${(plantasUI.edit===pl.id&&podeEditarPlantas())?plantaEscalaPainelHtml(pl):''}
       ${corpo}
       ${podeEditarPlantas()?plantaGerenciadorHtml(pl):''}
     </div>`;
@@ -8326,7 +8402,6 @@ function renderPlantas(){
     ${dsKpiStrip([['Plantas',plantas.length,''],['Pinos posicionados',posicionados,'ok'],['Não posicionados',naoPosic,naoPosic>0?'warn':'ok'],['Lojas em falha',lojasFalha,lojasFalha>0?'bad':'ok']])}
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
       ${legenda}
-      ${podeEditarPlantas()?`<label style="display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap"><input type="checkbox" ${plantasUI.edit?'checked':''} onchange="plantasUI.edit=this.checked;renderPlantas()"> ✏️ Modo posicionamento</label>`:''}
     </div>
     ${inconsHtml}
     <div class="plantasLayout${plantasUI.sideCollapsed?' sideColapsada':''}">
@@ -8338,7 +8413,7 @@ function renderPlantas(){
           <select onchange="plantasUI.filtro.tipo=this.value;renderPlantas()" style="font-size:12px">${selectOpts(['Loja','Detector','Acionador','Sirene','Módulo FLM'],f.tipo,'Todos os tipos')}</select>
           <select onchange="plantasUI.filtro.piso=this.value;renderPlantas()" style="font-size:12px">${selectOpts(pisosDisponiveis,f.piso,'Todos os pisos')}</select>
         </div>
-        ${plantasUI.edit?'<p class="mutedLine" style="font-size:11px">Arraste um item para a planta correspondente.</p>':'<p class="mutedLine" style="font-size:11px">Ative o "Modo posicionamento" para arrastar.</p>'}
+        ${plantasUI.edit?`<p class="mutedLine" style="font-size:11px">Arraste um item — só será aceito na planta com "Modo posicionamento" ativo (${esc((plantas.find(p=>p.id===plantasUI.edit)||{}).piso||'')}).</p>`:'<p class="mutedLine" style="font-size:11px">Ative o "Modo posicionamento" no cabeçalho de uma planta para arrastar.</p>'}
         ${chipsHtml}
       </aside>
       <div class="plantasMain">
@@ -8487,7 +8562,11 @@ function plantaBindEventos(root){
   // window._plantaEscInserirBound), independente do handler global de Esc dos modais já existente.
   if(!window._plantaEscInserirBound){
     window._plantaEscInserirBound=true;
-    document.addEventListener('keydown',ev=>{ if(ev.key==='Escape'&&plantasUI.modoInserir)plantaSairModoInserir(); });
+    document.addEventListener('keydown',ev=>{
+      if(ev.key!=='Escape')return;
+      if(plantasUI.modoInserir)plantaSairModoInserir();
+      if(plantasUI.edit)plantaSairModoPosicionamento(); // v6.69: Esc também sai do Modo posicionamento por planta
+    });
   }
   root.querySelectorAll('.plantaChip').forEach(chip=>{
     chip.addEventListener('pointerdown',ev=>{
@@ -8647,7 +8726,11 @@ function plantaIniciarDrag(ev,kind,id_,origemEl){
     }
     ghost.style.left=e2.clientX+'px';ghost.style.top=e2.clientY+'px';
     const sob=document.elementFromPoint(e2.clientX,e2.clientY);
-    const vp=sob?sob.closest('.plantaViewport'):null;
+    // v6.69: só destaca/aceita como alvo válido a planta que está com o Modo posicionamento ativo
+    // (plantasUI.edit) — sobrevoar outra planta não marca .plantaDropAlvo, deixando claro que o drop ali
+    // será ignorado (mesmo comportamento de "soltar fora de qualquer planta").
+    const vpRaw=sob?sob.closest('.plantaViewport'):null;
+    const vp=(vpRaw&&vpRaw.dataset.planta===plantasUI.edit)?vpRaw:null;
     if(alvoAtual&&alvoAtual!==vp)alvoAtual.classList.remove('plantaDropAlvo');
     alvoAtual=vp;
     if(vp)vp.classList.add('plantaDropAlvo');
@@ -8660,6 +8743,10 @@ function plantaIniciarDrag(ev,kind,id_,origemEl){
     if(!moved){if(ev.pointerType!=='touch')plantaCliquePino(kind,id_);return} // clique (<6px) abre detalhe; toque já tratado no pointerup do próprio pino (tooltip)
     if(!alvoAtual)return; // soltou fora de qualquer planta: cancela
     const plantaId=alvoAtual.dataset.planta;
+    // v6.69: Modo posicionamento agora é por planta — só é permitido soltar na planta que está com o
+    // modo ativo (plantasUI.edit===plantaId). Soltar em outra planta é tratado como "fora de alvo" (cancela,
+    // nada é gravado), igual a soltar fora de qualquer plantaViewport.
+    if(plantasUI.edit!==plantaId)return;
     const pl=(db.plantas||[]).find(p=>p.id===plantaId); if(!pl||!pl.imagemUrl)return;
     const item=plantaItemById(kind,id_); if(!item)return;
     const pisoItem=pisoEfetivo(item)||n(item.piso);
@@ -8680,7 +8767,11 @@ function plantaIniciarDrag(ev,kind,id_,origemEl){
   try{ev.target.setPointerCapture&&ev.target.releasePointerCapture(ev.pointerId)}catch(e){}
 }
 function plantaCliquePino(kind,id_){
-  if(plantasUI.edit&&podeEditarPlantas()){ // v6.60: modo edição agora SELECIONA o marcador (mostra alças de
+  const itemClicado=plantaItemById(kind,id_);
+  // v6.69: seleção (alças de redimensionar) só é permitida quando o Modo posicionamento está ativo NA
+  // MESMA planta do marcador clicado — clicar num pino de uma planta que não está em modo de posicionamento
+  // abre o detalhe normalmente (mesmo comportamento de antes de existir o modo).
+  if(plantasUI.edit&&itemClicado&&plantasUI.edit===itemClicado.plantaId&&podeEditarPlantas()){ // v6.60: modo edição agora SELECIONA o marcador (mostra alças de
     // redimensionar) em vez de abrir popover direto — Editar/Remover/Duplicar migraram para o menu de
     // contexto (botão direito) / duplo clique, reaproveitando plantaMenuContexto()/plantaEditarMarcador().
     const jaSelecionado=plantasUI.selecionado&&plantasUI.selecionado.kind===kind&&plantasUI.selecionado.id===id_;
@@ -8860,6 +8951,21 @@ function plantaLimparTodasInconsistencias(){
 // A exclusão de "já inserido" é sempre por local.id (nunca por nome), então dois registros com nomes
 // parecidos (ex.: "ROMMANEL SDAI" e "ROMMANEL CO2") são sempre tratados como itens independentes.
 // =========================================================================
+// v6.69 — toggle do "Modo posicionamento" por planta (ver comentário na declaração de plantasUI acima).
+// Alternar para uma planta B enquanto A estava ativa desativa A implicitamente (mesmo campo escalar).
+// Trocar de planta também limpa seleção/handles e qualquer coordenada pendente de inserção, para nunca
+// deixar estado "meio aplicado" de uma planta vazando para outra.
+function plantaToggleModoPosicionamento(plantaId){
+  if(plantasUI.edit===plantaId){ plantaSairModoPosicionamento(); return; }
+  plantasUI.edit=plantaId;
+  plantasUI.selecionado=null;
+  renderPlantas();
+}
+function plantaSairModoPosicionamento(){
+  plantasUI.edit=null;
+  plantasUI.selecionado=null;
+  renderPlantas();
+}
 function plantaToggleModoInserir(plantaId){
   if(plantasUI.modoInserir&&plantasUI.modoInserirPlantaId===plantaId){plantaSairModoInserir();return}
   plantasUI.modoInserir=true; plantasUI.modoInserirPlantaId=plantaId;
