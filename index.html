@@ -1,5 +1,65 @@
 <!doctype html>
-<!-- build: 2026-07-12 v6.69 - MÓDULO PLANTAS: "Modo posicionamento" deixa de ser um controle único e global
+<!-- build: 2026-07-12 v6.70 - MÓDULO PLANTAS: botão "⚙ Configurações" por planta substitui o slider flutuante
+.plantaScaleControl (v6.64) que ficava fixo no topo-direita de cada viewport sobrepondo desenho/marcadores/
+legenda em plantas com muitos pinos ou telas estreitas. REMOVIDO: markup do scaleCtrl (const removida de
+renderPlantas()), CSS .plantaScaleControl{...}, e a função plantaSetEscalaRapida() (só existia para esse
+slider — ficou órfã e foi apagada; suas duas linhas de plantaSetEscalaPadrao() continuam intactas e em uso
+pelo painel "Escala da Planta" já existente e pelo novo popover). NOVO LOCAL: botão "⚙ Configurações"
+(.plantaCfgBtn) adicionado na mesma linha de botões do cabeçalho de cada bloco (.plantaBlocoHead), ao lado
+de "✏ Modo posicionamento"/"📍 Adicionar marcador", só quando podeEditarPlantas() — mesma visibilidade que
+o slider removido. Ao clicar, abre plantaConfigPopoverHtml(pl) dentro de um popover (.plantaCfgPopover,
+position:absolute, top:100%/right:0) ANCORADO NO CABEÇALHO da planta (que já é position:sticky desde o
+v6.69, portanto já funciona como containing block dos descendentes absolute) — decisão deliberada de usar
+popover-no-cabeçalho em vez de drawer lateral (#modal/#drawer, o padrão de modal genérico do app) porque o
+conteúdo é pequeno (2 sliders + 3 botões) e a exigência era nunca cobrir a área central de desenho: por
+estar preso ao header (sempre no topo do bloco, nunca sobre o canvas), isso é garantido estruturalmente, e
+reaproveitar #modal/#drawer teria exigido um X de fechar genérico competindo com o próprio conceito de "um
+por planta". CONTEÚDO DO POPOVER (tudo com aplicação imediata, sem botão "Salvar" — mesmo padrão dos
+controles antigos): (1) Escala dos marcadores/textos — sliders+numérico 50–300% step 5, MESMO range do
+painel "Escala da Planta" (plantaEscalaPainelHtml, v6.60) — o slider antigo removido usava só 50–150%
+step 10; ao consolidar num único ponto de controle, ficou com o range do painel autoritativo (mais amplo),
+não com o do slider descartado, escolha deliberada para não reduzir o que já era possível fazer pelo painel
+de Modo posicionamento. Reaproveita 100% plantaSetEscalaPadrao() (preview instantâneo + save() debatido em
+400ms), nenhuma função de escala reimplementada. (2) "Restaurar escala" chama a plantaRestaurarEscalaPlanta()
+já existente, sem alteração. (3) Toggle "Legenda técnica" chama plantaToggleLegenda(pl.id) já existente —
+ESCOPO CONFIRMADO POR LEITURA: plantasUI.legendaColapsada é um objeto ÚNICO por sessão/navegador, mas
+indexado por plantaId (legendaColapsada[plantaId]), persistido em localStorage sob 'l3a_plantas_prefs' —
+ou seja, o estado É por planta na prática (cada plantaId tem sua própria entrada no mapa), só que sobrevive
+por navegador/dispositivo, não por usuário/conta (mesmo padrão de sideCollapsed) — mantido exatamente como
+estava, nenhuma mudança de escopo. (4) Toggle NOVO "Agrupamentos (clusters)": pl.agrupamentoDesativado
+(boolean, por planta, gravado no PRÓPRIO REGISTRO db.plantas via plantaToggleAgrupamento(), então sincroniza
+entre usuários como qualquer outro campo de planta — escopo deliberadamente diferente do da legenda, pois
+"quero ver cada marcador individualmente nesta planta densa" é uma decisão de dado/planta, não uma
+preferência pessoal de UI). plantaAplicarClusters() (v6.61) ganhou 1 checagem no topo do laço por viewport:
+busca a planta por vp.dataset.planta e, se agrupamentoDesativado===true, retorna cedo (pulando o cálculo de
+distância/criação de badges) — os pins já foram deixados individuais pelas 2 linhas que sempre rodam antes
+(remoção de badges antigos + remoção da classe plantaClusterOculto), então "desativado" = sempre mostra
+marcadores separados; nenhum dado de posição/zoom é tocado, é 100% visual, reversível a qualquer momento.
+(5) Seção "Futuras configurações da planta" — nota estática "mais opções em breve", sem funcionalidade,
+delimitada visualmente (.plantaCfgFuturo, borda tracejada) para deixar claro que é um placeholder para o
+próximo item, não algo quebrado. FECHAMENTO: Esc e clique-fora. Esc REAPROVEITA o listener global único já
+existente do módulo Plantas (window._plantaEscInserirBound, criado no v6.62 para sair do modo de inserção e
+estendido no v6.69 para sair do Modo posicionamento) — só foi adicionada mais uma linha `if(plantasUI.
+cfgAberto)plantaFecharConfigPopover()` dentro do MESMO handler, seguindo a mesma regra "várias coisas podem
+estar ativas ao mesmo tempo, Esc fecha todas elas numa passada só" já em uso, sem criar um segundo
+addEventListener('keydown',...). Clique-fora é um listener NOVO (não existia nada equivalente para popovers
+antes), mas registrado com o MESMO padrão de guarda idempotente (window._plantaCfgOutsideBound, setado uma
+única vez dentro de plantaBindEventos, nunca empilha a cada renderPlantas()) — fecha quando o clique não
+está dentro de .plantaCfgPopover nem em .plantaCfgBtn; o próprio botão de abrir já faz ev.stopPropagation()
+para não disparar esse mesmo listener na hora de abrir. ESTADO: plantasUI.cfgAberto (string do plantaId
+aberto, ou null) é 100% transiente — não entra em l3a_plantas_prefs (o painel deve sempre nascer fechado ao
+recarregar a página, igual ao antigo plantasUI.edit) — e é zerado também ao trocar de tela (navigate(), no
+mesmo bloco try/catch que já zerava plantasUI.edit/selecionado/modoInserir ao sair de 'plantas'), evitando
+um popover "fantasma" reaberto sozinho ao voltar depois para outra planta. GAPS HONESTOS: (a) o popover é
+ancorado ao .plantaBlocoHead inteiro (right:0 dele), não estritamente "logo abaixo do botão ⚙" pixel a
+pixel — como o botão fica perto do fim dessa linha de botões alinhada à direita, visualmente cai bem perto
+dele na maioria dos casos, mas em telas muito estreitas onde os botões quebram linha (flex-wrap:wrap já
+existente) o popover pode aparecer um pouco deslocado do botão exato; não é ancoragem por
+getBoundingClientRect() do botão em si. (b) não testado em navegador real (ambiente sem display) — validado
+só via node --check do script extraído (0 erros) e leitura cuidadosa do HTML/CSS gerado. (c) o toggle de
+agrupamento é binário e imediato (sem confirmação), diferente de "Restaurar escala" que usa confirm() — foi
+deliberado, por ser uma ação 100% reversível com 1 clique, sem risco de perda de dado. -->
+<!-- build anterior: 2026-07-12 v6.69 - MÓDULO PLANTAS: "Modo posicionamento" deixa de ser um controle único e global
 no topo da tela Plantas e passa a ser POR PLANTA/PISO, no cabeçalho de cada bloco.
 DIAGNÓSTICO: existiam DOIS conceitos distintos de "posicionamento" na tela Plantas antes desta mudança —
 (1) plantasUI.edit (checkbox único "✏️ Modo posicionamento", renderizado uma única vez acima de todos os
@@ -841,7 +901,7 @@ input[type=checkbox],input[type=radio]{accent-color:var(--l3a-primary)}
 .plantaLegenda span{display:inline-flex;align-items:center;gap:5px}
 .plantaLegenda i.lg{width:11px;height:11px;border-radius:50%;display:inline-block}
 @media (max-width:900px){.plantasLayout{flex-direction:column}.plantasSide{position:static;flex:1 1 auto;width:100%;max-height:260px}}
-@media print{#plantas .plantasSide,#plantas .plantaZoomBtns,#plantas .plantaSideTab,#plantas .plantaScaleControl,#plantas .plantaLegendaTecnica,#plantas .plantaLegendaToggle{display:none!important}}
+@media print{#plantas .plantasSide,#plantas .plantaZoomBtns,#plantas .plantaSideTab,#plantas .plantaCfgPopover,#plantas .plantaLegendaTecnica,#plantas .plantaLegendaToggle{display:none!important}}
 /* v6.66 — PRINT: força o zoom/pan on-screen a voltar para neutro (zoom=1, sem deslocamento) na impressão,
    mesmo que o usuário tenha dado zoom antes de imprimir; !important em stylesheet sobrepõe o transform
    inline aplicado por plantaZoomAt()/plantaBindEventos() no .plantaCanvas (regra do CSS, testada: uma regra
@@ -854,10 +914,17 @@ input[type=checkbox],input[type=radio]{accent-color:var(--l3a-primary)}
 .plantaSideTab{position:sticky;top:8px;flex:0 0 auto;align-self:flex-start;background:var(--l3a-surface);border:1px solid var(--l3a-border);border-radius:10px;padding:8px 6px;font-size:11.5px;font-weight:700;cursor:pointer;writing-mode:vertical-rl;text-orientation:mixed;color:var(--l3a-text-soft)}
 .plantaSideTab:hover{background:var(--l3a-hover)}
 .plantasSide .plantaSideCollapseBtn{float:right;background:none;border:0;cursor:pointer;font-size:12px;color:var(--l3a-text-muted);padding:2px 4px}
-/* v6.64 — controle de escala rápida no viewport (item 2) */
-.plantaScaleControl{position:absolute;top:8px;right:8px;z-index:20;background:rgba(255,255,255,.92);border:1px solid var(--l3a-border);border-radius:10px;padding:6px 10px;box-shadow:0 2px 8px rgba(16,24,40,.18);display:flex;align-items:center;gap:7px;font-size:11px;font-weight:700;color:#0E2A44}
-.plantaScaleControl input[type=range]{width:110px}
-.plantaScaleControl span.pscVal{min-width:32px;text-align:right}
+/* v6.70 — botão "⚙ Configurações" por planta + popover ancorado abaixo dele (substitui o slider flutuante
+   .plantaScaleControl do v6.64, que sobrepunha o desenho/marcadores/legenda). O popover vive DENTRO de
+   .plantaBlocoHead (que já é position:sticky, portanto já é "positioned" e serve de containing block para
+   os descendentes absolute), nunca dentro de .plantaViewport — por isso não pode cobrir a área central de
+   desenho da planta mesmo em telas estreitas (fica preso ao cabeçalho, que é sticky no topo do bloco). */
+.plantaCfgBtn.plantaCfgBtnAtivo{background:var(--l3a-primary);color:#fff;border-color:var(--l3a-primary)}
+.plantaCfgPopover{position:absolute;top:100%;right:0;margin-top:6px;z-index:30;background:#fff;border:1px solid var(--l3a-border);border-radius:10px;box-shadow:0 6px 20px rgba(16,24,40,.22);padding:14px;width:290px;max-width:calc(100vw - 24px)}
+.plantaCfgPopover h4{margin:0 0 6px;font-size:12.5px;color:#0E2A44}
+.plantaCfgPopover .escalaField{margin-bottom:8px}
+.plantaCfgPopover .plantaCfgToggleRow{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--l3a-border);font-size:12.5px}
+.plantaCfgPopover .plantaCfgFuturo{margin-top:8px;padding-top:8px;border-top:1px dashed var(--l3a-border);font-size:11px;color:var(--l3a-text-muted)}
 /* v6.64 — legenda técnica por planta (item 5/6) */
 .plantaLegendaTecnica{position:absolute;bottom:8px;right:8px;z-index:20;background:rgba(255,255,255,.92);border:1px solid #d8dee7;border-radius:10px;box-shadow:0 2px 8px rgba(16,24,40,.16);font-size:11px;max-width:210px;overflow:hidden}
 .plantaLegendaTecnica .pltHead{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:6px 9px;font-weight:800;color:#0E2A44;cursor:pointer;border-bottom:1px solid #e6eaf0}
@@ -1830,7 +1897,7 @@ function navigate(view){
   if(currentView==='plantas'&&view!=='plantas'){
     try{
       if(typeof plantasUI!=='undefined'){
-        plantasUI.edit=null; plantasUI.selecionado=null;
+        plantasUI.edit=null; plantasUI.selecionado=null; plantasUI.cfgAberto=null; // v6.70: fecha também o popover ⚙ Configurações
         if(plantasUI.modoInserir){plantasUI.modoInserir=false;plantasUI.modoInserirPlantaId=null;plantasUI.pendenteX=null;plantasUI.pendenteY=null;}
       }
     }catch(e){}
@@ -8118,7 +8185,11 @@ const plantasUI={edit:null,zoom:{},pan:{},filtro:{tipo:'',piso:'',q:''},selecion
   modalInsercao:{q:'',sistema:'',piso:'',painel:'',laco:'',flm:'',porta:'',status:'',outrosPisos:false},
   _confirmadoOutroPiso:false,
   // v6.64 — preferências de UI (painel lateral / legenda técnica), só visual, carregadas de localStorage.
-  sideCollapsed:false, legendaColapsada:{}};
+  sideCollapsed:false, legendaColapsada:{},
+  // v6.70 — plantaId do popover "⚙ Configurações" atualmente aberto (no máximo 1 por vez, mesmo padrão de
+  // plantasUI.edit para Modo posicionamento); estado 100% transiente (não persistido em l3a_plantas_prefs,
+  // não faz sentido sobreviver a reload — o painel deve nascer fechado).
+  cfgAberto:null};
 // v6.64 — persistência de preferências de UI do módulo Plantas (chave dedicada, dado 100% de exibição,
 // nunca dados de negócio). Segue o mesmo padrão simples já usado em loadMenuStateLocal/saveMenuStateLocal
 // (JSON em localStorage, merge com defaults, tolerante a erro de parse).
@@ -8328,15 +8399,6 @@ function renderPlantas(){
       return `<div class="plantaPin ${cls}${selecionado?' selecionado':''}" data-kind="${i.kind}" data-id="${esc(i.id)}" data-local-id="${esc(i.kind==='local'?i.id:(i.ref.localId||''))}" style="left:${i.ref.plantaX}%;top:${i.ref.plantaY}%;margin-left:${dx}px;margin-top:${dy}px;z-index:${zi}">${badge}<span class="pinDot" style="transform:scale(${escM});transform-origin:center">${inner}</span>${handles}</div>`;
     }).join('');
     const pan=plantasUI.pan[pl.id]||{x:0,y:0};
-    // v6.64 (item 2) — controle de escala rápida, sempre visível, no topo-direita do viewport; escreve
-    // direto no MESMO campo escalaPadraoMarcador/escalaPadraoTexto do painel "Escala da Planta" (v6.60),
-    // reaproveitando plantaSetEscalaPadrao (preview instantâneo + save debatido), nunca um campo paralelo.
-    const emAtual=Math.round((pl.escalaPadraoMarcador??1)*100);
-    const scaleCtrl=podeEditarPlantas()?`<div class="plantaScaleControl" title="Escala dos marcadores desta planta (mesmo valor do painel Escala da Planta)">
-        <span>Escala</span>
-        <input type="range" min="50" max="150" step="10" value="${Math.min(150,Math.max(50,emAtual))}" oninput="plantaSetEscalaRapida('${esc(pl.id)}',this.value)">
-        <span class="pscVal">${emAtual}%</span>
-      </div>`:'';
     const legendaTecnica=plantaLegendaTecnicaHtml(pl,pins);
     const corpo=pl.imagemUrl
       ?`<div class="plantaViewport ${(plantasUI.modoInserir&&plantasUI.modoInserirPlantaId===pl.id)?'plantaModoInserir':''}" data-planta="${esc(pl.id)}">
@@ -8344,7 +8406,6 @@ function renderPlantas(){
             <img class="plantaImg" src="${esc(pl.imagemUrl)}" alt="Planta ${esc(pl.piso)}">
             ${pinsHtml}
           </div>
-          ${scaleCtrl}
           ${legendaTecnica}
         </div>`
       :`<div class="plantaViewport" data-planta="${esc(pl.id)}"><div class="plantaPlaceholder">
@@ -8365,7 +8426,9 @@ function renderPlantas(){
           ${podeEditarPlantas()?`<button class="btn small${modoPosAtivoAqui?' plantaModoPosBtnAtivo':''}" onclick="plantaToggleModoPosicionamento('${esc(pl.id)}')" title="Ativa arrastar itens da lista, selecionar e redimensionar marcadores nesta planta">${modoPosAtivoAqui?'● Posicionamento ativo':'✏ Modo posicionamento'}</button>`:''}
           ${podeEditarPlantas()&&pl.imagemUrl?`<label class="iconBtn" title="Trocar imagem" style="cursor:pointer">🖼<input type="file" accept="image/*,.pdf" style="display:none" onchange="uploadPlantaArquivo('${esc(pl.id)}',this.files[0]);this.value=''"></label>`:''}
           ${podeEditarPlantas()&&pl.imagemUrl?(plantasUI.modoInserir&&plantasUI.modoInserirPlantaId===pl.id?`<button class="btn small danger" onclick="plantaSairModoInserir()">✕ Cancelar inserção</button>`:`<button class="btn small" onclick="plantaToggleModoInserir('${esc(pl.id)}')">📍 Adicionar marcador</button>`):''}
+          ${podeEditarPlantas()?`<button class="btn small plantaCfgBtn${plantasUI.cfgAberto===pl.id?' plantaCfgBtnAtivo':''}" onclick="plantaToggleConfigPopover(event,'${esc(pl.id)}')" title="Configurações desta planta (escala, legenda, agrupamentos)">⚙ Configurações</button>`:''}
           ${isMaster(currentUserSafe())?`<button class="iconBtn" title="Editar planta" onclick="formPlantaBaixa('${esc(pl.id)}')">✏</button>`:''}
+          ${(podeEditarPlantas()&&plantasUI.cfgAberto===pl.id)?plantaConfigPopoverHtml(pl):''}
         </div>
       </div>
       ${(plantasUI.edit===pl.id&&podeEditarPlantas())?plantaEscalaPainelHtml(pl):''}
@@ -8490,6 +8553,12 @@ function plantaAplicarClusters(scope){
     pins.forEach(p=>p.classList.remove('plantaClusterOculto'));
     if(pins.length<2)return;
     const pid=vp.dataset.planta;
+    // v6.70 — toggle "Mostrar/Ocultar agrupamentos" (painel ⚙ Configurações): quando a planta tem
+    // agrupamentoDesativado=true, pula o cálculo/renderização de clusters desta planta (marcadores já
+    // foram deixados individuais pelas 2 linhas acima, que sempre rodam antes do return) — dados de
+    // posição/zoom NUNCA são tocados por este flag, é puramente visual.
+    const _plCfg=(typeof db!=='undefined'&&db.plantas||[]).find(p=>p.id===pid);
+    if(_plCfg&&_plCfg.agrupamentoDesativado)return;
     const items=pins.map(p=>{const r=p.getBoundingClientRect();return {p,cx:r.left+r.width/2,cy:r.top+r.height/2}});
     const used=new Set();
     for(let i=0;i<items.length;i++){
@@ -8566,6 +8635,19 @@ function plantaBindEventos(root){
       if(ev.key!=='Escape')return;
       if(plantasUI.modoInserir)plantaSairModoInserir();
       if(plantasUI.edit)plantaSairModoPosicionamento(); // v6.69: Esc também sai do Modo posicionamento por planta
+      if(plantasUI.cfgAberto)plantaFecharConfigPopover(); // v6.70: Esc também fecha o popover "⚙ Configurações" (mesmo listener único, sem novo addEventListener)
+    });
+  }
+  // v6.70 — clique fora do popover "⚙ Configurações" fecha (mesma ideia do modal global: elemento único
+  // no DOM por vez, então "clicou fora" = clicou fora de .plantaCfgPopover E fora do botão que o abre).
+  // Listener registrado uma única vez (guardado por window._plantaCfgOutsideBound), independente do
+  // handler de Esc acima e do handler global de modal (#modal), para não empilhar a cada renderPlantas().
+  if(!window._plantaCfgOutsideBound){
+    window._plantaCfgOutsideBound=true;
+    document.addEventListener('click',ev=>{
+      if(!plantasUI.cfgAberto)return;
+      if(ev.target.closest('.plantaCfgPopover')||ev.target.closest('.plantaCfgBtn'))return;
+      plantaFecharConfigPopover();
     });
   }
   root.querySelectorAll('.plantaChip').forEach(chip=>{
@@ -9434,15 +9516,6 @@ function plantaEscalaPainelHtml(pl){
     </div>
   </div>`;
 }
-// v6.64 (item 2) — atalho do controle de escala rápida do viewport: aplica o mesmo valor a Marcador E
-// Texto (a planta continua permitindo ajuste fino/independente pelo painel "Escala da Planta" em modo
-// posicionamento; este slider é só o acesso rápido pedido, não um campo concorrente).
-function plantaSetEscalaRapida(plantaId,val){
-  plantaSetEscalaPadrao(plantaId,'Marcador',val);
-  plantaSetEscalaPadrao(plantaId,'Texto',val);
-  const lbl=document.querySelector(`.plantaViewport[data-planta="${CSS.escape(plantaId)}"] .plantaScaleControl .pscVal`);
-  if(lbl)lbl.textContent=Math.round(Number(val))+'%';
-}
 let _plantaEscalaSaveTimer=null;
 function plantaSetEscalaPadrao(plantaId,campo,val){
   const pl=(db.plantas||[]).find(p=>p.id===plantaId); if(!pl)return;
@@ -9503,6 +9576,57 @@ function plantaRestaurarEscalaPlanta(plantaId){
   if(!confirm('Restaurar marcador=100% e texto=100% para TODOS os marcadores desta planta? As posições (x/y) não são alteradas.'))return;
   plantaItens().forEach(i=>{if(i.ref.plantaId===plantaId){delete i.ref.escalaMarcador;delete i.ref.escalaTexto}});
   save(); renderPlantas();
+}
+
+// ---- v6.70 — popover "⚙ Configurações" (substitui o slider flutuante .plantaScaleControl do v6.64) ----
+// Abre no máximo 1 por vez (mesmo padrão de plantasUI.edit); fecha por: clicar o próprio botão de novo,
+// clicar fora (listener global guardado, ver plantaBindEventos), ou Esc (reaproveita o MESMO listener
+// global de Esc do módulo Plantas — window._plantaEscInserirBound — nunca um segundo addEventListener).
+function plantaToggleConfigPopover(ev,plantaId){
+  if(ev)ev.stopPropagation();
+  plantasUI.cfgAberto=(plantasUI.cfgAberto===plantaId)?null:plantaId;
+  renderPlantas();
+}
+function plantaFecharConfigPopover(){
+  if(!plantasUI.cfgAberto)return;
+  plantasUI.cfgAberto=null;
+  renderPlantas();
+}
+// Toggle "Mostrar/Ocultar agrupamentos" (item novo desta rodada): plantaAplicarClusters() já checava um
+// flag de leitura (pl.agrupamentoDesativado) antes deste toggle existir; esta função é quem grava esse
+// flag. Escopo: por planta (no próprio registro db.plantas), igual escalaPadraoMarcador/escalaPorTipo —
+// nunca globalmente, já que agrupamento visual faz sentido variar entre plantas com densidades diferentes.
+function plantaToggleAgrupamento(plantaId){
+  const pl=(db.plantas||[]).find(p=>p.id===plantaId); if(!pl)return;
+  pl.agrupamentoDesativado=!pl.agrupamentoDesativado;
+  save(); renderPlantas();
+}
+function plantaConfigPopoverHtml(pl){
+  const em=Math.round((pl.escalaPadraoMarcador??1)*100), et=Math.round((pl.escalaPadraoTexto??1)*100);
+  const legendaOculta=!!plantasUI.legendaColapsada[pl.id];
+  const agrupOff=!!pl.agrupamentoDesativado;
+  return `<div class="plantaCfgPopover" onclick="event.stopPropagation()">
+    <h4>Escala dos marcadores</h4>
+    <div class="escalaField">
+      <input type="range" min="50" max="300" step="5" value="${em}" oninput="plantaSetEscalaPadrao('${esc(pl.id)}','Marcador',this.value)">
+      <input type="number" min="50" max="300" step="5" value="${em}" oninput="plantaSetEscalaPadrao('${esc(pl.id)}','Marcador',this.value)">%
+    </div>
+    <h4>Escala dos textos</h4>
+    <div class="escalaField">
+      <input type="range" min="50" max="300" step="5" value="${et}" oninput="plantaSetEscalaPadrao('${esc(pl.id)}','Texto',this.value)">
+      <input type="number" min="50" max="300" step="5" value="${et}" oninput="plantaSetEscalaPadrao('${esc(pl.id)}','Texto',this.value)">%
+    </div>
+    <button class="btn small secondary" style="width:100%;margin-bottom:2px" onclick="plantaRestaurarEscalaPlanta('${esc(pl.id)}')">Restaurar escala</button>
+    <div class="plantaCfgToggleRow">
+      <span>Legenda técnica</span>
+      <button class="btn small secondary" onclick="plantaToggleLegenda('${esc(pl.id)}')">${legendaOculta?'Mostrar':'Ocultar'}</button>
+    </div>
+    <div class="plantaCfgToggleRow">
+      <span>Agrupamentos (clusters)</span>
+      <button class="btn small secondary" onclick="plantaToggleAgrupamento('${esc(pl.id)}')">${agrupOff?'Mostrar':'Ocultar'}</button>
+    </div>
+    <div class="plantaCfgFuturo">Futuras configurações da planta — mais opções em breve.</div>
+  </div>`;
 }
 
 // ---- v6.60 Feature Set A: editor de marcador (duplo clique / menu de contexto "Editar") ----
