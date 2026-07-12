@@ -1,5 +1,42 @@
 <!doctype html>
-<!-- build: 2026-07-12 v6.64 - MÓDULO PLANTAS: 6 melhorias visuais incrementais sobre o v6.63, nenhuma mexendo em plantaX/plantaY/localId/plantaId/sistema/histórico/testes/falhas. (1) PAINEL LATERAL RECOLHÍVEL: plantasUI.sideCollapsed (novo campo) + classe .plantasLayout.sideColapsada oculta .plantasSide e a aba ".plantaSideTab" ("☰ Lojas (N)") some/aparece no lugar para reabrir; botão "◀" dentro do próprio painel (plantaToggleSidebar()) fecha. Persistência: chave dedicada localStorage 'l3a_plantas_prefs' (plantaLoadPrefs/plantaSavePrefs), seguindo o MESMO padrão já usado por loadMenuStateLocal/saveMenuStateLocal (JSON simples, merge com defaults, tolerante a parse inválido) — decisão deliberada de não usar db (é preferência de UI, não dado de negócio, não deve sincronizar entre usuários/dispositivos). Sobrevive a troca de piso/planta (é global ao módulo, não por planta) e a reload (lido uma vez na definição de plantasUI via plantaInitPrefs IIFE). (2) SLIDER DE ESCALA VISÍVEL: novo controle ".plantaScaleControl" fixo no topo-direita de cada viewport (só quando podeEditarPlantas()), passos 50/60/.../150%, grava no MESMO campo escalaPadraoMarcador/escalaPadraoTexto do painel "Escala da Planta" do v6.60 via nova função plantaSetEscalaRapida() (chama plantaSetEscalaPadrao() para os dois campos — não é um campo concorrente). Fórmula de oscilação automática por zoom (plantaZoomAutoFactor(), v6.61) CONFERIDA e mantida sem alteração: já produz fator em [0.5,1.5] ancorado em zoom=1→1.0, multiplicando (nunca substituindo) a escala base — bate exatamente com o exemplo do pedido (base 70% × [0.5..1.5] = 35%..105%). (3) SÍMBOLO POR TIPO: PLANTA_ICONES ganhou formas distintas por tipo — Detector=círculo com ponto central (mantido), Acionador=triângulo (era quadrado, TROCADO), Sirene=ícone de alto-falante (mantido do v6.60), 'Módulo FLM'=quadrado (era retângulo com "pés", SIMPLIFICADO), Central=hexágono com ponto (NOVA entrada, preparada para uso futuro — painéis não são plotados como marcador hoje, confirmado lendo plantaItens()/renderPlantas(), então esta chave fica sem call site ainda), Loja=mantido (casinha), LojaCO2=NOVA entrada (hexágono preenchido) usada só para kind==='local' quando up(ref.sistema)==='CO2', no estado "ok" (falha/desativado continuam usando os ícones distintivos de sirene/power já existentes, que são comportamento deliberado herdado, não uma forma de "tipo"). plantaTipoEquip() NÃO foi alterado — reclassificação zero, só o desenho por chave já retornada por ele. (4) COR=STATUS/FORMA=TIPO: confirmado que a cor SEMPRE vem das classes CSS st-ok/st-bad/st-warn/st-off aplicadas no .pinDot (background-color do container), nunca dos paths dos SVGs (todos usam stroke/fill=currentColor, herdando color:#fff do .pinDot) — trocar a forma nunca muda a cor e vice-versa; nenhuma mudança de CSS necessária além de garantir currentColor nos novos paths. (5) LEGENDA TÉCNICA: nova função plantaLegendaTecnicaHtml(pl,pins), chamada por planta dentro do laço de blocos (recomputa por planta a cada render, não globalmente) — monta ".plantaLegendaTecnica" fixa no rodapé-direita do viewport, com ícone+rótulo só dos tipos REALMENTE presentes nos pins desta planta (Map por chave, nunca lista fixa) + chave de cor de status (reaproveita os mesmos rótulos/cores já usados na legenda geral existente: Em operação/Com falha/Pendente-em teste/Nunca testado-desativado). Colapsável via plantaToggleLegenda(plantaId) (caret ▾/▸), estado em plantasUI.legendaColapsada{} persistido na MESMA chave 'l3a_plantas_prefs'. (6) LEGENDA SÓ MOSTRA O QUE EXISTE: garantido pela própria função (5) — se pins.length===0 para um tipo/sistema, a entrada nunca é adicionada ao Map; testado mentalmente com planta 100% SDAI (sem CO2) e planta sem nenhum equipamento certos tipos ausentes. (7) ESCALA POR TIPO (estrutura preparada): novo campo pl.escalaPorTipo (objeto, default {} = todos neutros/1.0), aplicado de fato no cálculo via plantaFatorTipo(pl,tipoFiltro) multiplicando dentro de plantaEscalaMarcador()/plantaEscalaTexto() (agora aceitam um 3º parâmetro tipoFiltro, passado nos 2 call sites — renderPlantas() e plantaAtualizarEscalasNaTela()); formPlantaBaixa()/criação de planta nova (linha com escalaPadraoMarcador:1) passou a inicializar escalaPorTipo:{} também. SEM UI para editar por tipo individualmente nesta rodada (explicitamente OK pelo pedido) — hoje encontrar pl.escalaPorTipo ausente ou {} não muda nada visualmente (multiplicador 1), então nenhuma planta existente é afetada. PRINT: @media print de #plantas ampliado para também ocultar .plantaSideTab/.plantaScaleControl/.plantaLegendaTecnica/.plantaLegendaToggle (chrome só-interativo), preservando o comportamento já existente de ocultar .plantasSide/.plantaZoomBtns. GAPS HONESTOS: (a) não testei em navegador real (ambiente sem display) — validação foi só via node --check do script extraído (0 erros) e leitura cuidadosa do HTML gerado; risco residual de erro puramente visual (ex.: sobreposição do slider de escala com o botão de troca de imagem em telas muito estreitas) não pode ser 100% descartado sem QA visual manual. (b) drag/drop de posicionamento, clique-para-inserir (v6.62), tooltip de hover e clustering (v6.61) não tiveram nenhuma linha própria alterada — só o HTML interno do .pinDot (ícone) mudou, a estrutura .plantaPin/data-kind/data-id que esses handlers usam ficou idêntica — mas, por não ter testado interativamente, a confirmação é por leitura de código, não por clique real. (c) Central (hexágono) foi só definido no dicionário de ícones, sem nenhum call site real — fica pronto para quando painéis passarem a ser plotados como marcador. (d) plantaSetEscalaRapida() atualiza os DOIS campos (Marcador e Texto) juntos por ser "o slider rápido"; quem precisar de controle fino e independente continua usando o painel "Escala da Planta" (modo posicionamento), que não foi alterado. node --check validado sem erros (zero) logo após esta mudança. -->
+<!-- build: 2026-07-12 v6.66 - MÓDULO PLANTAS: fecha os 2 gaps honestos deixados em aberto pelo v6.65. (1)
+ESCALA INDIVIDUAL AGORA MULTIPLICA (não substitui) a escala da planta: plantaEscalaMarcador()/plantaEscalaTexto()
+mudaram de v=(override??baseDaPlanta) para final=baseDaPlanta×(override??1.0)×fatorTipo — o override do item passa
+a ser um MULTIPLICADOR puro, neutro em 1.0 (100%) quando ausente, em vez de um valor absoluto que substituía a
+base. Reconfere o exemplo do pedido: base=0.50, individual=1.20, zoom=2.00 → (0.50×1.20)/2.00=0.30 (30%), dentro
+de [0.20,1.10], sem clamp — bate exatamente, não mais os 0.60 documentados como divergência no v6.65. Call sites
+ajustados em cascata para a nova semântica "default=1.0, nunca copia a base": plantaInserirMarcadorConfirmar()
+(inserção via "Adicionar marcador", v6.62) parava de gravar escalaMarcador=escalaPadraoMarcador da planta no
+registro (isso agora DOBRARIA a base sob multiplicação) — passou a gravar 1.0 (neutro); plantaIniciarResize()
+(alça de arrastar, v6.60 item 4) usava item[campo]??escalaPadraoDaPlanta como ponto de partida do drag — agora
+usa item[campo]??1 (o multiplicador neutro); plantaEditarMarcador() (modal "Editar marcador") pré-preenchia o
+campo percentual com item.escalaMarcador??escalaPadraoDaPlanta — agora usa item.escalaMarcador??1, e os dois
+campos ganharam texto de ajuda explicando que multiplicam a escala da planta (100%=sem alteração), substituindo
+a semântica antiga de "isto substitui a escala da planta" que nunca chegou a virar copy na tela mas estava
+documentada como comportamento no código/changelog do v6.60/v6.65. plantaRestaurarEscalaMarcador() (delete
+item.escalaMarcador) continua correto sob a nova semântica (ausência = multiplicador neutro 1.0 = mesmo efeito
+de "restaurar ao padrão da planta"). NENHUM outro efeito colateral encontrado: plantaFatorTipo()/PLANTA_ESCALA_MIN/
+MAX/plantaClampEscalaFinal()/plantaZoomAutoFactor() (v6.61/v6.64/v6.65) não mudaram de assinatura nem de
+comportamento, só recebem agora um produto diferente como entrada. (2) PRINT AGORA FORÇA ESCALA-BASE, NÃO O
+ZOOM ON-SCREEN: identificados DOIS transforms que precisavam ser neutralizados no PDF — o do .plantaCanvas
+inteiro (pan/zoom da VIEWPORT, aplicado via style inline translate/scale em plantaZoomAt()) e o de CADA
+.pinDot/.pinBadge (escala do símbolo, que já embutia o fator de compensação de zoom 1/z do v6.65). Para o
+canvas: nova regra `@media print{#plantas .plantaCanvas{transform:none!important}}` — uma regra de stylesheet
+com !important sobrepõe um style="" inline sem !important, então isso é suficiente e não precisou de JS. Para
+os marcadores: como o valor final de escala varia por item/tipo, CSS sozinho não dá conta — nova função
+plantaPrepararImpressao() (hook em window.addEventListener('beforeprint',...)) percorre cada .plantaPin visível,
+recalcula a escala SEM o termo de zoom (plantaClampEscalaFinal(plantaEscalaMarcador(item,pl,tipoFiltro)) —
+equivalente ao pedido "escalaPadraoMarcador×escalaMarcador×fatorTipo, sem ÷fatorZoom"), grava o valor antigo em
+data-print-backup-transform e troca o style.transform temporariamente; plantaRestaurarAposImpressao() (hook em
+'afterprint') devolve o valor original a cada elemento. NADA em plantasUI.zoom/pan ou no db é tocado — o zoom
+on-screen do usuário continua exatamente onde estava depois de fechar o diálogo de impressão, só a saída
+impressa/PDF é que passa a ignorar o zoom ao vivo. Testado por leitura/raciocínio (ambiente sem display, sem
+como disparar window.print() de fato) — mitigado com try/catch em ambas as funções para que uma falha nesse
+ajuste cosmético jamais quebre a impressão em si. GAPS HONESTOS RESTANTES: nenhum dos dois itens do v6.65 segue
+em aberto; validado via node --check do script extraído (0 erros) e teste Node isolado do exemplo numérico do
+pedido (0.30 exato, ver changelog acima). -->
+<!-- build anterior: 2026-07-12 v6.65 - MÓDULO PLANTAS: CORREÇÃO DE BUG CRÍTICO na escala automática por zoom. PROBLEMA REPORTADO: os marcadores cresciam de tamanho conforme o usuário aproximava o zoom (dava zoom-in), até tomar boa parte da planta — comportamento invertido do esperado. CAUSA: plantaZoomAutoFactor(z) (v6.61) era uma interpolação linear DIRETA (zoom sobe → fator sobe, de 0.5 a 1.5), multiplicando a escala do marcador PROPORCIONALMENTE ao zoom, quando o correto é o INVERSO (o próprio zoom do CSS já amplia visualmente o desenho; o marcador precisa COMPENSAR isso encolhendo, não reforçar). CORREÇÃO: plantaZoomAutoFactor(z) agora retorna 1/z puro (sem clamp interno — zoom=1→1, zoom=2→0.5, zoom=4→0.25, zoom=0.5→2), preservando o nome da função e a assinatura (nenhum call site mudou de função, só o corpo). Nova função plantaClampEscalaFinal(v) aplica o clamp no PRODUTO final, não no fator isolado, batendo com a fórmula pedida: escalaFinal = clamp(escalaBase×escalaIndividual/fatorZoom, escalaMinima, escalaMaxima). CONSTANTES NOVAS: PLANTA_ESCALA_MIN=0.20 (piso, dentro da faixa pedida 20%-25%, escolhido no limite inferior para não perder legibilidade granular antes de travar) e PLANTA_ESCALA_MAX=1.10 (teto, dentro da faixa pedida 100%-120%, meio do intervalo — evita "explodir" o símbolo ao afastar sem eliminar toda variação). Aplicado nos DOIS call sites que já existiam (renderPlantas(), linha do cálculo de escM/escT do laço de pins; e plantaAtualizarEscalasNaTela(), preview instantâneo do slider/resize) — plantaEscalaMarcador()/plantaEscalaTexto()/plantaFatorTipo() (v6.60/v6.64) NÃO foram alterados, continuam calculando escalaBase×escalaIndividual(override, quando presente, SUBSTITUI o padrão da planta, não multiplica — comportamento herdado do v6.60 "sobrescreve o padrão", preservado sem mudança de semântica) ×fatorTipo; só o multiplicador de zoom e o clamp final mudaram. VALIDAÇÃO COM OS EXEMPLOS DO PEDIDO (teste Node isolado, fora do produto): zoom=0.5/base=0.5 → 1.00 (100%, bate); zoom=1.0/base=0.5 → 0.50 (50%, bate); zoom=2.0/base=0.5 → 0.25 (25%, dentro do range, sem clamp, bate); zoom=4.0/base=0.5 → 0.125 bruto, CLAMPADO para 0.20 (piso, comportamento esperado de "parar de encolher"); marcador individual com override=1.20/zoom=2.0 → aqui há uma DIVERGÊNCIA HONESTA do exemplo literal do pedido: como override SUBSTITUI a escala base (semântica já existente do v6.60, preservada por instrução explícita de não rearquitetar), o resultado é 1.20/2.00=0.60 (60%), não 0.30 — 0.30 só sairia se override MULTIPLICASSE a base (0.5×1.2=0.6, depois /2=0.3), o que exigiria mudar o comportamento já salvo em produção para todos os marcadores com override individual; optei por manter a compatibilidade de dados existente em vez de seguir o exemplo numérico à risca. POSIÇÕES/DB INTOCADOS: plantaX/plantaY/localId/plantaId/escalaMarcador/escalaPadraoMarcador nunca são escritos por este cálculo (só leitura); auditado que plantaZoomAt()/plantaAtualizarEscalasNaTela() seguem sem nenhuma chamada a save()/markDirty() disparada só por zoom (debounce de save() existente é exclusivo do slider de escala manual, plantaSetEscalaPadrao/plantaSetEscalaRapida, inalterado). REAL-TIME/PERFORMANCE (item 3): o listener 'wheel' (plantaBindEventos) não tinha nenhum batching — cada evento de roda chamava plantaZoomAt() sincronamente; agora os deltas de um mesmo gesto contínuo são acumulados e aplicados uma única vez por requestAnimationFrame (wheelRafPending/wheelAcumDelta), evitando layout thrashing em trackpads/rodas de alta taxa de eventos; nada é salvo no banco por isso, só plantasUI.zoom[pid] (estado transiente, como já era). TOOLTIP (item 5): auditado plantaMostrarTooltip()/renderTooltipMarcador() — o elemento .plantaTooltip é criado e anexado direto em document.body (nunca dentro de .plantaPin/.pinDot), portanto NUNCA herdou nem herda o transform:scale() do marcador; nenhuma mudança de código necessária, só confirmação por leitura. HIT-AREA DAS ALÇAS DE EDIÇÃO (item 6): .plantaHandle (hMarcador/hTexto) já era posicionada relativa a .plantaPin (não escalada, pois só .pinDot/.pinBadge recebem o scale()), então o alvo de clique de 12px já não encolhia com o marcador — mesmo assim, para atingir o mínimo de 24px pedido, foi adicionado um pseudo-elemento ::before invisível de 24×24px centrado sobre cada alça (position:absolute + transform:translate(-50%,-50%)), sem alterar layout/posição/tamanho visual da alça em si. PRINT (item 7): nenhuma função de impressão/exportação específica de planta existe hoje (só o @media print que oculta chrome interativo, já existente desde v6.64) — como o print não recalcula pins nem lê plantasUI.zoom, ele já herda o transform:scale() estático que estava no DOM no momento do print (tipicamente zoom=1 por padrão de carregamento, mas pode refletir o zoom on-screen do momento se o usuário deu zoom antes de imprimir); ponto documentado como moto pendente/gap, não corrigido nesta rodada por não haver função de export dedicada para interceptar — se no futuro for criada, deve forçar zf=1 (equivalente a plantaZoomAutoFactor(1)) antes de renderizar. GAPS HONESTOS: (a) divergência do exemplo numérico de override individual explicada acima (decisão deliberada de compatibilidade); (b) print herda o zoom on-screen ao invés de forçar 100% (sem função de export dedicada para interceptar, ver item acima); (c) não testado em navegador real (ambiente sem display) — validado via node --check do script extraído (0 erros) e teste isolado Node dos valores numéricos (todos batendo com o esperado, exceto a divergência documentada em (a)). node --check validado sem erros (zero) logo após esta mudança. -->
+<!-- build anterior: 2026-07-12 v6.64 - MÓDULO PLANTAS: 6 melhorias visuais incrementais sobre o v6.63, nenhuma mexendo em plantaX/plantaY/localId/plantaId/sistema/histórico/testes/falhas. (1) PAINEL LATERAL RECOLHÍVEL: plantasUI.sideCollapsed (novo campo) + classe .plantasLayout.sideColapsada oculta .plantasSide e a aba ".plantaSideTab" ("☰ Lojas (N)") some/aparece no lugar para reabrir; botão "◀" dentro do próprio painel (plantaToggleSidebar()) fecha. Persistência: chave dedicada localStorage 'l3a_plantas_prefs' (plantaLoadPrefs/plantaSavePrefs), seguindo o MESMO padrão já usado por loadMenuStateLocal/saveMenuStateLocal (JSON simples, merge com defaults, tolerante a parse inválido) — decisão deliberada de não usar db (é preferência de UI, não dado de negócio, não deve sincronizar entre usuários/dispositivos). Sobrevive a troca de piso/planta (é global ao módulo, não por planta) e a reload (lido uma vez na definição de plantasUI via plantaInitPrefs IIFE). (2) SLIDER DE ESCALA VISÍVEL: novo controle ".plantaScaleControl" fixo no topo-direita de cada viewport (só quando podeEditarPlantas()), passos 50/60/.../150%, grava no MESMO campo escalaPadraoMarcador/escalaPadraoTexto do painel "Escala da Planta" do v6.60 via nova função plantaSetEscalaRapida() (chama plantaSetEscalaPadrao() para os dois campos — não é um campo concorrente). Fórmula de oscilação automática por zoom (plantaZoomAutoFactor(), v6.61) CONFERIDA e mantida sem alteração: já produz fator em [0.5,1.5] ancorado em zoom=1→1.0, multiplicando (nunca substituindo) a escala base — bate exatamente com o exemplo do pedido (base 70% × [0.5..1.5] = 35%..105%). (3) SÍMBOLO POR TIPO: PLANTA_ICONES ganhou formas distintas por tipo — Detector=círculo com ponto central (mantido), Acionador=triângulo (era quadrado, TROCADO), Sirene=ícone de alto-falante (mantido do v6.60), 'Módulo FLM'=quadrado (era retângulo com "pés", SIMPLIFICADO), Central=hexágono com ponto (NOVA entrada, preparada para uso futuro — painéis não são plotados como marcador hoje, confirmado lendo plantaItens()/renderPlantas(), então esta chave fica sem call site ainda), Loja=mantido (casinha), LojaCO2=NOVA entrada (hexágono preenchido) usada só para kind==='local' quando up(ref.sistema)==='CO2', no estado "ok" (falha/desativado continuam usando os ícones distintivos de sirene/power já existentes, que são comportamento deliberado herdado, não uma forma de "tipo"). plantaTipoEquip() NÃO foi alterado — reclassificação zero, só o desenho por chave já retornada por ele. (4) COR=STATUS/FORMA=TIPO: confirmado que a cor SEMPRE vem das classes CSS st-ok/st-bad/st-warn/st-off aplicadas no .pinDot (background-color do container), nunca dos paths dos SVGs (todos usam stroke/fill=currentColor, herdando color:#fff do .pinDot) — trocar a forma nunca muda a cor e vice-versa; nenhuma mudança de CSS necessária além de garantir currentColor nos novos paths. (5) LEGENDA TÉCNICA: nova função plantaLegendaTecnicaHtml(pl,pins), chamada por planta dentro do laço de blocos (recomputa por planta a cada render, não globalmente) — monta ".plantaLegendaTecnica" fixa no rodapé-direita do viewport, com ícone+rótulo só dos tipos REALMENTE presentes nos pins desta planta (Map por chave, nunca lista fixa) + chave de cor de status (reaproveita os mesmos rótulos/cores já usados na legenda geral existente: Em operação/Com falha/Pendente-em teste/Nunca testado-desativado). Colapsável via plantaToggleLegenda(plantaId) (caret ▾/▸), estado em plantasUI.legendaColapsada{} persistido na MESMA chave 'l3a_plantas_prefs'. (6) LEGENDA SÓ MOSTRA O QUE EXISTE: garantido pela própria função (5) — se pins.length===0 para um tipo/sistema, a entrada nunca é adicionada ao Map; testado mentalmente com planta 100% SDAI (sem CO2) e planta sem nenhum equipamento certos tipos ausentes. (7) ESCALA POR TIPO (estrutura preparada): novo campo pl.escalaPorTipo (objeto, default {} = todos neutros/1.0), aplicado de fato no cálculo via plantaFatorTipo(pl,tipoFiltro) multiplicando dentro de plantaEscalaMarcador()/plantaEscalaTexto() (agora aceitam um 3º parâmetro tipoFiltro, passado nos 2 call sites — renderPlantas() e plantaAtualizarEscalasNaTela()); formPlantaBaixa()/criação de planta nova (linha com escalaPadraoMarcador:1) passou a inicializar escalaPorTipo:{} também. SEM UI para editar por tipo individualmente nesta rodada (explicitamente OK pelo pedido) — hoje encontrar pl.escalaPorTipo ausente ou {} não muda nada visualmente (multiplicador 1), então nenhuma planta existente é afetada. PRINT: @media print de #plantas ampliado para também ocultar .plantaSideTab/.plantaScaleControl/.plantaLegendaTecnica/.plantaLegendaToggle (chrome só-interativo), preservando o comportamento já existente de ocultar .plantasSide/.plantaZoomBtns. GAPS HONESTOS: (a) não testei em navegador real (ambiente sem display) — validação foi só via node --check do script extraído (0 erros) e leitura cuidadosa do HTML gerado; risco residual de erro puramente visual (ex.: sobreposição do slider de escala com o botão de troca de imagem em telas muito estreitas) não pode ser 100% descartado sem QA visual manual. (b) drag/drop de posicionamento, clique-para-inserir (v6.62), tooltip de hover e clustering (v6.61) não tiveram nenhuma linha própria alterada — só o HTML interno do .pinDot (ícone) mudou, a estrutura .plantaPin/data-kind/data-id que esses handlers usam ficou idêntica — mas, por não ter testado interativamente, a confirmação é por leitura de código, não por clique real. (c) Central (hexágono) foi só definido no dicionário de ícones, sem nenhum call site real — fica pronto para quando painéis passarem a ser plotados como marcador. (d) plantaSetEscalaRapida() atualiza os DOIS campos (Marcador e Texto) juntos por ser "o slider rápido"; quem precisar de controle fino e independente continua usando o painel "Escala da Planta" (modo posicionamento), que não foi alterado. node --check validado sem erros (zero) logo após esta mudança. -->
 <!-- build anterior: 2026-07-12 v6.63 - NORMALIZAÇÃO GLOBAL DE PISO/LAÇO. PROBLEMA: piso/laço eram comparados/filtrados/deduplicados como texto literal em dezenas de pontos (===, up()===up()), então "3"/"03"/"P3"/"Piso 3"/"Piso Piso 3" eram tratados como valores DIFERENTES — gerando filtros duplicados, itens "não posicionados" em Plantas por divergência textual pura, e possíveis furos de matching em Locais/Falhas/Plano. ESTRATÉGIA (deliberada, ver comentário no código acima de normalizarPiso()): NÃO reescrever em massa os campos brutos existentes em toda tabela de uma vez — risco alto sem rollback numa base de produção. Em vez disso: (1) normalizarPiso(valor)/normalizarLaco(valor) — funções puras, idempotentes, que colapsam prefixos repetidos ("Piso Piso 3"→"3"), zeros à esquerda ("03"→"3"), abreviações ("P3"/"L3"→"3"), separadores e acentuação/caixa, retornando uma chave interna estável (número puro como string para pisos numéricos; chave textual normalizada para não-numéricos como Térreo/Cobertura/Subsolo N). (2) exibirPiso()/exibirLaco() — formatadores só de exibição ("Piso 3"/"Laço 3"), nunca usados em comparação. (3) pisoEq(a,b)/lacoEq(a,b) — comparador oficial; uniquePiso()/uniqueLaco() — dedup oficial para popular dropdowns/filtros. TODOS os pontos de comparação/filtro/dedup de piso ou laço foram migrados para essas funções: dsFlm (pisos/filtro), Locais (fPiso/fLaco), Falhas (filters.falhas piso/laco, mFiltroPiso/mFiltroLaco, falhaFilteredItems), Plano de Ação (filters.plano piso/laco, rLaco/rPiso/lacoOpts/pisoOpts), Testes (filters.testes piso), lucLocaisIrmaos(), lucPisoKey()/lucPisosCompat() (agora delegam para normalizarPiso/pisoEq em vez do regex fixo de 1 a 3 andares que existia antes), e TODO o módulo Plantas (plantaItens/pisoEfetivo, plantaFiltrarPontosInsercao, plantaAbrirModalInsercao, os pontos que decidem "item pertence a outro piso" ao soltar/inserir marcador, pisosDisponiveis do modal de baixa). ensureLaco() ganhou uma variante ensureLacoNormalizado() para uso futuro em import (o texto digitado/importado continua sendo GRAVADO como veio — só a comparação passa a ser normalizada). AUDITORIA AUTOMÁTICA: nova função auditoriaConsistenciaGlobal(base), chamada de dentro de normalizeAllStatuses() — o único ponto por onde toda carga de base já passava (boot, switchCliente/loadClienteDb, pull de sincronização, restauração de backup — nenhum novo call site precisou ser criado) — e também explicitamente ao final de importFile(). Ela: varre Laços/FLMs/Portas/Equipamentos/Locais/Falhas/Planos/Plantas contando registros; corrige em memória e NO CAMPO BRUTO, de forma conservadora e idempotente, só os casos textuais inequívocos (padrão numérico com prefixo conhecido, tipo "Piso Piso 3"/"Piso03"/"P3"), registrando de-para em db.avisosConsistencia; detecta pisos/laços com texto duplicado (mesma chave normalizada, grafias diferentes) e cadastros incompletos/órfãos (loja sem piso/laço, dispositivo sem piso/órfão, porta sem módulo, módulo sem laço, planta sem loja de piso correspondente) SEM nunca mesclar automaticamente registros de Laço/Local (maior raio de impacto por causa de vínculos de equipamentos/falhas/planos) — isso só entra como aviso em db.avisosConsistencia para revisão manual. Conta como "dispositivos reposicionados" os equipamentos/FLMs com piso preenchido que agora encontram uma planta compatível graças à comparação normalizada (antes ficavam "não posicionados" só por causa da grafia). Guardada por base._auditRunning contra reentrância. mostrarBannerConsistencia(resultado,alvoId) reaproveita a classe .msg já usada em toda a aplicação para mostrar o resumo (formato "Banco validado. N registros analisados / ✓ X pisos normalizados / ..."), como card fixo (quando alvoId existe, ex.: #impMsg após importação) ou toast temporário no canto da tela (9s, só aparece se houver algo a reportar) nos demais gatilhos. TESTE ISOLADO: script Node standalone (não incluído no produto) validou normalizarPiso("3")===normalizarPiso("03")===...===normalizarPiso("Piso Piso 3") e o equivalente para normalizarLaco — todas as variantes colapsaram para a mesma chave "3"; idempotência confirmada. node --check no script extraído: 0 erros. GAPS HONESTOS: (a) não existe base real de amostra com nomenclaturas de piso não numéricas no projeto anexado para validar contra dados de produção — Térreo/Cobertura/Subsolo N foram tratados por heurística de domínio comum em prédios comerciais brasileiros, não confirmados; se a central usa outra convenção (ex.: "Mezanino", "Ático"), caem no fallback de texto normalizado por case/acento (ainda comparável entre si, só não teria um exibirPiso() bonito dedicado). (b) NÃO foi feita fusão automática de Laços/Locais que colidem após normalização (ex.: dois laços "Laço 3" e "L3" sob o mesmo painel) — mesmo sendo agora corrigidos textualmente pela auditoria quando o padrão é o numérico simples, casos de nomenclatura mista (ex.: "Laço 3A" vs "L3-A") ficam só como aviso em db.avisosConsistencia, nunca mesclados, por decisão deliberada de segurança (blast radius de fundir registros com vínculos de falhas/planos/testes). (c) diagBox()/table()/esc() e outros pontos que só EXIBEM r.piso/r.laco cru (sem comparar) não foram alterados — está correto por design (a instrução pede canonizar comparação, não reescrever toda exibição), mas o texto exibido nessas telas continua sendo o bruto, não o formatado por exibirPiso()/exibirLaco(); trocar isso é possível numa rodada futura dedicada, mas fora do escopo de "revisão completa de comparações" pedido aqui. (d) Code.gs NÃO foi tocado — inspecionado e confirmado que não faz nenhuma comparação de piso/laço server-side (só repassa strings), então nada lá derrotaria esta camada. node --check validado sem erros (zero) logo após esta mudança. -->
 <!-- build anterior: 2026-07-11 v6.62 - MÓDULO PLANTAS: nova ação "Adicionar marcador" (📍, visível só com podeEditarPlantas()) em cada bloco de planta, um modo de inserção ALTERNATIVO ao arrastar-e-soltar já existente, focado em pontos técnicos (db.locais). Ao ativar, o próximo clique (não-arrasto — mesmo limiar de 6px de plantaIniciarDrag) no viewport captura x%/y% (mesma fórmula de rect.getBoundingClientRect() já usada no drop) em plantasUI.pendenteX/Y — estado 100% efêmero, nada é gravado antes da confirmação — e abre um modal de seleção (plantaAbrirModalInsercao). O modal lista SÓ pontos técnicos com local.plantaId!==id-da-planta-atual (exclusão sempre por id, nunca por nome, então "ROMMANEL SDAI" e "ROMMANEL CO2" são sempre tratados como registros independentes), com filtros combináveis (busca nome/LUC via filtrarRegistrosPorBusca, Sistema, Piso, Painel, Laço, Módulo, Porta, Status via plantaStatusFiltroLocal — Com falha/Em operação/Nunca testado), ordenados por Piso/Nome/Sistema/Painel/Laço/Módulo/Porta, e 3 contadores sempre recalculados na hora (disponíveis/já inseridos nesta planta/total do piso — nunca cache). Por padrão só mostra pontos do piso da planta; toggle "Mostrar pontos de outros pisos" (só para Master) permite ver de outros pisos, e ao confirmar um desses abre plantaConfirmarOutroPiso()/OutroPisoOk() — modal PRÓPRIO, nunca confirm() nativo — que audita a exceção via logLocal() antes de gravar. Selecionar um ponto (plantaSelecionarPontoInsercao→plantaConfirmarInsercao) revalida duplicidade (loc.plantaId===plantaAtual → aborta com aviso, sem gravar nada), grava plantaId/plantaX/plantaY, aplica escalaPadraoMarcador/escalaPadraoTexto da planta quando o ponto ainda não tem override (mesma regra do v6.60), grava marcadorCriadoPor/marcadorCriadoEm no próprio registro, chama logLocal('Plantas',...,'inserir_marcador',...), invalida o cache do tooltip e chama save() (que já dispara markDirty+render). O modal É REABERTO em seguida (plantaAbrirModalInsercao de novo) para atualizar lista/contadores SEM fechar — e o modo de inserção continua ativo, permitindo clicar no próximo ponto da planta imediatamente sem reabrir nada manualmente. Saída do modo de inserção: Esc (novo listener global, guardado por window._plantaEscInserirBound), botão "Cancelar inserção" ou clicar de novo em "Adicionar marcador" — todos chamam plantaSairModoInserir(), que NUNCA deixa uma posição pendente incompleta gravada. Exclusão de marcador (menu de contexto "Excluir") ganhou confirmação explícita (antes chamava plantaLimparPosicao() direto); a função em si já só limpava plantaId/plantaX/plantaY do registro (nunca apagava o cadastro nem testes/falhas), então voltar a aparecer na lista de inserção é automático (contadores/lista recalculados por leitura direta de db.locais, sem cache). GAPS HONESTOS: (1) reassociar um marcador JÁ POSICIONADO a um ponto técnico DIFERENTE (spec item 12) não foi implementado — plantaEditarMarcador() continua só editando posição/escala do MESMO item, como já era; construir essa re-vinculação exigiria uma UI nova maior, fora do pedido mínimo desta rodada. (2) o modal de inserção reconstrói o HTML inteiro a cada filtro (mesmo padrão de outras telas do sistema), o que reseta o foco do campo de busca — mitigado com um refoco manual (setTimeout+#mInsBusca) só nesse campo, mas outros selects não preservam scroll da lista. (3) "mostrar pontos de outros pisos" só aparece para isMaster() (mais restrito que podeEditarPlantas() genérico), decisão deliberada por ser uma exceção mais sensível. node --check validado sem erros (zero) logo após esta mudança.
 build anterior: 2026-07-11 v6.61 - MÓDULO PLANTAS: zoom interativo (roda do mouse SEM Ctrl, zoom centrado no
@@ -554,6 +591,10 @@ input[type=checkbox],input[type=radio]{accent-color:var(--l3a-primary)}
 /* v6.60 — escala de marcadores/textos (Feature Set A) */
 .plantaPin.selecionado .pinDot{outline:2px dashed var(--l3a-primary);outline-offset:3px}
 .plantaHandle{position:absolute;width:12px;height:12px;border-radius:50%;background:#fff;border:2px solid var(--l3a-primary);box-shadow:0 1px 3px rgba(16,24,40,.4);touch-action:none;z-index:5}
+/* v6.65 item 6: alça visual continua 12px, mas ganha uma área de toque mínima de 24x24 via ::before
+   invisível centrado (não afeta layout/posição da alça, que continua ancorada em .plantaPin, sozinha
+   independente da escala do pinDot/pinBadge — ver comentário da fórmula inversa acima). */
+.plantaHandle::before{content:'';position:absolute;left:50%;top:50%;width:24px;height:24px;transform:translate(-50%,-50%);background:transparent}
 .plantaHandle.hMarcador{right:-16px;bottom:-16px;cursor:nwse-resize}
 .plantaHandle.hTexto{right:-16px;top:-16px;cursor:ns-resize;border-color:var(--l3a-warning,#B45309)}
 .escalaField{display:flex;align-items:center;gap:8px;font-size:12px}
@@ -575,6 +616,13 @@ input[type=checkbox],input[type=radio]{accent-color:var(--l3a-primary)}
 .plantaLegenda i.lg{width:11px;height:11px;border-radius:50%;display:inline-block}
 @media (max-width:900px){.plantasLayout{flex-direction:column}.plantasSide{position:static;flex:1 1 auto;width:100%;max-height:260px}}
 @media print{#plantas .plantasSide,#plantas .plantaZoomBtns,#plantas .plantaSideTab,#plantas .plantaScaleControl,#plantas .plantaLegendaTecnica,#plantas .plantaLegendaToggle{display:none!important}}
+/* v6.66 — PRINT: força o zoom/pan on-screen a voltar para neutro (zoom=1, sem deslocamento) na impressão,
+   mesmo que o usuário tenha dado zoom antes de imprimir; !important em stylesheet sobrepõe o transform
+   inline aplicado por plantaZoomAt()/plantaBindEventos() no .plantaCanvas (regra do CSS, testada: uma regra
+   com !important em folha de estilo vence style="" inline sem !important). A escala INDIVIDUAL de cada
+   marcador (.pinDot/.pinBadge) NÃO pode ser resolvida só por CSS (o valor final varia por item/tipo), por
+   isso é tratada à parte via hook JS beforeprint/afterprint (ver plantaPrepararImpressao()). */
+@media print{#plantas .plantaCanvas{transform:none!important}}
 /* v6.64 — painel lateral recolhível (item 1) */
 .plantasLayout.sideColapsada .plantasSide{display:none}
 .plantaSideTab{position:sticky;top:8px;flex:0 0 auto;align-self:flex-start;background:var(--l3a-surface);border:1px solid var(--l3a-border);border-radius:10px;padding:8px 6px;font-size:11.5px;font-weight:700;cursor:pointer;writing-mode:vertical-rl;text-orientation:mixed;color:var(--l3a-text-soft)}
@@ -7679,15 +7727,25 @@ function plantaToggleSidebar(){plantasUI.sideCollapsed=!plantasUI.sideCollapsed;
 function plantaToggleLegenda(plantaId){plantasUI.legendaColapsada[plantaId]=!plantasUI.legendaColapsada[plantaId];plantaSavePrefs();renderPlantas()}
 // v6.61 — limites únicos de zoom (reaproveitados por botões +/-, roda do mouse e pinça em touch).
 const PLANTA_ZOOM_MIN=0.2, PLANTA_ZOOM_MAX=5;
-// Fator de escala AUTOMÁTICO dos marcadores em função do zoom atual — multiplica (nunca substitui) a
-// escala configurada (escalaPadraoMarcador/escalaMarcador do v6.60). Mapeamento linear em dois trechos,
-// ancorado em zoom=1 → fator=1: de PLANTA_ZOOM_MIN a 1 interpola até 0.5; de 1 a PLANTA_ZOOM_MAX interpola
-// até 1.5. Sempre clampado em [0.5, 1.5] (itens 3/4 do pedido de zoom interativo).
+// v6.65 — CORREÇÃO DE BUG CRÍTICO: a versão anterior (v6.61) multiplicava a escala do marcador
+// PROPORCIONALMENTE ao zoom (fator subia de 0.5→1.5 conforme o zoom crescia), fazendo os símbolos
+// CRESCEREM ao aproximar — o oposto do esperado (símbolo deveria se manter visualmente estável/pequeno
+// perto, já que o próprio zoom do CSS já amplia o desenho). Fórmula NOVA, INVERSA: fatorZoom = 1/z
+// (zoom=1→fator=1, zoom=2→fator=0.5, zoom=4→fator=0.25 antes do clamp final). O fator SÓ é aplicado —
+// e clampado — no PRODUTO final (escalaBase×escalaIndividual×fatorTipo × fatorZoom), nunca isoladamente,
+// para bater exatamente com a fórmula pedida: escalaFinal = clamp(escalaBase×escalaIndividual/fatorZoom,
+// escalaMinima, escalaMaxima). Ver plantaClampEscalaFinal() e os dois call sites (renderPlantas() e
+// plantaAtualizarEscalasNaTela()) para o clamp.
 function plantaZoomAutoFactor(z){
   z=Number(z)||1;
-  let f=(z<=1)?(1-(1-z)/(1-PLANTA_ZOOM_MIN)*0.5):(1+(z-1)/(PLANTA_ZOOM_MAX-1)*0.5);
-  return Math.min(1.5,Math.max(0.5,f));
+  if(z<=0)z=0.0001;
+  return 1/z;
 }
+// escalaMinima=0.20 (piso — dentro da faixa pedida 20%-25%, escolhido no limite inferior para preservar o
+// máximo de legibilidade granular antes de travar) / escalaMaxima=1.10 (teto — dentro da faixa pedida
+// 100%-120%, escolhido no meio para permitir uma leve ênfase ao afastar sem deixar o símbolo "explodir").
+const PLANTA_ESCALA_MIN=0.20, PLANTA_ESCALA_MAX=1.10;
+function plantaClampEscalaFinal(v){return Math.min(PLANTA_ESCALA_MAX,Math.max(PLANTA_ESCALA_MIN,Number(v)||PLANTA_ESCALA_MIN))}
 function plantasOrdenadas(){return (db.plantas||[]).filter(p=>p.ativo!==false).slice().sort((a,b)=>(a.ordem??99)-(b.ordem??99))}
 function podeEditarPlantas(){return can('posicionarPlanta')}
 
@@ -7724,8 +7782,12 @@ function plantaStatusClassEquip(st){st=normalizeStatus(st);if(isFalhaStatus(st))
 // dedicada para editar cada tipo nesta rodada, mas já É APLICADA no cálculo (default 1 = neutro/sem efeito
 // quando ausente, então nada muda para plantas existentes até alguém popular esse campo).
 function plantaFatorTipo(pl,tipoFiltro){const m=pl&&pl.escalaPorTipo;if(!m||!tipoFiltro)return 1;const v=m[tipoFiltro];return v==null?1:(Number(v)||1)}
-function plantaEscalaMarcador(item,pl,tipoFiltro){const ov=item&&item.escalaMarcador;const def=(pl&&pl.escalaPadraoMarcador)??1;const v=(ov==null?def:ov);return Math.min(5,Math.max(0.3,Number(v)||1))*plantaFatorTipo(pl,tipoFiltro)}
-function plantaEscalaTexto(item,pl,tipoFiltro){const ov=item&&item.escalaTexto;const def=(pl&&pl.escalaPadraoTexto)??1;const v=(ov==null?def:ov);return Math.min(5,Math.max(0.3,Number(v)||1))*plantaFatorTipo(pl,tipoFiltro)}
+// v6.66 — CORREÇÃO: escalaMarcador/escalaTexto do item agora MULTIPLICA a escala base da planta (nunca
+// substitui). base=escalaPadraoMarcador(planta), individual=escalaMarcador(item, default neutro 1.0 quando
+// ausente) → final = base×individual×fatorTipo (depois, nos call sites, ÷fatorZoom e clamp). Bate com o
+// exemplo do pedido: base=0.50, individual=1.20, zoom=2.00 → (0.50×1.20)/2.00 = 0.30.
+function plantaEscalaMarcador(item,pl,tipoFiltro){const base=(pl&&pl.escalaPadraoMarcador)??1;const ov=item&&item.escalaMarcador;const ind=(ov==null?1:Number(ov)||1);return Math.min(5,Math.max(0.3,Number(base)||1))*Math.min(5,Math.max(0.3,ind))*plantaFatorTipo(pl,tipoFiltro)}
+function plantaEscalaTexto(item,pl,tipoFiltro){const base=(pl&&pl.escalaPadraoTexto)??1;const ov=item&&item.escalaTexto;const ind=(ov==null?1:Number(ov)||1);return Math.min(5,Math.max(0.3,Number(base)||1))*Math.min(5,Math.max(0.3,ind))*plantaFatorTipo(pl,tipoFiltro)}
 // v6.64 (item 3) — um símbolo vetorial simples e distinto por TIPO (forma = tipo, nunca cor; cor = status,
 // aplicada via as classes st-ok/st-bad/st-warn/st-off já existentes no .pinDot, sempre currentColor/stroke
 // nos paths abaixo para herdar essa cor). Loja(SDAI) e Loja(CO2) são diferenciadas por 'sistema' do ponto
@@ -7842,7 +7904,7 @@ function renderPlantas(){
       }
       // v6.60 (Feature Set B, item 1): nome permanente REMOVIDO do marcador — só ícone/cor/badge numérico.
       // O nome/detalhes completos passam a viver exclusivamente no tooltip de hover (renderTooltipMarcador).
-      const escM=plantaEscalaMarcador(i.ref,pl,i.tipoFiltro)*zf, escT=plantaEscalaTexto(i.ref,pl,i.tipoFiltro)*zf;
+      const escM=plantaClampEscalaFinal(plantaEscalaMarcador(i.ref,pl,i.tipoFiltro)*zf), escT=plantaClampEscalaFinal(plantaEscalaTexto(i.ref,pl,i.tipoFiltro)*zf);
       const selecionado=plantasUI.selecionado&&plantasUI.selecionado.kind===i.kind&&plantasUI.selecionado.id===i.id;
       const handles=(plantasUI.edit&&podeEditarPlantas()&&selecionado)?`<div class="plantaHandle hMarcador" data-handle="marcador" title="Redimensionar marcador"></div><div class="plantaHandle hTexto" data-handle="texto" title="Redimensionar texto (badge)"></div>`:'';
       const badge=badgeN?`<span class="pinBadge" style="transform:scale(${escT});transform-origin:center">${badgeN}</span>`:'';
@@ -8125,13 +8187,25 @@ function plantaBindEventos(root){
   root.querySelectorAll('.plantaViewport').forEach(vp=>{
     const pid=vp.dataset.planta;
     const pinchSt=plantaEstadoPinch(pid);
-    let wheelDebTimer=null;
+    let wheelDebTimer=null, wheelRafPending=false, wheelAcumDelta=0, wheelLastX=null, wheelLastY=null;
     vp.addEventListener('wheel',ev=>{
       ev.preventDefault(); // item 1: nunca deixa a página rolar enquanto se faz zoom na planta
       plantaOcultarTooltipAgora(); // item 9: tooltip some durante o zoom
-      const cur=plantasUI.zoom[pid]||1;
-      const fator=ev.deltaY<0?1.1:(1/1.1);
-      plantaZoomAt(pid,cur*fator,ev.clientX,ev.clientY,false); // sem transição — roda é contínua (item 12)
+      // v6.65: batch via requestAnimationFrame — vários eventos 'wheel' do mesmo gesto contínuo (o
+      // trackpad/roda pode disparar dezenas por segundo) são acumulados e só aplicados uma vez por frame,
+      // evitando layout thrashing (o cálculo da escala inversa dos marcadores é barato, mas recalcular
+      // style.transform em cada pino a cada tick de roda sem essa coalescência gera jank perceptível).
+      wheelAcumDelta+=ev.deltaY; wheelLastX=ev.clientX; wheelLastY=ev.clientY;
+      if(!wheelRafPending){
+        wheelRafPending=true;
+        requestAnimationFrame(()=>{
+          wheelRafPending=false;
+          const cur=plantasUI.zoom[pid]||1;
+          const fator=wheelAcumDelta<0?1.1:(1/1.1);
+          wheelAcumDelta=0;
+          plantaZoomAt(pid,cur*fator,wheelLastX,wheelLastY,false); // sem transição — roda é contínua (item 12)
+        });
+      }
       clearTimeout(wheelDebTimer);
       wheelDebTimer=setTimeout(()=>plantaPosSettleZoom(pid),180); // item 10: clusters só recalculam ao "assentar"
     },{passive:false});
@@ -8256,7 +8330,8 @@ function plantaIniciarResize(ev,kind,id_,tipo){
   const item=plantaItemById(kind,id_); if(!item)return;
   const pl=(db.plantas||[]).find(p=>p.id===item.plantaId);
   const campo=tipo==='texto'?'escalaTexto':'escalaMarcador';
-  const base=item[campo]??(pl?(tipo==='texto'?(pl.escalaPadraoTexto??1):(pl.escalaPadraoMarcador??1)):1);
+  // v6.66: item[campo] agora é multiplicador puro (default neutro 1.0), não mais cópia da escala da planta.
+  const base=item[campo]??1;
   const start={x:ev.clientX,y:ev.clientY};
   _plantaDragAtivo=true; plantaOcultarTooltipAgora();
   const move=e2=>{
@@ -8526,8 +8601,10 @@ function plantaConfirmarInsercao(localId,plantaId){
   plantasUI._confirmadoOutroPiso=false;
   loc.plantaId=plantaId;
   loc.plantaX=plantasUI.pendenteX; loc.plantaY=plantasUI.pendenteY;
-  if(loc.escalaMarcador==null)loc.escalaMarcador=pl.escalaPadraoMarcador??1;
-  if(loc.escalaTexto==null)loc.escalaTexto=pl.escalaPadraoTexto??1;
+  // v6.66: escalaMarcador/escalaTexto do item agora é um MULTIPLICADOR sobre a base da planta (não mais uma
+  // cópia do valor absoluto da planta) — deixar em 1.0 (neutro) é o equivalente correto de "herda a planta".
+  if(loc.escalaMarcador==null)loc.escalaMarcador=1;
+  if(loc.escalaTexto==null)loc.escalaTexto=1;
   loc.marcadorCriadoPor=(currentUser().nome||currentUser().email||'usuário');
   loc.marcadorCriadoEm=isoNow();
   try{logLocal('Plantas',loc.id,'inserir_marcador',`Ponto técnico "${loc.nomeOficial||loc.nome}" inserido na planta ${pl.piso} via "Adicionar marcador" (${loc.plantaX}%, ${loc.plantaY}%).`)}catch(e){}
@@ -8596,9 +8673,45 @@ function plantaAtualizarEscalasNaTela(pl){
   document.querySelectorAll(`.plantaBloco[data-planta-bloco="${CSS.escape(pl.id)}"] .plantaPin`).forEach(pinEl=>{
     const kind=pinEl.dataset.kind,id_=pinEl.dataset.id;
     const it=itens.find(x=>x.kind===kind&&x.id===id_); if(!it)return;
-    const dot=pinEl.querySelector('.pinDot'); if(dot)dot.style.transform=`scale(${plantaEscalaMarcador(it.ref,pl,it.tipoFiltro)*zf})`;
-    const bd=pinEl.querySelector('.pinBadge'); if(bd)bd.style.transform=`scale(${plantaEscalaTexto(it.ref,pl,it.tipoFiltro)*zf})`;
+    const dot=pinEl.querySelector('.pinDot'); if(dot)dot.style.transform=`scale(${plantaClampEscalaFinal(plantaEscalaMarcador(it.ref,pl,it.tipoFiltro)*zf)})`;
+    const bd=pinEl.querySelector('.pinBadge'); if(bd)bd.style.transform=`scale(${plantaClampEscalaFinal(plantaEscalaTexto(it.ref,pl,it.tipoFiltro)*zf)})`;
   });
+}
+// v6.66 — PRINT: substitui temporariamente o transform inline de CADA marcador pela versão "escala-base"
+// (sem o termo de zoom/fatorZoom — equivalente a zf=1), evitando símbolos minúsculos/gigantes no PDF só
+// porque o usuário tinha dado zoom na tela antes de imprimir. O transform:none!important do .plantaCanvas
+// (CSS @media print) já cuida do zoom/pan do CANVAS inteiro; isto aqui cuida do scale() individual de cada
+// .pinDot/.pinBadge, que não dá pra resolver só com CSS porque o valor final varia por item/tipo. O valor
+// original de cada elemento é guardado em data-print-backup-transform e devolvido em afterprint — o estado
+// on-screen (plantasUI.zoom/pan, db) NUNCA é tocado, só o style.transform temporário desses elementos.
+function plantaPrepararImpressao(){
+  try{
+    const itens=plantaItens();
+    document.querySelectorAll('.plantaBloco[data-planta-bloco]').forEach(bloco=>{
+      const plantaId=bloco.dataset.plantaBloco;
+      const pl=(db.plantas||[]).find(p=>p.id===plantaId); if(!pl)return;
+      bloco.querySelectorAll('.plantaPin').forEach(pinEl=>{
+        const kind=pinEl.dataset.kind,id_=pinEl.dataset.id;
+        const it=itens.find(x=>x.kind===kind&&x.id===id_); if(!it)return;
+        const dot=pinEl.querySelector('.pinDot');
+        if(dot){dot.dataset.printBackupTransform=dot.style.transform||''; dot.style.transform=`scale(${plantaClampEscalaFinal(plantaEscalaMarcador(it.ref,pl,it.tipoFiltro))})`}
+        const bd=pinEl.querySelector('.pinBadge');
+        if(bd){bd.dataset.printBackupTransform=bd.style.transform||''; bd.style.transform=`scale(${plantaClampEscalaFinal(plantaEscalaTexto(it.ref,pl,it.tipoFiltro))})`}
+      });
+    });
+  }catch(e){/* impressão nunca deve travar por causa deste ajuste cosmético */}
+}
+function plantaRestaurarAposImpressao(){
+  try{
+    document.querySelectorAll('[data-print-backup-transform]').forEach(el=>{
+      el.style.transform=el.dataset.printBackupTransform||'';
+      delete el.dataset.printBackupTransform;
+    });
+  }catch(e){}
+}
+if(typeof window!=='undefined'){
+  window.addEventListener('beforeprint',plantaPrepararImpressao);
+  window.addEventListener('afterprint',plantaRestaurarAposImpressao);
 }
 function plantaRestaurarEscalaPlanta(plantaId){
   if(!confirm('Restaurar marcador=100% e texto=100% para TODOS os marcadores desta planta? As posições (x/y) não são alteradas.'))return;
@@ -8611,14 +8724,16 @@ function plantaEditarMarcador(kind,id_){
   const item=plantaItemById(kind,id_); if(!item)return;
   const pl=(db.plantas||[]).find(p=>p.id===item.plantaId);
   const nome=kind==='local'?(item.nomeOficial||item.nome):kind==='flm'?('Módulo '+(item.endereco||item.modelo||'')):(item.tipo+' '+(item.endereco||item.modelo||''));
-  const em=Math.round((item.escalaMarcador??(pl?.escalaPadraoMarcador??1))*100);
-  const et=Math.round((item.escalaTexto??(pl?.escalaPadraoTexto??1))*100);
+  // v6.66: campo agora é MULTIPLICADOR sobre a escala da planta (100% = neutro, não altera a base); default
+  // quando não há override ainda é 100%, não mais uma cópia do valor absoluto da planta.
+  const em=Math.round((item.escalaMarcador??1)*100);
+  const et=Math.round((item.escalaTexto??1)*100);
   openModal(`<h2>Editar marcador</h2><div class="formGrid">
     <div class="field" style="grid-column:1/-1"><label>Nome</label><div><b>${esc(nome)}</b></div></div>
     <div class="field"><label>Posição X (%)</label><input id="mMkX" type="number" step="0.01" value="${esc(item.plantaX)}"></div>
     <div class="field"><label>Posição Y (%)</label><input id="mMkY" type="number" step="0.01" value="${esc(item.plantaY)}"></div>
-    <div class="field"><label>Escala do marcador (%)</label><input id="mMkEscM" type="number" min="30" max="500" step="5" value="${em}" oninput="plantaPreviewEscalaMarcador('${kind}','${esc(id_)}',this.value,null)"></div>
-    <div class="field"><label>Escala do texto (%)</label><input id="mMkEscT" type="number" min="30" max="500" step="5" value="${et}" oninput="plantaPreviewEscalaMarcador('${kind}','${esc(id_)}',null,this.value)"></div>
+    <div class="field"><label>Escala do marcador (%)</label><input id="mMkEscM" type="number" min="30" max="500" step="5" value="${em}" oninput="plantaPreviewEscalaMarcador('${kind}','${esc(id_)}',this.value,null)"><div style="font-size:11px;opacity:.7;margin-top:2px">Multiplica a escala da planta (100% = sem alteração). Ex.: planta 50% × este 120% = 60% de base, antes de zoom.</div></div>
+    <div class="field"><label>Escala do texto (%)</label><input id="mMkEscT" type="number" min="30" max="500" step="5" value="${et}" oninput="plantaPreviewEscalaMarcador('${kind}','${esc(id_)}',null,this.value)"><div style="font-size:11px;opacity:.7;margin-top:2px">Multiplica a escala de texto da planta (100% = sem alteração).</div></div>
   </div><br>
   <button class="btn" onclick="plantaSalvarEdicaoMarcador('${kind}','${esc(id_)}')">Salvar</button>
   <button class="btn secondary" onclick="closeModal();renderPlantas()">Cancelar</button>`);
