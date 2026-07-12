@@ -1,5 +1,6 @@
 <!doctype html>
-<!-- build: 2026-07-11 v6.62 - MÓDULO PLANTAS: nova ação "Adicionar marcador" (📍, visível só com podeEditarPlantas()) em cada bloco de planta, um modo de inserção ALTERNATIVO ao arrastar-e-soltar já existente, focado em pontos técnicos (db.locais). Ao ativar, o próximo clique (não-arrasto — mesmo limiar de 6px de plantaIniciarDrag) no viewport captura x%/y% (mesma fórmula de rect.getBoundingClientRect() já usada no drop) em plantasUI.pendenteX/Y — estado 100% efêmero, nada é gravado antes da confirmação — e abre um modal de seleção (plantaAbrirModalInsercao). O modal lista SÓ pontos técnicos com local.plantaId!==id-da-planta-atual (exclusão sempre por id, nunca por nome, então "ROMMANEL SDAI" e "ROMMANEL CO2" são sempre tratados como registros independentes), com filtros combináveis (busca nome/LUC via filtrarRegistrosPorBusca, Sistema, Piso, Painel, Laço, Módulo, Porta, Status via plantaStatusFiltroLocal — Com falha/Em operação/Nunca testado), ordenados por Piso/Nome/Sistema/Painel/Laço/Módulo/Porta, e 3 contadores sempre recalculados na hora (disponíveis/já inseridos nesta planta/total do piso — nunca cache). Por padrão só mostra pontos do piso da planta; toggle "Mostrar pontos de outros pisos" (só para Master) permite ver de outros pisos, e ao confirmar um desses abre plantaConfirmarOutroPiso()/OutroPisoOk() — modal PRÓPRIO, nunca confirm() nativo — que audita a exceção via logLocal() antes de gravar. Selecionar um ponto (plantaSelecionarPontoInsercao→plantaConfirmarInsercao) revalida duplicidade (loc.plantaId===plantaAtual → aborta com aviso, sem gravar nada), grava plantaId/plantaX/plantaY, aplica escalaPadraoMarcador/escalaPadraoTexto da planta quando o ponto ainda não tem override (mesma regra do v6.60), grava marcadorCriadoPor/marcadorCriadoEm no próprio registro, chama logLocal('Plantas',...,'inserir_marcador',...), invalida o cache do tooltip e chama save() (que já dispara markDirty+render). O modal É REABERTO em seguida (plantaAbrirModalInsercao de novo) para atualizar lista/contadores SEM fechar — e o modo de inserção continua ativo, permitindo clicar no próximo ponto da planta imediatamente sem reabrir nada manualmente. Saída do modo de inserção: Esc (novo listener global, guardado por window._plantaEscInserirBound), botão "Cancelar inserção" ou clicar de novo em "Adicionar marcador" — todos chamam plantaSairModoInserir(), que NUNCA deixa uma posição pendente incompleta gravada. Exclusão de marcador (menu de contexto "Excluir") ganhou confirmação explícita (antes chamava plantaLimparPosicao() direto); a função em si já só limpava plantaId/plantaX/plantaY do registro (nunca apagava o cadastro nem testes/falhas), então voltar a aparecer na lista de inserção é automático (contadores/lista recalculados por leitura direta de db.locais, sem cache). GAPS HONESTOS: (1) reassociar um marcador JÁ POSICIONADO a um ponto técnico DIFERENTE (spec item 12) não foi implementado — plantaEditarMarcador() continua só editando posição/escala do MESMO item, como já era; construir essa re-vinculação exigiria uma UI nova maior, fora do pedido mínimo desta rodada. (2) o modal de inserção reconstrói o HTML inteiro a cada filtro (mesmo padrão de outras telas do sistema), o que reseta o foco do campo de busca — mitigado com um refoco manual (setTimeout+#mInsBusca) só nesse campo, mas outros selects não preservam scroll da lista. (3) "mostrar pontos de outros pisos" só aparece para isMaster() (mais restrito que podeEditarPlantas() genérico), decisão deliberada por ser uma exceção mais sensível. node --check validado sem erros (zero) logo após esta mudança.
+<!-- build: 2026-07-12 v6.63 - NORMALIZAÇÃO GLOBAL DE PISO/LAÇO. PROBLEMA: piso/laço eram comparados/filtrados/deduplicados como texto literal em dezenas de pontos (===, up()===up()), então "3"/"03"/"P3"/"Piso 3"/"Piso Piso 3" eram tratados como valores DIFERENTES — gerando filtros duplicados, itens "não posicionados" em Plantas por divergência textual pura, e possíveis furos de matching em Locais/Falhas/Plano. ESTRATÉGIA (deliberada, ver comentário no código acima de normalizarPiso()): NÃO reescrever em massa os campos brutos existentes em toda tabela de uma vez — risco alto sem rollback numa base de produção. Em vez disso: (1) normalizarPiso(valor)/normalizarLaco(valor) — funções puras, idempotentes, que colapsam prefixos repetidos ("Piso Piso 3"→"3"), zeros à esquerda ("03"→"3"), abreviações ("P3"/"L3"→"3"), separadores e acentuação/caixa, retornando uma chave interna estável (número puro como string para pisos numéricos; chave textual normalizada para não-numéricos como Térreo/Cobertura/Subsolo N). (2) exibirPiso()/exibirLaco() — formatadores só de exibição ("Piso 3"/"Laço 3"), nunca usados em comparação. (3) pisoEq(a,b)/lacoEq(a,b) — comparador oficial; uniquePiso()/uniqueLaco() — dedup oficial para popular dropdowns/filtros. TODOS os pontos de comparação/filtro/dedup de piso ou laço foram migrados para essas funções: dsFlm (pisos/filtro), Locais (fPiso/fLaco), Falhas (filters.falhas piso/laco, mFiltroPiso/mFiltroLaco, falhaFilteredItems), Plano de Ação (filters.plano piso/laco, rLaco/rPiso/lacoOpts/pisoOpts), Testes (filters.testes piso), lucLocaisIrmaos(), lucPisoKey()/lucPisosCompat() (agora delegam para normalizarPiso/pisoEq em vez do regex fixo de 1 a 3 andares que existia antes), e TODO o módulo Plantas (plantaItens/pisoEfetivo, plantaFiltrarPontosInsercao, plantaAbrirModalInsercao, os pontos que decidem "item pertence a outro piso" ao soltar/inserir marcador, pisosDisponiveis do modal de baixa). ensureLaco() ganhou uma variante ensureLacoNormalizado() para uso futuro em import (o texto digitado/importado continua sendo GRAVADO como veio — só a comparação passa a ser normalizada). AUDITORIA AUTOMÁTICA: nova função auditoriaConsistenciaGlobal(base), chamada de dentro de normalizeAllStatuses() — o único ponto por onde toda carga de base já passava (boot, switchCliente/loadClienteDb, pull de sincronização, restauração de backup — nenhum novo call site precisou ser criado) — e também explicitamente ao final de importFile(). Ela: varre Laços/FLMs/Portas/Equipamentos/Locais/Falhas/Planos/Plantas contando registros; corrige em memória e NO CAMPO BRUTO, de forma conservadora e idempotente, só os casos textuais inequívocos (padrão numérico com prefixo conhecido, tipo "Piso Piso 3"/"Piso03"/"P3"), registrando de-para em db.avisosConsistencia; detecta pisos/laços com texto duplicado (mesma chave normalizada, grafias diferentes) e cadastros incompletos/órfãos (loja sem piso/laço, dispositivo sem piso/órfão, porta sem módulo, módulo sem laço, planta sem loja de piso correspondente) SEM nunca mesclar automaticamente registros de Laço/Local (maior raio de impacto por causa de vínculos de equipamentos/falhas/planos) — isso só entra como aviso em db.avisosConsistencia para revisão manual. Conta como "dispositivos reposicionados" os equipamentos/FLMs com piso preenchido que agora encontram uma planta compatível graças à comparação normalizada (antes ficavam "não posicionados" só por causa da grafia). Guardada por base._auditRunning contra reentrância. mostrarBannerConsistencia(resultado,alvoId) reaproveita a classe .msg já usada em toda a aplicação para mostrar o resumo (formato "Banco validado. N registros analisados / ✓ X pisos normalizados / ..."), como card fixo (quando alvoId existe, ex.: #impMsg após importação) ou toast temporário no canto da tela (9s, só aparece se houver algo a reportar) nos demais gatilhos. TESTE ISOLADO: script Node standalone (não incluído no produto) validou normalizarPiso("3")===normalizarPiso("03")===...===normalizarPiso("Piso Piso 3") e o equivalente para normalizarLaco — todas as variantes colapsaram para a mesma chave "3"; idempotência confirmada. node --check no script extraído: 0 erros. GAPS HONESTOS: (a) não existe base real de amostra com nomenclaturas de piso não numéricas no projeto anexado para validar contra dados de produção — Térreo/Cobertura/Subsolo N foram tratados por heurística de domínio comum em prédios comerciais brasileiros, não confirmados; se a central usa outra convenção (ex.: "Mezanino", "Ático"), caem no fallback de texto normalizado por case/acento (ainda comparável entre si, só não teria um exibirPiso() bonito dedicado). (b) NÃO foi feita fusão automática de Laços/Locais que colidem após normalização (ex.: dois laços "Laço 3" e "L3" sob o mesmo painel) — mesmo sendo agora corrigidos textualmente pela auditoria quando o padrão é o numérico simples, casos de nomenclatura mista (ex.: "Laço 3A" vs "L3-A") ficam só como aviso em db.avisosConsistencia, nunca mesclados, por decisão deliberada de segurança (blast radius de fundir registros com vínculos de falhas/planos/testes). (c) diagBox()/table()/esc() e outros pontos que só EXIBEM r.piso/r.laco cru (sem comparar) não foram alterados — está correto por design (a instrução pede canonizar comparação, não reescrever toda exibição), mas o texto exibido nessas telas continua sendo o bruto, não o formatado por exibirPiso()/exibirLaco(); trocar isso é possível numa rodada futura dedicada, mas fora do escopo de "revisão completa de comparações" pedido aqui. (d) Code.gs NÃO foi tocado — inspecionado e confirmado que não faz nenhuma comparação de piso/laço server-side (só repassa strings), então nada lá derrotaria esta camada. node --check validado sem erros (zero) logo após esta mudança. -->
+<!-- build anterior: 2026-07-11 v6.62 - MÓDULO PLANTAS: nova ação "Adicionar marcador" (📍, visível só com podeEditarPlantas()) em cada bloco de planta, um modo de inserção ALTERNATIVO ao arrastar-e-soltar já existente, focado em pontos técnicos (db.locais). Ao ativar, o próximo clique (não-arrasto — mesmo limiar de 6px de plantaIniciarDrag) no viewport captura x%/y% (mesma fórmula de rect.getBoundingClientRect() já usada no drop) em plantasUI.pendenteX/Y — estado 100% efêmero, nada é gravado antes da confirmação — e abre um modal de seleção (plantaAbrirModalInsercao). O modal lista SÓ pontos técnicos com local.plantaId!==id-da-planta-atual (exclusão sempre por id, nunca por nome, então "ROMMANEL SDAI" e "ROMMANEL CO2" são sempre tratados como registros independentes), com filtros combináveis (busca nome/LUC via filtrarRegistrosPorBusca, Sistema, Piso, Painel, Laço, Módulo, Porta, Status via plantaStatusFiltroLocal — Com falha/Em operação/Nunca testado), ordenados por Piso/Nome/Sistema/Painel/Laço/Módulo/Porta, e 3 contadores sempre recalculados na hora (disponíveis/já inseridos nesta planta/total do piso — nunca cache). Por padrão só mostra pontos do piso da planta; toggle "Mostrar pontos de outros pisos" (só para Master) permite ver de outros pisos, e ao confirmar um desses abre plantaConfirmarOutroPiso()/OutroPisoOk() — modal PRÓPRIO, nunca confirm() nativo — que audita a exceção via logLocal() antes de gravar. Selecionar um ponto (plantaSelecionarPontoInsercao→plantaConfirmarInsercao) revalida duplicidade (loc.plantaId===plantaAtual → aborta com aviso, sem gravar nada), grava plantaId/plantaX/plantaY, aplica escalaPadraoMarcador/escalaPadraoTexto da planta quando o ponto ainda não tem override (mesma regra do v6.60), grava marcadorCriadoPor/marcadorCriadoEm no próprio registro, chama logLocal('Plantas',...,'inserir_marcador',...), invalida o cache do tooltip e chama save() (que já dispara markDirty+render). O modal É REABERTO em seguida (plantaAbrirModalInsercao de novo) para atualizar lista/contadores SEM fechar — e o modo de inserção continua ativo, permitindo clicar no próximo ponto da planta imediatamente sem reabrir nada manualmente. Saída do modo de inserção: Esc (novo listener global, guardado por window._plantaEscInserirBound), botão "Cancelar inserção" ou clicar de novo em "Adicionar marcador" — todos chamam plantaSairModoInserir(), que NUNCA deixa uma posição pendente incompleta gravada. Exclusão de marcador (menu de contexto "Excluir") ganhou confirmação explícita (antes chamava plantaLimparPosicao() direto); a função em si já só limpava plantaId/plantaX/plantaY do registro (nunca apagava o cadastro nem testes/falhas), então voltar a aparecer na lista de inserção é automático (contadores/lista recalculados por leitura direta de db.locais, sem cache). GAPS HONESTOS: (1) reassociar um marcador JÁ POSICIONADO a um ponto técnico DIFERENTE (spec item 12) não foi implementado — plantaEditarMarcador() continua só editando posição/escala do MESMO item, como já era; construir essa re-vinculação exigiria uma UI nova maior, fora do pedido mínimo desta rodada. (2) o modal de inserção reconstrói o HTML inteiro a cada filtro (mesmo padrão de outras telas do sistema), o que reseta o foco do campo de busca — mitigado com um refoco manual (setTimeout+#mInsBusca) só nesse campo, mas outros selects não preservam scroll da lista. (3) "mostrar pontos de outros pisos" só aparece para isMaster() (mais restrito que podeEditarPlantas() genérico), decisão deliberada por ser uma exceção mais sensível. node --check validado sem erros (zero) logo após esta mudança.
 build anterior: 2026-07-11 v6.61 - MÓDULO PLANTAS: zoom interativo (roda do mouse SEM Ctrl, zoom centrado no
 cursor/toque, pinça de 2 dedos, escala automática de marcador por zoom, agrupamento/clustering visual). Tudo
 incremental sobre o sistema de zoom/pan/escala do v6.60 — nenhuma função/id/classe existente foi removida,
@@ -1996,6 +1997,62 @@ async function senhaConfere(senhaDigitada,senhaArmazenada){
 }
 const id=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
 const n=s=>String(s??'').trim(); const up=s=>n(s).toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+// ---- Normaliza\u00e7\u00e3o de Piso/La\u00e7o (v6.63) ----
+// Estrat\u00e9gia: N\u00c3O reescrevemos em massa os campos brutos armazenados (risco alto sem
+// rollback para uma base em produ\u00e7\u00e3o). Em vez disso, normalizarPiso()/normalizarLaco()
+// passam a ser a \u00daNICA forma correta de comparar/deduplicar esses valores em toda a
+// aplica\u00e7\u00e3o (filtros, dropdowns, matching de Plantas, importa\u00e7\u00e3o). O texto bruto digitado
+// ou importado continua sendo exibido como est\u00e1 (via exibirPiso/exibirLaco quando fizer
+// sentido canonizar a exibi\u00e7\u00e3o). A auditoriaConsistenciaGlobal() complementa isso corrigindo,
+// de forma conservadora e idempotente, apenas os casos textuais \u00f3bvios (ex.: "Piso Piso 3",
+// "Piso03") diretamente no campo bruto, e apenas quando a extra\u00e7\u00e3o \u00e9 inequ\u00edvoca.
+function normalizarPiso(valor){
+  let s=up(valor);
+  if(!s)return '';
+  // Colapsa prefixos repetidos ("PISO PISO 3" -> "PISO 3")
+  s=s.replace(/\b(PISO|PAVIMENTO|PVT|PV|P)\b(\s+\1\b)+/g,'$1');
+  // Normaliza separadores
+  s=s.replace(/[_\-.]/g,' ').replace(/\s+/g,' ').trim();
+  // Casos textuais n\u00e3o num\u00e9ricos conhecidos
+  if(/^(TERREO|TERRE0|T\u00c9RREO)$/.test(s.replace(/\s/g,'')))return 'TERREO';
+  if(/COBERTURA/.test(s))return 'COBERTURA';
+  const subM=s.match(/^SUBSOLO\s*0*(\d+)$|^S\s*0*(\d+)$/);
+  if(subM)return 'SUBSOLO'+(subM[1]||subM[2]);
+  if(/^SUBSOLO$/.test(s))return 'SUBSOLO1';
+  // Extrai n\u00famero: aceita "PISO 3","PAVIMENTO 03","P3","PISO03","3","03","3 ANDAR","3\u00ba"
+  const m=s.match(/(?:PISO|PAVIMENTO|PVT|PV|P|L)?\s*0*(\d+)\s*(?:ANDAR|\u00ba|O)?$/) || s.match(/0*(\d+)/);
+  if(m&&m[1]!==undefined)return String(parseInt(m[1],10));
+  // N\u00e3o num\u00e9rico e n\u00e3o reconhecido: mant\u00e9m texto normalizado (case/acento j\u00e1 removidos)
+  return s;
+}
+function normalizarLaco(valor){
+  let s=up(valor);
+  if(!s)return '';
+  s=s.replace(/\b(LACO|LA\u00c7O|L)\b(\s+\1\b)+/g,'$1');
+  s=s.replace(/[_\-.]/g,' ').replace(/\s+/g,' ').trim();
+  const m=s.match(/(?:LACO|LA\u00c7O|L)?\s*0*(\d+)$/) || s.match(/0*(\d+)/);
+  if(m&&m[1]!==undefined)return String(parseInt(m[1],10));
+  return s;
+}
+function exibirPiso(valorNormalizado){
+  const v=normalizarPiso(valorNormalizado);
+  if(!v)return '';
+  if(v==='TERREO')return 'T\u00e9rreo';
+  if(v==='COBERTURA')return 'Cobertura';
+  const sub=v.match(/^SUBSOLO(\d+)$/); if(sub)return 'Subsolo '+sub[1];
+  if(/^\d+$/.test(v))return 'Piso '+v;
+  return v.charAt(0)+v.slice(1).toLowerCase();
+}
+function exibirLaco(valorNormalizado){
+  const v=normalizarLaco(valorNormalizado);
+  if(!v)return '';
+  if(/^\d+$/.test(v))return 'La\u00e7o '+v;
+  return v.charAt(0)+v.slice(1).toLowerCase();
+}
+function pisoEq(a,b){return !!a&&!!b&&normalizarPiso(a)===normalizarPiso(b)}
+function lacoEq(a,b){return !!a&&!!b&&normalizarLaco(a)===normalizarLaco(b)}
+function uniquePiso(arr){const seen=new Map();arr.filter(Boolean).forEach(v=>{const k=normalizarPiso(v);if(k&&!seen.has(k))seen.set(k,n(v))});return [...seen.values()].sort((a,b)=>pisoSortKey(a)-pisoSortKey(b)||a.localeCompare(b,'pt-BR'))}
+function uniqueLaco(arr){const seen=new Map();arr.filter(Boolean).forEach(v=>{const k=normalizarLaco(v);if(k&&!seen.has(k))seen.set(k,n(v))});return [...seen.values()].sort((a,b)=>a.localeCompare(b,'pt-BR',{numeric:true}))}
 
 /* =========================================================================
    BUSCA \u2014 normaliza\u00e7\u00e3o e filtragem \u00fanicas (2026-07), reutilizadas por
@@ -2146,7 +2203,124 @@ function auditoriaSanearFalhasPlanos(base){
   console.log('[SDAI] Auditoria de saneamento (falhas sintéticas / planos duplicados / planos órfãos):',resumo);
   return resumo;
 }
-function normalizeAllStatuses(base){['equipamentos','flms','locais','falhas'].forEach(k=>(base[k]||[]).forEach(o=>{if(o.status)o.status=normalizeStatus(o.status)}));sincronizarPlanosFalhas(base);if(!base._saneamento2026v1){auditoriaSanearFalhasPlanos(base);base._saneamento2026v1=true;}migrarLocaisOrfaosV659(base);return base}
+function normalizeAllStatuses(base){['equipamentos','flms','locais','falhas'].forEach(k=>(base[k]||[]).forEach(o=>{if(o.status)o.status=normalizeStatus(o.status)}));sincronizarPlanosFalhas(base);if(!base._saneamento2026v1){auditoriaSanearFalhasPlanos(base);base._saneamento2026v1=true;}migrarLocaisOrfaosV659(base);auditoriaConsistenciaGlobal(base);return base}
+// ---- Auditoria de Consistência Global (piso/laço) — v6.63 ----
+// Roda automaticamente sempre que normalizeAllStatuses() é chamada (boot, switchCliente/
+// loadClienteDb, pull de sync, restauração de backup — todos já passam por esse único ponto,
+// ver comentário acima de normalizeAllStatuses) e também explicitamente ao fim de importFile().
+// Idempotente: rodar 2x seguidas não altera nada na segunda vez (cada correção só é aplicada
+// se o valor bruto ainda divergir do normalizado — na 2a passada já não diverge mais) e nunca
+// funde registros de nível superior (Laço/Local) — só ajusta o campo de texto piso/laco quando a
+// extração é inequívoca (padrões numéricos com prefixo conhecido). Guardada por _auditRunning
+// para não reentrar em loop caso algo dentro dela dispare render()/save() de novo.
+function auditoriaConsistenciaGlobal(base){
+  if(!base||base._auditRunning)return base._ultimaAuditoria||null;
+  base._auditRunning=true;
+  try{
+    let registrosAnalisados=0,pisosNormalizados=0,lacosNormalizados=0,nomenclaturasCorrigidas=0,dispositivosReposicionados=0,inconsistenciasCorrigidas=0;
+    const avisos=[];
+    base.avisosConsistencia=base.avisosConsistencia||[];
+    // Só reescreve o campo bruto quando o padrão é numérico com prefixo conhecido/repetido —
+    // nunca para textos ambíguos (Térreo, Cobertura, Subsolo etc., que ficam só normalizados
+    // em memória via normalizarPiso()/normalizarLaco() nas comparações).
+    const SAFE_PISO_RE=/^\s*(PISO|PAVIMENTO|P)\s*(PISO|PAVIMENTO|P)?\s*0*\d+\s*$/i;
+    const SAFE_LACO_RE=/^\s*(LA[ÇC]O|L)\s*(LA[ÇC]O|L)?\s*0*\d+\s*$/i;
+    const fixField=(obj,field,re,normFn,counterName)=>{
+      const raw=obj[field]; if(!raw)return false;
+      const normalizado=normFn(raw);
+      if(!normalizado)return false;
+      // Reescreve só se o padrão bruto é claramente numérico-com-prefixo e o texto difere do
+      // formato canônico "N" puro guardado como número simples não é o objetivo — mantemos o
+      // texto legível (ex.: "Piso 3"), só colapsando repetições/zeros à esquerda.
+      if(re.test(String(raw))){
+        const canon=/^\d+$/.test(normalizado)?('Piso '+normalizado):normalizado;
+        const canonLaco=/^\d+$/.test(normalizado)?('Laço '+normalizado):normalizado;
+        const alvo=field==='piso'?canon:canonLaco;
+        if(String(raw).trim()!==alvo){
+          avisos.push({tipo:'auto-corrigido',campo:field,de:raw,para:alvo,registroId:obj.id||''});
+          obj[field]=alvo;
+          return true;
+        }
+      }
+      return false;
+    };
+    const tabelasComPiso=['lacos','flms','portas','equipamentos','locais','falhas','planos','plantas'];
+    tabelasComPiso.forEach(t=>{
+      (base[t]||[]).forEach(o=>{
+        registrosAnalisados++;
+        if('piso' in o && o.piso && fixField(o,'piso',SAFE_PISO_RE,normalizarPiso,'piso')){pisosNormalizados++;nomenclaturasCorrigidas++;}
+      });
+    });
+    (base.lacos||[]).forEach(o=>{
+      if(o.nome && SAFE_LACO_RE.test(o.nome)){
+        const normalizado=normalizarLaco(o.nome);
+        const canon=/^\d+$/.test(normalizado)?('Laço '+normalizado):normalizado;
+        if(o.nome.trim()!==canon){avisos.push({tipo:'auto-corrigido',campo:'nome(laco)',de:o.nome,para:canon,registroId:o.id});o.nome=canon;lacosNormalizados++;nomenclaturasCorrigidas++;}
+      }
+    });
+    // Duplicidade de piso/laço com texto bruto divergente (mesmo grupo painelId+nome de laço, ou
+    // mesmo local, com pisos que normalizam igual mas o texto difere) — quando o TEXTO já foi
+    // corrigido acima eles deixam de divergir; o que sobrar aqui (não numérico/ambíguo) vai só
+    // para avisos, nunca é mesclado automaticamente.
+    const gruposPiso={};
+    (base.lacos||[]).forEach(l=>{if(!l.piso)return; const k=normalizarPiso(l.piso); gruposPiso[k]=gruposPiso[k]||new Set(); gruposPiso[k].add(l.piso);});
+    Object.entries(gruposPiso).forEach(([k,set])=>{if(set.size>1)avisos.push({tipo:'piso-duplicado-textual',pisoNormalizado:k,variantes:[...set]});});
+    const gruposLaco={};
+    (base.lacos||[]).forEach(l=>{if(!l.nome)return; const k=normalizarLaco(l.nome); gruposLaco[k]=gruposLaco[k]||new Set(); gruposLaco[k].add(l.nome);});
+    Object.entries(gruposLaco).forEach(([k,set])=>{if(set.size>1)avisos.push({tipo:'laco-duplicado-textual',lacoNormalizado:k,variantes:[...set]});});
+    // Cadastros incompletos / órfãos — apenas contagem/aviso, nunca correção automática.
+    (base.locais||[]).forEach(l=>{registrosAnalisados++;if(!l.piso)avisos.push({tipo:'loja-sem-piso',registroId:l.id,nome:l.nome});if(!l.lacoId)avisos.push({tipo:'loja-sem-laco',registroId:l.id,nome:l.nome});});
+    (base.equipamentos||[]).forEach(e=>{registrosAnalisados++;const orfao=!e.localId&&!e.flmId;if(orfao)avisos.push({tipo:'dispositivo-orfao',registroId:e.id});if(!e.piso)avisos.push({tipo:'dispositivo-sem-piso',registroId:e.id});});
+    (base.portas||[]).forEach(p=>{registrosAnalisados++;if(!p.flmId)avisos.push({tipo:'porta-sem-modulo',registroId:p.id});});
+    (base.flms||[]).forEach(f=>{registrosAnalisados++;if(!f.lacoId)avisos.push({tipo:'modulo-sem-laco',registroId:f.id});});
+    // Plantas: piso da planta sem loja correspondente (matching agora via normalizarPiso — o que
+    // antes ficava "não posicionado" por divergência textual pura de piso passa a bater e conta
+    // como reposicionado).
+    const pisosLocais=new Set((base.locais||[]).map(l=>normalizarPiso(pisoEfetivo?pisoEfetivo(l):l.piso)).filter(Boolean));
+    (base.plantas||[]).forEach(p=>{registrosAnalisados++;if(p.piso&&!pisosLocais.has(normalizarPiso(p.piso)))avisos.push({tipo:'planta-sem-piso-correspondente',registroId:p.id,piso:p.piso});});
+    ['equipamentos','flms'].forEach(t=>{
+      (base[t]||[]).forEach(item=>{
+        if(item.plantaId)return; // já posicionado, nada a contar
+        if(!item.piso)return;
+        const pl=(base.plantas||[]).find(p=>normalizarPiso(p.piso)===normalizarPiso(item.piso));
+        if(pl)dispositivosReposicionados++; // agora encontra planta compatível graças à comparação normalizada
+      });
+    });
+    inconsistenciasCorrigidas=pisosNormalizados+lacosNormalizados;
+    base.avisosConsistencia=avisos;
+    const resultado={registrosAnalisados,pisosNormalizados,lacosNormalizados,nomenclaturasCorrigidas,dispositivosReposicionados,inconsistenciasCorrigidas,avisos};
+    base._ultimaAuditoria=resultado;
+    try{console.log('[SDAI] Auditoria de Consistência (piso/laço):',resultado);}catch(e){}
+    return resultado;
+  }finally{
+    base._auditRunning=false;
+  }
+}
+// Banner leve reaproveitando a classe .msg já usada em toda a aplicação — mostrado uma vez após
+// a auditoria rodar em boot/switchCliente/sync/restore/importação. Não bloqueia a UI (é só um
+// innerHTML numa div de topo já existente na tela, ou um toast temporário se nenhuma div alvo
+// estiver visível na tela atual).
+function mostrarBannerConsistencia(resultado,alvoId){
+  if(!resultado)return;
+  const {registrosAnalisados,pisosNormalizados,lacosNormalizados,nomenclaturasCorrigidas,dispositivosReposicionados,inconsistenciasCorrigidas}=resultado;
+  const semNadaAFazer=pisosNormalizados+lacosNormalizados+nomenclaturasCorrigidas+dispositivosReposicionados+inconsistenciasCorrigidas===0;
+  const html=`<div class="msg ok" style="line-height:1.7">Banco validado.<br>${registrosAnalisados} registros analisados<br>`+
+    (pisosNormalizados?`✓ ${pisosNormalizados} pisos normalizados<br>`:'')+
+    (lacosNormalizados?`✓ ${lacosNormalizados} laços normalizados<br>`:'')+
+    (nomenclaturasCorrigidas?`✓ ${nomenclaturasCorrigidas} nomenclaturas corrigidas<br>`:'')+
+    (dispositivosReposicionados?`✓ ${dispositivosReposicionados} dispositivos reposicionados<br>`:'')+
+    (inconsistenciasCorrigidas?`✓ ${inconsistenciasCorrigidas} inconsistências corrigidas<br>`:'')+
+    `Banco consistente.</div>`;
+  const el=alvoId&&document.getElementById(alvoId);
+  if(el){el.innerHTML=html;return;}
+  if(semNadaAFazer)return; // evita poluir com toast quando não há nada para reportar
+  const toast=document.createElement('div');
+  toast.className='msg ok';
+  toast.style.cssText='position:fixed;bottom:18px;right:18px;max-width:340px;z-index:9999;box-shadow:0 6px 20px rgba(0,0,0,.18)';
+  toast.innerHTML=html;
+  document.body.appendChild(toast);
+  setTimeout(()=>toast.remove(),9000);
+}
 // migrarLocaisOrfaosV659() (v6.59 — item 16): migração ÚNICA (guardada por base._migradoV659, no
 // mesmo padrão de base._saneamento2026v1 acima) para db.testes/db.falhas sem localId resolvível.
 // Tenta relacionar via cliente(implícito, base já é por cliente)→sistema→painel→laço→módulo→porta→
@@ -2356,6 +2530,7 @@ function paiName(v){return painelById(v)?.nome||''}
 function lacName(v){return lacoById(v)?.nome||''}
 function ensurePanel(nome,modelo='',localizacao='',obs='Importado'){return findOrCreate(db.paineis,x=>up(x.nome)===up(nome),{nome:nome||'Painel não informado',modelo,localizacao,obs}).obj}
 function ensureLaco(painelId,nome,piso=''){return findOrCreate(db.lacos,x=>x.painelId===painelId&&up(x.nome)===up(nome),{painelId,nome:nome||'Laço não informado',piso,obs:'Importado'}).obj}
+function ensureLacoNormalizado(painelId,nome,piso=''){const r=ensureLaco(painelId,nome,piso); if(piso&&!r.piso)r.piso=piso; return r}
 function ensureFlm(painelId,lacoId,endereco,modelo,piso){
   // Identidade do FLM = Painel + Endereço físico do módulo (nunca muda).
   // O Laço é só um dado associado — atualizamos ele aqui, mas NUNCA o usamos
@@ -2407,7 +2582,7 @@ function ensureLocal(nome,tipo,painelId,lacoId,piso,flmId,portaId,sistema){
 // (ex.: um ponto SDAI de detecção e um ponto CO2 de descarga para a mesma loja).
 // Não são cadastros duplicados — cada um mantém seu próprio status técnico — mas
 // devem exibir o mesmo Nome Oficial/LUC quando um deles for associado à Base LUC.
-function lucLocaisIrmaos(local){if(!local)return []; const chave=up(local.nome); return (db.locais||[]).filter(x=>x.id!==local.id&&up(x.nome)===chave&&(x.piso||'')===(local.piso||''))}
+function lucLocaisIrmaos(local){if(!local)return []; const chave=up(local.nome); return (db.locais||[]).filter(x=>x.id!==local.id&&up(x.nome)===chave&&pisoEq(x.piso,local.piso))}
 function lucSincronizarIrmaos(local){lucLocaisIrmaos(local).forEach(irmao=>{irmao.nomeOficial=local.nomeOficial;irmao.luc=local.luc;irmao.lucAssociado=local.luc;irmao.baseLojaId=local.baseLojaId;irmao.nomeOriginalCadastro=irmao.nomeOriginalCadastro||local.nomeOriginalCadastro;irmao.statusAssociacao=local.statusAssociacao;irmao.chaveLogica=lucChaveLogicaLocal(irmao);irmao.ultimaAtualizacao=isoNow()})}
 function deviceKey(d){return [d.painelId,up(d.tipo),up(d.endereco),up(d.modelo),d.flmId||''].join('|')}
 function ensureEquip(obj,mode='diff'){obj.status=normalizeStatus(obj.status); let key=deviceKey(obj); let ex=db.equipamentos.find(e=>deviceKey(e)===key); if(ex){ ex.status=normalizeStatus(ex.status||obj.status); if(obj.lacoId)ex.lacoId=obj.lacoId; if(obj.piso)ex.piso=obj.piso; if(mode==='overwrite'){const _pX=ex.plantaX,_pY=ex.plantaY,_pId=ex.plantaId; Object.assign(ex,{...obj,id:ex.id,status:normalizeStatus(ex.status||obj.status),ultimaAlteracao:ex.ultimaAlteracao||obj.ultimaAlteracao}); if(_pX!=null){ex.plantaX=_pX;ex.plantaY=_pY;ex.plantaId=_pId}} return {obj:ex,created:false,updated:mode==='overwrite'} } obj.id=id(); db.equipamentos.push(obj); return {obj,created:true}} // reimportação preserva posição na planta baixa (plantaX/Y/Id)
@@ -2475,13 +2650,13 @@ function renderFlms(){
   let f=filters.flm||{};
   let paineis=unique(db.paineis.map(p=>p.nome));
   let lacos=unique(db.lacos.map(l=>l.nome));
-  let pisos=unique(db.flms.map(x=>x.piso).concat(db.lacos.map(x=>x.piso),db.equipamentos.map(x=>x.piso)));
+  let pisos=uniquePiso(db.flms.map(x=>x.piso).concat(db.lacos.map(x=>x.piso),db.equipamentos.map(x=>x.piso)));
   let lojas=unique(db.locais.map(x=>x.nome));
   let rows=db.flms.map(flm=>{
     let ps=db.portas.filter(p=>p.flmId===flm.id);
     let nomesPortas=ps.map(p=>locName(p.localId)).filter(Boolean).join(' | ');
     return {...flm,painel:paiName(flm.painelId),laco:lacName(flm.lacoId),lojas:nomesPortas};
-  }).filter(r=>(!f.painel||r.painel===f.painel)&&(!f.laco||r.laco===f.laco)&&(!f.piso||r.piso===f.piso)&&(!f.loja||up(r.lojas).includes(up(f.loja))));
+  }).filter(r=>(!f.painel||r.painel===f.painel)&&(!f.laco||lacoEq(r.laco,f.laco))&&(!f.piso||pisoEq(r.piso,f.piso))&&(!f.loja||up(r.lojas).includes(up(f.loja))));
 
   const totalFlm=rows.length;
   const comFalha=rows.filter(r=>isFalhaStatus(flmStatusAgregado(r.id))).length;
@@ -2599,7 +2774,7 @@ function renderLocais(){
   rows=rows.map(r=>({...r,_ultimoTeste:ultimoTesteDoLocal(r.id)}));
   if(fPiso)rows=rows.filter(r=>String(r.piso||'')===fPiso);
   if(fPainel)rows=rows.filter(r=>r.painel===fPainel);
-  if(fLaco)rows=rows.filter(r=>r.laco===fLaco);
+  if(fLaco)rows=rows.filter(r=>lacoEq(r.laco,fLaco));
   if(fLoja)rows=rows.filter(r=>(r.nomeOficial||r.nome)===fLoja);
   if(fStatus)rows=rows.filter(r=>fStatus==='Com falha'?isFalhaStatus(r.status):!isFalhaStatus(r.status));
   if(fResultado){
@@ -2633,9 +2808,9 @@ function renderLocais(){
   const naoTestados=total-testados;
   const semResultado=(q||fSistema||fPiso||fPainel||fLaco||fLoja||fResp||fStatus||fResultado||fDataIni||fDataFim)&&!rows.length&&todos.length>0;
 
-  const pisos=unique(todos.map(r=>r.piso).filter(Boolean));
+  const pisos=uniquePiso(todos.map(r=>r.piso).filter(Boolean));
   const paineis=unique(todos.map(r=>r.painel).filter(Boolean));
-  const lacos=unique(todos.map(r=>r.laco).filter(Boolean));
+  const lacos=uniqueLaco(todos.map(r=>r.laco).filter(Boolean));
   const lojas=unique(todos.map(r=>r.nomeOficial||r.nome).filter(Boolean));
   const responsaveis=unique((db.testes||[]).map(t=>t.responsavel).filter(Boolean));
 
@@ -3105,7 +3280,7 @@ function testesFiltrados(){
     (!f.dataFim||String(t.data||'')<=f.dataFim+'T23:59')&&
     (!f.loja||t.loja===f.loja)&&
     (!f.sistema||t.sistema===f.sistema)&&
-    (!f.piso||t.piso===f.piso)&&
+    (!f.piso||pisoEq(t.piso,f.piso))&&
     (!f.resultado||t.resultado===f.resultado)&&
     (!f.tipo||t.tipoTeste===f.tipo)&&
     (!f.responsavel||t.responsavel===f.responsavel)
@@ -3122,7 +3297,7 @@ function renderTestes(){
   const reprovados=base.filter(t=>t.resultado==='Não funcionou').length;
   const comFalha=base.filter(t=>t.falhaId).length;
   const semResultado=f.q&&!rows.length&&semBusca.length>0;
-  const lojas=unique(base.map(t=>t.loja)), pisos=unique(base.map(t=>t.piso)), resps=unique(base.map(t=>t.responsavel));
+  const lojas=unique(base.map(t=>t.loja)), pisos=uniquePiso(base.map(t=>t.piso)), resps=unique(base.map(t=>t.responsavel));
   const trs=rows.map(r=>{
     const resultadoIcone=iconeResultadoTeste(r.resultado);
     return `<tr>
@@ -3495,11 +3670,13 @@ async function importFile(){try{if(!clienteAtivoObj())throw new Error('Nenhum cl
       // estourar o cap de 1000 do histórico) com o resumo de criados/atualizados/ignorados.
       logLocal('importação',clienteAtivo(),'importar',`Importação técnica: ${stats.paineis} painel(is), ${stats.lacos} laço(s), ${stats.modulos} módulo(s), ${stats.portas} porta(s), ${stats.lojasCriadas+stats.areasTecnicas+stats.areasComuns} loja(s)/área(s), ${stats.detectores+stats.acionadores} equipamento(s) criados; ${stats.registrosAtualizados} atualizados; ${stats.ignorados} ignorados; ${stats.registrosComInconsistencia} com inconsistência.`);
       persistLocal(); markDirty('importação'); render(); _impFileCache=null;
+      const auditoriaImport=auditoriaConsistenciaGlobal(db);
       const resumoHtml=`<div class="msg ok"><b>Importação concluída para o cliente ${esc(clienteAtivoObj()?.nome||'')}.</b><br>`+
         `Painéis criados: ${stats.paineis} · Laços criados: ${stats.lacos} · Módulos (FLM) criados: ${stats.modulos} · Portas criadas: ${stats.portas} · Lojas/Áreas criadas: ${stats.lojasCriadas+stats.areasTecnicas+stats.areasComuns} (Lojas: ${stats.lojasCriadas}, Área Técnica: ${stats.areasTecnicas}, Área Comum: ${stats.areasComuns}) · Equipamentos criados: ${stats.detectores+stats.acionadores} (Detectores: ${stats.detectores}, Acionadores: ${stats.acionadores})<br>`+
         `Registros atualizados: ${stats.registrosAtualizados} · Registros ignorados: ${stats.ignorados} · Registros com inconsistência: ${stats.registrosComInconsistencia} · Linhas lidas no arquivo: ${stats.registrosLidos}<br>`+
         `DFO/FAP/ACM/DM210/SM210/FMC são importados como equipamentos vinculados a Área Comum/Técnica, sem criar loja.</div>`;
-      document.getElementById('impMsg').innerHTML=resumoHtml}catch(e){document.getElementById('impMsg').innerHTML=`<div class="msg err">${esc(e.message)}</div>`}}
+      document.getElementById('impMsg').innerHTML=resumoHtml;
+      mostrarBannerConsistencia(auditoriaImport);}catch(e){document.getElementById('impMsg').innerHTML=`<div class="msg err">${esc(e.message)}</div>`}}
 function _modalFormSnapshot(){const d=document.getElementById('drawer');if(!d)return '';return Array.from(d.querySelectorAll('input,select,textarea')).map(el=>el.type==='checkbox'||el.type==='radio'?el.checked:el.value).join('|')}
 function openModal(html){window._modalReturnFocus=document.activeElement;document.getElementById('drawer').innerHTML=html;document.getElementById('modal').classList.add('show');window._modalInitialSnapshot=_modalFormSnapshot()} function openModalWide(html){document.getElementById('drawer').classList.add('wide');openModal(html)} function closeModal(){document.getElementById('modal').classList.remove('show');document.getElementById('drawer').classList.remove('wide')} document.getElementById('modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal()})
 // _restoreModalFocus()/handler de ESC (v6.59 — item 13): fecha só o modal atual (não há pilha real —
@@ -3630,7 +3807,7 @@ function getFalhaFilterValues(){return {
 function itemMatchesFalhaFilters(it,f){
   if(f.painel && paiName(it.painelId)!==f.painel)return false;
   if(f.laco && lacName(it.lacoId)!==f.laco)return false;
-  if(f.piso && n(it.piso)!==f.piso)return false;
+  if(f.piso && !pisoEq(it.piso,f.piso))return false;
   if(f.local && it.localId!==f.local)return false;
   return true;
 }
@@ -3734,8 +3911,8 @@ function refreshFalhaFilters(changed=''){
   const f=getFalhaFilterValues();
   const fill=(id,vals,sel,allLabel='Todos')=>{const el=document.getElementById(id); if(!el)return; const keep=vals.includes(sel)?sel:''; el.innerHTML=`<option value="">${allLabel}</option>`+vals.map(v=>`<option value="${esc(v)}" ${v===keep?'selected':''}>${esc(v)}</option>`).join('')};
   fill('mFiltroPainel',unique(falhaFilteredItems('painel').map(it=>paiName(it.painelId))),f.painel,'Todas as centrais');
-  fill('mFiltroLaco',unique(falhaFilteredItems('laco').map(it=>lacName(it.lacoId))),f.laco,'Todos os laços');
-  fill('mFiltroPiso',unique(falhaFilteredItems('piso').map(it=>it.piso)),f.piso,'Todos os pisos');
+  fill('mFiltroLaco',uniqueLaco(falhaFilteredItems('laco').map(it=>lacName(it.lacoId))),f.laco,'Todos os laços');
+  fill('mFiltroPiso',uniquePiso(falhaFilteredItems('piso').map(it=>it.piso)),f.piso,'Todos os pisos');
   const localIds=unique(falhaFilteredItems('local').map(it=>it.localId));
   const localOpts=localIds.map(id=>({id,nome:locName(id)})).filter(x=>x.id&&x.nome).sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
   const locEl=document.getElementById('mFiltroLocal'); if(locEl){const keep=localIds.includes(f.local)?f.local:''; locEl.innerHTML='<option value="">Todas as lojas/áreas</option>'+localOpts.map(x=>`<option value="${x.id}" ${x.id===keep?'selected':''}>${esc(x.nome)}</option>`).join('')}
@@ -6027,8 +6204,8 @@ function planoRowsFiltrados(fx,{ignorarSituacao=false,ignorarCategoria=false,ign
     (ignorarSituacao||!fx.sit||x.situacao===fx.sit)&&
     (!fx.resp||x.responsavel===fx.resp)&&
     (!fx.painel||x.painel===fx.painel)&&
-    (!fx.laco||x.laco===fx.laco)&&
-    (!fx.piso||x.piso===fx.piso)&&
+    (!fx.laco||lacoEq(x.laco,fx.laco))&&
+    (!fx.piso||pisoEq(x.piso,fx.piso))&&
     (!fx.loja||x.local===fx.loja)&&
     (!fx.statusTec||normalizeStatus(x.statusFalha)===fx.statusTec)&&
     (!fx.sistema||x.sistema===fx.sistema)&&
@@ -6165,10 +6342,10 @@ function renderPlano(){
           // usuário mudou o Painel, por exemplo), ele é limpo aqui — sem apagar nada que ainda é
           // válido, e sem exigir um clique extra de "aplicar".
           let rPainel=rows.filter(x=>!fx.painel||x.painel===fx.painel);
-          let rLaco=rPainel.filter(x=>!fx.laco||x.laco===fx.laco);
-          let rPiso=rLaco.filter(x=>!fx.piso||x.piso===fx.piso);
-          const lacoOpts=unique(rPainel.map(x=>x.laco));
-          const pisoOpts=unique(rLaco.map(x=>x.piso));
+          let rLaco=rPainel.filter(x=>!fx.laco||lacoEq(x.laco,fx.laco));
+          let rPiso=rLaco.filter(x=>!fx.piso||pisoEq(x.piso,fx.piso));
+          const lacoOpts=uniqueLaco(rPainel.map(x=>x.laco));
+          const pisoOpts=uniquePiso(rLaco.map(x=>x.piso));
           const lojaOpts=unique(rPiso.map(x=>x.local));
           if(fx.laco&&!lacoOpts.includes(fx.laco)){filters.plano={...filters.plano,laco:''};fx.laco='';}
           if(fx.piso&&!pisoOpts.includes(fx.piso)){filters.plano={...filters.plano,piso:''};fx.piso='';}
@@ -6683,8 +6860,8 @@ function lucCompactText(s){return lucNormText(s).replace(/\s+/g,'')}
 function lucTokenSet(s){return lucNormText(s).split(' ').filter(Boolean)}
 function lucEditDistance(a,b){a=lucCompactText(a);b=lucCompactText(b); if(!a||!b)return 99; const m=[]; for(let i=0;i<=a.length;i++){m[i]=[i]} for(let j=0;j<=b.length;j++){m[0][j]=j} for(let i=1;i<=a.length;i++){for(let j=1;j<=b.length;j++){m[i][j]=Math.min(m[i-1][j]+1,m[i][j-1]+1,m[i-1][j-1]+(a[i-1]===b[j-1]?0:1))}} return m[a.length][b.length]}
 function lucSimilarity(a,b){const A=lucTokenSet(a),B=lucTokenSet(b); const sa=lucNormText(a),sb=lucNormText(b),ca=lucCompactText(a),cb=lucCompactText(b); if(!ca||!cb)return 0; if(ca===cb||sa===sb)return 100; let common=A.filter(x=>B.includes(x)).length; let j=common/Math.max(1,new Set([...A,...B]).size); let inc=(ca.includes(cb)||cb.includes(ca)||sa.includes(sb)||sb.includes(sa))?0.30:0; let prefix=ca.slice(0,5)===cb.slice(0,5)?0.12:0; let dist=lucEditDistance(a,b), maxLen=Math.max(ca.length,cb.length,1); let edit=Math.max(0,1-(dist/maxLen)); return Math.round(Math.max(Math.min(1,j+inc+prefix),edit)*100)}
-function lucPisoKey(v){const x=up(v); if(/(^|\D)1(\D|$)|PISO 1|P1/.test(x))return '1'; if(/(^|\D)2(\D|$)|PISO 2|P2/.test(x))return '2'; if(/(^|\D)3(\D|$)|PISO 3|P3/.test(x))return '3'; return ''}
-function lucPisosCompat(localPiso,basePiso){const a=lucPisoKey(localPiso),b=lucPisoKey(basePiso); return !!a&&!!b&&a===b}
+function lucPisoKey(v){return normalizarPiso(v)}
+function lucPisosCompat(localPiso,basePiso){return pisoEq(localPiso,basePiso)}
 function pisoFromLuc(luc,tipo){const first=(n(luc).match(/[0-9]/)||[''])[0]; if(first==='1')return 'Piso 1'; if(first==='2')return 'Piso 2'; if(first==='3')return 'Piso 3'; return up(tipo)==='ALIMENTACAO'?'Piso 3':'Conferir'}
 async function readRowsFromFile(f){let ext=f.name.split('.').pop().toLowerCase(); let data=await f.arrayBuffer(); if(ext==='csv'){let txt=new TextDecoder('utf-8').decode(data); return parseCSV(txt)} if(!['xls','xlsx'].includes(ext))throw new Error('Formato não aceito. Use XLSX, XLS ou CSV.'); if(typeof XLSX==='undefined')throw new Error('Biblioteca XLSX não carregada. Para XLS/XLSX, abra com internet ou use CSV.'); let wb=XLSX.read(data,{type:'array'}); let rows=[]; wb.SheetNames.forEach(sn=>{rows=rows.concat(XLSX.utils.sheet_to_json(wb.Sheets[sn],{defval:''}))}); return rows}
 /* [removido na limpeza 2026-07: versão antiga substituída pela declaração final desta função] */
@@ -7538,12 +7715,12 @@ function renderPlantas(){
     if(i.ref.plantaX==null||i.ref.plantaX==='')return false;
     if(i.ref.plantaId&&!plantaIds.has(i.ref.plantaId))return true;
     const pl=(db.plantas||[]).find(p=>p.id===i.ref.plantaId);
-    return pl&&up(pl.piso||'')!==up(i.piso||'')&&!!i.piso;
+    return pl&&i.piso&&!pisoEq(pl.piso,i.piso);
   });
 
   const f=plantasUI.filtro;
-  const pisosDisponiveis=unique(itens.map(i=>i.piso).filter(Boolean));
-  const chips=itens.filter(i=>(i.ref.plantaX==null||i.ref.plantaX==='')&&(!f.tipo||i.tipoFiltro===f.tipo)&&(!f.piso||i.piso===f.piso)&&(!f.q||up(i.nome+' '+i.sub).includes(up(f.q)))).slice(0,400);
+  const pisosDisponiveis=uniquePiso(itens.map(i=>i.piso).filter(Boolean));
+  const chips=itens.filter(i=>(i.ref.plantaX==null||i.ref.plantaX==='')&&(!f.tipo||i.tipoFiltro===f.tipo)&&(!f.piso||pisoEq(i.piso,f.piso))&&(!f.q||up(i.nome+' '+i.sub).includes(up(f.q)))).slice(0,400);
 
   const legenda=`<div class="plantaLegenda">
     <span><i class="lg" style="background:#15803D"></i>Em operação</span>
@@ -7954,7 +8131,7 @@ function plantaIniciarDrag(ev,kind,id_,origemEl){
     const pl=(db.plantas||[]).find(p=>p.id===plantaId); if(!pl||!pl.imagemUrl)return;
     const item=plantaItemById(kind,id_); if(!item)return;
     const pisoItem=pisoEfetivo(item)||n(item.piso);
-    if(pisoItem&&up(pl.piso||'')!==up(pisoItem)){
+    if(pisoItem&&!pisoEq(pl.piso,pisoItem)){
       if(!confirm(`Este item pertence ao ${pisoItem}, mas você está soltando no ${pl.piso}. Posicionar mesmo assim?`))return;
     }
     // O rect do canvas JÁ reflete o transform (zoom/pan) — a fórmula percentual continua correta em qualquer zoom.
@@ -8137,7 +8314,7 @@ function plantaLimparTodasInconsistencias(){
     if(i.ref.plantaX==null||i.ref.plantaX==='')return;
     const pl=(db.plantas||[]).find(p=>p.id===i.ref.plantaId);
     const orfao=i.ref.plantaId&&!plantaIds.has(i.ref.plantaId);
-    const pisoDiverge=pl&&i.piso&&up(pl.piso||'')!==up(i.piso||'');
+    const pisoDiverge=pl&&i.piso&&!pisoEq(pl.piso,i.piso);
     if(orfao||pisoDiverge){i.ref.plantaX=null;i.ref.plantaY=null;i.ref.plantaId=null}
   });
   save();
@@ -8174,12 +8351,12 @@ function plantaStatusFiltroLocal(l){
 }
 function plantaFiltrarPontosInsercao(plantaId){
   const mf=plantasUI.modalInsercao; const pl=(db.plantas||[]).find(p=>p.id===plantaId);
-  const pisoPlanta=up(pl?.piso||'');
+  const pisoPlanta=normalizarPiso(pl?.piso||'');
   let base=(db.locais||[]).filter(l=>l.plantaId!==plantaId);
-  if(!mf.outrosPisos)base=base.filter(l=>up(pisoEfetivo(l)||l.piso||'')===pisoPlanta);
+  if(!mf.outrosPisos)base=base.filter(l=>normalizarPiso(pisoEfetivo(l)||l.piso||'')===pisoPlanta);
   if(mf.q)base=filtrarRegistrosPorBusca(base,mf.q,l=>[l.nomeOficial,l.nome,l.luc].filter(Boolean).join(' '));
   if(mf.sistema)base=base.filter(l=>(l.sistema||'')===mf.sistema);
-  if(mf.piso)base=base.filter(l=>(pisoEfetivo(l)||l.piso||'')===mf.piso);
+  if(mf.piso)base=base.filter(l=>pisoEq(pisoEfetivo(l)||l.piso||'',mf.piso));
   if(mf.painel)base=base.filter(l=>l.painelId===mf.painel);
   if(mf.laco)base=base.filter(l=>l.lacoId===mf.laco);
   if(mf.flm)base=base.filter(l=>l.flmId===mf.flm);
@@ -8196,13 +8373,13 @@ function plantaFiltrarPontosInsercao(plantaId){
 function plantaAbrirModalInsercao(plantaId){
   const pl=(db.plantas||[]).find(p=>p.id===plantaId); if(!pl)return;
   const mf=plantasUI.modalInsercao;
-  const pisoPlanta=up(pl.piso||'');
-  const disponiveisScope=(db.locais||[]).filter(l=>l.plantaId!==plantaId&&(mf.outrosPisos||up(pisoEfetivo(l)||l.piso||'')===pisoPlanta));
+  const pisoPlanta=normalizarPiso(pl.piso||'');
+  const disponiveisScope=(db.locais||[]).filter(l=>l.plantaId!==plantaId&&(mf.outrosPisos||normalizarPiso(pisoEfetivo(l)||l.piso||'')===pisoPlanta));
   const jaInseridos=(db.locais||[]).filter(l=>l.plantaId===plantaId).length;
-  const totalPiso=(db.locais||[]).filter(l=>up(pisoEfetivo(l)||l.piso||'')===pisoPlanta).length;
+  const totalPiso=(db.locais||[]).filter(l=>normalizarPiso(pisoEfetivo(l)||l.piso||'')===pisoPlanta).length;
   const lista=plantaFiltrarPontosInsercao(plantaId);
   const sistemas=unique((db.locais||[]).map(l=>l.sistema).filter(Boolean));
-  const pisos=unique((db.locais||[]).map(l=>pisoEfetivo(l)||l.piso).filter(Boolean));
+  const pisos=uniquePiso((db.locais||[]).map(l=>pisoEfetivo(l)||l.piso).filter(Boolean));
   const paineisOpts=(db.paineis||[]).map(p=>`<option value="${esc(p.id)}" ${mf.painel===p.id?'selected':''}>${esc(p.nome)}</option>`).join('');
   const lacosOpts=(db.lacos||[]).filter(l=>!mf.painel||l.painelId===mf.painel).map(l=>`<option value="${esc(l.id)}" ${mf.laco===l.id?'selected':''}>${esc(l.nome)}</option>`).join('');
   const flmsOpts=(db.flms||[]).filter(f=>!mf.laco||f.lacoId===mf.laco).map(f=>`<option value="${esc(f.id)}" ${mf.flm===f.id?'selected':''}>${esc(f.endereco||f.modelo||f.id)}</option>`).join('');
@@ -8250,7 +8427,7 @@ function plantaConfirmarInsercao(localId,plantaId){
     return;
   }
   const pisoLoc=pisoEfetivo(loc)||n(loc.piso);
-  if(pisoLoc&&up(pl.piso||'')!==up(pisoLoc)&&!plantasUI._confirmadoOutroPiso){
+  if(pisoLoc&&!pisoEq(pl.piso,pisoLoc)&&!plantasUI._confirmadoOutroPiso){
     plantaConfirmarOutroPiso(localId,plantaId);
     return;
   }
@@ -8397,7 +8574,7 @@ function plantaCamada(kind,id_,dir){
 // ---- CRUD de plantas (Administrador) ----
 function formPlantaBaixa(i=''){
   const o=(db.plantas||[]).find(x=>x.id===i)||{};
-  const pisos=unique([...(db.lacos||[]).map(l=>l.piso),...(db.locais||[]).map(l=>pisoEfetivo(l))].filter(Boolean));
+  const pisos=uniquePiso([...(db.lacos||[]).map(l=>l.piso),...(db.locais||[]).map(l=>pisoEfetivo(l))].filter(Boolean));
   openModal(`<h2>${i?'Editar':'Nova'} planta baixa</h2><div class="formGrid">
     <div class="field"><label>Piso</label><input id="mPlPiso" list="plPisosList" value="${esc(o.piso||'')}" placeholder="Ex.: Piso 1"><datalist id="plPisosList">${pisos.map(p=>`<option value="${esc(p)}">`).join('')}</datalist></div>
     <div class="field"><label>Título</label><input id="mPlTitulo" value="${esc(o.titulo||'')}" placeholder="Planta — {piso}"></div>
