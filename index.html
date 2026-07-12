@@ -1,5 +1,6 @@
 <!doctype html>
-<!-- build: 2026-07-12 v6.63 - NORMALIZAÇÃO GLOBAL DE PISO/LAÇO. PROBLEMA: piso/laço eram comparados/filtrados/deduplicados como texto literal em dezenas de pontos (===, up()===up()), então "3"/"03"/"P3"/"Piso 3"/"Piso Piso 3" eram tratados como valores DIFERENTES — gerando filtros duplicados, itens "não posicionados" em Plantas por divergência textual pura, e possíveis furos de matching em Locais/Falhas/Plano. ESTRATÉGIA (deliberada, ver comentário no código acima de normalizarPiso()): NÃO reescrever em massa os campos brutos existentes em toda tabela de uma vez — risco alto sem rollback numa base de produção. Em vez disso: (1) normalizarPiso(valor)/normalizarLaco(valor) — funções puras, idempotentes, que colapsam prefixos repetidos ("Piso Piso 3"→"3"), zeros à esquerda ("03"→"3"), abreviações ("P3"/"L3"→"3"), separadores e acentuação/caixa, retornando uma chave interna estável (número puro como string para pisos numéricos; chave textual normalizada para não-numéricos como Térreo/Cobertura/Subsolo N). (2) exibirPiso()/exibirLaco() — formatadores só de exibição ("Piso 3"/"Laço 3"), nunca usados em comparação. (3) pisoEq(a,b)/lacoEq(a,b) — comparador oficial; uniquePiso()/uniqueLaco() — dedup oficial para popular dropdowns/filtros. TODOS os pontos de comparação/filtro/dedup de piso ou laço foram migrados para essas funções: dsFlm (pisos/filtro), Locais (fPiso/fLaco), Falhas (filters.falhas piso/laco, mFiltroPiso/mFiltroLaco, falhaFilteredItems), Plano de Ação (filters.plano piso/laco, rLaco/rPiso/lacoOpts/pisoOpts), Testes (filters.testes piso), lucLocaisIrmaos(), lucPisoKey()/lucPisosCompat() (agora delegam para normalizarPiso/pisoEq em vez do regex fixo de 1 a 3 andares que existia antes), e TODO o módulo Plantas (plantaItens/pisoEfetivo, plantaFiltrarPontosInsercao, plantaAbrirModalInsercao, os pontos que decidem "item pertence a outro piso" ao soltar/inserir marcador, pisosDisponiveis do modal de baixa). ensureLaco() ganhou uma variante ensureLacoNormalizado() para uso futuro em import (o texto digitado/importado continua sendo GRAVADO como veio — só a comparação passa a ser normalizada). AUDITORIA AUTOMÁTICA: nova função auditoriaConsistenciaGlobal(base), chamada de dentro de normalizeAllStatuses() — o único ponto por onde toda carga de base já passava (boot, switchCliente/loadClienteDb, pull de sincronização, restauração de backup — nenhum novo call site precisou ser criado) — e também explicitamente ao final de importFile(). Ela: varre Laços/FLMs/Portas/Equipamentos/Locais/Falhas/Planos/Plantas contando registros; corrige em memória e NO CAMPO BRUTO, de forma conservadora e idempotente, só os casos textuais inequívocos (padrão numérico com prefixo conhecido, tipo "Piso Piso 3"/"Piso03"/"P3"), registrando de-para em db.avisosConsistencia; detecta pisos/laços com texto duplicado (mesma chave normalizada, grafias diferentes) e cadastros incompletos/órfãos (loja sem piso/laço, dispositivo sem piso/órfão, porta sem módulo, módulo sem laço, planta sem loja de piso correspondente) SEM nunca mesclar automaticamente registros de Laço/Local (maior raio de impacto por causa de vínculos de equipamentos/falhas/planos) — isso só entra como aviso em db.avisosConsistencia para revisão manual. Conta como "dispositivos reposicionados" os equipamentos/FLMs com piso preenchido que agora encontram uma planta compatível graças à comparação normalizada (antes ficavam "não posicionados" só por causa da grafia). Guardada por base._auditRunning contra reentrância. mostrarBannerConsistencia(resultado,alvoId) reaproveita a classe .msg já usada em toda a aplicação para mostrar o resumo (formato "Banco validado. N registros analisados / ✓ X pisos normalizados / ..."), como card fixo (quando alvoId existe, ex.: #impMsg após importação) ou toast temporário no canto da tela (9s, só aparece se houver algo a reportar) nos demais gatilhos. TESTE ISOLADO: script Node standalone (não incluído no produto) validou normalizarPiso("3")===normalizarPiso("03")===...===normalizarPiso("Piso Piso 3") e o equivalente para normalizarLaco — todas as variantes colapsaram para a mesma chave "3"; idempotência confirmada. node --check no script extraído: 0 erros. GAPS HONESTOS: (a) não existe base real de amostra com nomenclaturas de piso não numéricas no projeto anexado para validar contra dados de produção — Térreo/Cobertura/Subsolo N foram tratados por heurística de domínio comum em prédios comerciais brasileiros, não confirmados; se a central usa outra convenção (ex.: "Mezanino", "Ático"), caem no fallback de texto normalizado por case/acento (ainda comparável entre si, só não teria um exibirPiso() bonito dedicado). (b) NÃO foi feita fusão automática de Laços/Locais que colidem após normalização (ex.: dois laços "Laço 3" e "L3" sob o mesmo painel) — mesmo sendo agora corrigidos textualmente pela auditoria quando o padrão é o numérico simples, casos de nomenclatura mista (ex.: "Laço 3A" vs "L3-A") ficam só como aviso em db.avisosConsistencia, nunca mesclados, por decisão deliberada de segurança (blast radius de fundir registros com vínculos de falhas/planos/testes). (c) diagBox()/table()/esc() e outros pontos que só EXIBEM r.piso/r.laco cru (sem comparar) não foram alterados — está correto por design (a instrução pede canonizar comparação, não reescrever toda exibição), mas o texto exibido nessas telas continua sendo o bruto, não o formatado por exibirPiso()/exibirLaco(); trocar isso é possível numa rodada futura dedicada, mas fora do escopo de "revisão completa de comparações" pedido aqui. (d) Code.gs NÃO foi tocado — inspecionado e confirmado que não faz nenhuma comparação de piso/laço server-side (só repassa strings), então nada lá derrotaria esta camada. node --check validado sem erros (zero) logo após esta mudança. -->
+<!-- build: 2026-07-12 v6.64 - MÓDULO PLANTAS: 6 melhorias visuais incrementais sobre o v6.63, nenhuma mexendo em plantaX/plantaY/localId/plantaId/sistema/histórico/testes/falhas. (1) PAINEL LATERAL RECOLHÍVEL: plantasUI.sideCollapsed (novo campo) + classe .plantasLayout.sideColapsada oculta .plantasSide e a aba ".plantaSideTab" ("☰ Lojas (N)") some/aparece no lugar para reabrir; botão "◀" dentro do próprio painel (plantaToggleSidebar()) fecha. Persistência: chave dedicada localStorage 'l3a_plantas_prefs' (plantaLoadPrefs/plantaSavePrefs), seguindo o MESMO padrão já usado por loadMenuStateLocal/saveMenuStateLocal (JSON simples, merge com defaults, tolerante a parse inválido) — decisão deliberada de não usar db (é preferência de UI, não dado de negócio, não deve sincronizar entre usuários/dispositivos). Sobrevive a troca de piso/planta (é global ao módulo, não por planta) e a reload (lido uma vez na definição de plantasUI via plantaInitPrefs IIFE). (2) SLIDER DE ESCALA VISÍVEL: novo controle ".plantaScaleControl" fixo no topo-direita de cada viewport (só quando podeEditarPlantas()), passos 50/60/.../150%, grava no MESMO campo escalaPadraoMarcador/escalaPadraoTexto do painel "Escala da Planta" do v6.60 via nova função plantaSetEscalaRapida() (chama plantaSetEscalaPadrao() para os dois campos — não é um campo concorrente). Fórmula de oscilação automática por zoom (plantaZoomAutoFactor(), v6.61) CONFERIDA e mantida sem alteração: já produz fator em [0.5,1.5] ancorado em zoom=1→1.0, multiplicando (nunca substituindo) a escala base — bate exatamente com o exemplo do pedido (base 70% × [0.5..1.5] = 35%..105%). (3) SÍMBOLO POR TIPO: PLANTA_ICONES ganhou formas distintas por tipo — Detector=círculo com ponto central (mantido), Acionador=triângulo (era quadrado, TROCADO), Sirene=ícone de alto-falante (mantido do v6.60), 'Módulo FLM'=quadrado (era retângulo com "pés", SIMPLIFICADO), Central=hexágono com ponto (NOVA entrada, preparada para uso futuro — painéis não são plotados como marcador hoje, confirmado lendo plantaItens()/renderPlantas(), então esta chave fica sem call site ainda), Loja=mantido (casinha), LojaCO2=NOVA entrada (hexágono preenchido) usada só para kind==='local' quando up(ref.sistema)==='CO2', no estado "ok" (falha/desativado continuam usando os ícones distintivos de sirene/power já existentes, que são comportamento deliberado herdado, não uma forma de "tipo"). plantaTipoEquip() NÃO foi alterado — reclassificação zero, só o desenho por chave já retornada por ele. (4) COR=STATUS/FORMA=TIPO: confirmado que a cor SEMPRE vem das classes CSS st-ok/st-bad/st-warn/st-off aplicadas no .pinDot (background-color do container), nunca dos paths dos SVGs (todos usam stroke/fill=currentColor, herdando color:#fff do .pinDot) — trocar a forma nunca muda a cor e vice-versa; nenhuma mudança de CSS necessária além de garantir currentColor nos novos paths. (5) LEGENDA TÉCNICA: nova função plantaLegendaTecnicaHtml(pl,pins), chamada por planta dentro do laço de blocos (recomputa por planta a cada render, não globalmente) — monta ".plantaLegendaTecnica" fixa no rodapé-direita do viewport, com ícone+rótulo só dos tipos REALMENTE presentes nos pins desta planta (Map por chave, nunca lista fixa) + chave de cor de status (reaproveita os mesmos rótulos/cores já usados na legenda geral existente: Em operação/Com falha/Pendente-em teste/Nunca testado-desativado). Colapsável via plantaToggleLegenda(plantaId) (caret ▾/▸), estado em plantasUI.legendaColapsada{} persistido na MESMA chave 'l3a_plantas_prefs'. (6) LEGENDA SÓ MOSTRA O QUE EXISTE: garantido pela própria função (5) — se pins.length===0 para um tipo/sistema, a entrada nunca é adicionada ao Map; testado mentalmente com planta 100% SDAI (sem CO2) e planta sem nenhum equipamento certos tipos ausentes. (7) ESCALA POR TIPO (estrutura preparada): novo campo pl.escalaPorTipo (objeto, default {} = todos neutros/1.0), aplicado de fato no cálculo via plantaFatorTipo(pl,tipoFiltro) multiplicando dentro de plantaEscalaMarcador()/plantaEscalaTexto() (agora aceitam um 3º parâmetro tipoFiltro, passado nos 2 call sites — renderPlantas() e plantaAtualizarEscalasNaTela()); formPlantaBaixa()/criação de planta nova (linha com escalaPadraoMarcador:1) passou a inicializar escalaPorTipo:{} também. SEM UI para editar por tipo individualmente nesta rodada (explicitamente OK pelo pedido) — hoje encontrar pl.escalaPorTipo ausente ou {} não muda nada visualmente (multiplicador 1), então nenhuma planta existente é afetada. PRINT: @media print de #plantas ampliado para também ocultar .plantaSideTab/.plantaScaleControl/.plantaLegendaTecnica/.plantaLegendaToggle (chrome só-interativo), preservando o comportamento já existente de ocultar .plantasSide/.plantaZoomBtns. GAPS HONESTOS: (a) não testei em navegador real (ambiente sem display) — validação foi só via node --check do script extraído (0 erros) e leitura cuidadosa do HTML gerado; risco residual de erro puramente visual (ex.: sobreposição do slider de escala com o botão de troca de imagem em telas muito estreitas) não pode ser 100% descartado sem QA visual manual. (b) drag/drop de posicionamento, clique-para-inserir (v6.62), tooltip de hover e clustering (v6.61) não tiveram nenhuma linha própria alterada — só o HTML interno do .pinDot (ícone) mudou, a estrutura .plantaPin/data-kind/data-id que esses handlers usam ficou idêntica — mas, por não ter testado interativamente, a confirmação é por leitura de código, não por clique real. (c) Central (hexágono) foi só definido no dicionário de ícones, sem nenhum call site real — fica pronto para quando painéis passarem a ser plotados como marcador. (d) plantaSetEscalaRapida() atualiza os DOIS campos (Marcador e Texto) juntos por ser "o slider rápido"; quem precisar de controle fino e independente continua usando o painel "Escala da Planta" (modo posicionamento), que não foi alterado. node --check validado sem erros (zero) logo após esta mudança. -->
+<!-- build anterior: 2026-07-12 v6.63 - NORMALIZAÇÃO GLOBAL DE PISO/LAÇO. PROBLEMA: piso/laço eram comparados/filtrados/deduplicados como texto literal em dezenas de pontos (===, up()===up()), então "3"/"03"/"P3"/"Piso 3"/"Piso Piso 3" eram tratados como valores DIFERENTES — gerando filtros duplicados, itens "não posicionados" em Plantas por divergência textual pura, e possíveis furos de matching em Locais/Falhas/Plano. ESTRATÉGIA (deliberada, ver comentário no código acima de normalizarPiso()): NÃO reescrever em massa os campos brutos existentes em toda tabela de uma vez — risco alto sem rollback numa base de produção. Em vez disso: (1) normalizarPiso(valor)/normalizarLaco(valor) — funções puras, idempotentes, que colapsam prefixos repetidos ("Piso Piso 3"→"3"), zeros à esquerda ("03"→"3"), abreviações ("P3"/"L3"→"3"), separadores e acentuação/caixa, retornando uma chave interna estável (número puro como string para pisos numéricos; chave textual normalizada para não-numéricos como Térreo/Cobertura/Subsolo N). (2) exibirPiso()/exibirLaco() — formatadores só de exibição ("Piso 3"/"Laço 3"), nunca usados em comparação. (3) pisoEq(a,b)/lacoEq(a,b) — comparador oficial; uniquePiso()/uniqueLaco() — dedup oficial para popular dropdowns/filtros. TODOS os pontos de comparação/filtro/dedup de piso ou laço foram migrados para essas funções: dsFlm (pisos/filtro), Locais (fPiso/fLaco), Falhas (filters.falhas piso/laco, mFiltroPiso/mFiltroLaco, falhaFilteredItems), Plano de Ação (filters.plano piso/laco, rLaco/rPiso/lacoOpts/pisoOpts), Testes (filters.testes piso), lucLocaisIrmaos(), lucPisoKey()/lucPisosCompat() (agora delegam para normalizarPiso/pisoEq em vez do regex fixo de 1 a 3 andares que existia antes), e TODO o módulo Plantas (plantaItens/pisoEfetivo, plantaFiltrarPontosInsercao, plantaAbrirModalInsercao, os pontos que decidem "item pertence a outro piso" ao soltar/inserir marcador, pisosDisponiveis do modal de baixa). ensureLaco() ganhou uma variante ensureLacoNormalizado() para uso futuro em import (o texto digitado/importado continua sendo GRAVADO como veio — só a comparação passa a ser normalizada). AUDITORIA AUTOMÁTICA: nova função auditoriaConsistenciaGlobal(base), chamada de dentro de normalizeAllStatuses() — o único ponto por onde toda carga de base já passava (boot, switchCliente/loadClienteDb, pull de sincronização, restauração de backup — nenhum novo call site precisou ser criado) — e também explicitamente ao final de importFile(). Ela: varre Laços/FLMs/Portas/Equipamentos/Locais/Falhas/Planos/Plantas contando registros; corrige em memória e NO CAMPO BRUTO, de forma conservadora e idempotente, só os casos textuais inequívocos (padrão numérico com prefixo conhecido, tipo "Piso Piso 3"/"Piso03"/"P3"), registrando de-para em db.avisosConsistencia; detecta pisos/laços com texto duplicado (mesma chave normalizada, grafias diferentes) e cadastros incompletos/órfãos (loja sem piso/laço, dispositivo sem piso/órfão, porta sem módulo, módulo sem laço, planta sem loja de piso correspondente) SEM nunca mesclar automaticamente registros de Laço/Local (maior raio de impacto por causa de vínculos de equipamentos/falhas/planos) — isso só entra como aviso em db.avisosConsistencia para revisão manual. Conta como "dispositivos reposicionados" os equipamentos/FLMs com piso preenchido que agora encontram uma planta compatível graças à comparação normalizada (antes ficavam "não posicionados" só por causa da grafia). Guardada por base._auditRunning contra reentrância. mostrarBannerConsistencia(resultado,alvoId) reaproveita a classe .msg já usada em toda a aplicação para mostrar o resumo (formato "Banco validado. N registros analisados / ✓ X pisos normalizados / ..."), como card fixo (quando alvoId existe, ex.: #impMsg após importação) ou toast temporário no canto da tela (9s, só aparece se houver algo a reportar) nos demais gatilhos. TESTE ISOLADO: script Node standalone (não incluído no produto) validou normalizarPiso("3")===normalizarPiso("03")===...===normalizarPiso("Piso Piso 3") e o equivalente para normalizarLaco — todas as variantes colapsaram para a mesma chave "3"; idempotência confirmada. node --check no script extraído: 0 erros. GAPS HONESTOS: (a) não existe base real de amostra com nomenclaturas de piso não numéricas no projeto anexado para validar contra dados de produção — Térreo/Cobertura/Subsolo N foram tratados por heurística de domínio comum em prédios comerciais brasileiros, não confirmados; se a central usa outra convenção (ex.: "Mezanino", "Ático"), caem no fallback de texto normalizado por case/acento (ainda comparável entre si, só não teria um exibirPiso() bonito dedicado). (b) NÃO foi feita fusão automática de Laços/Locais que colidem após normalização (ex.: dois laços "Laço 3" e "L3" sob o mesmo painel) — mesmo sendo agora corrigidos textualmente pela auditoria quando o padrão é o numérico simples, casos de nomenclatura mista (ex.: "Laço 3A" vs "L3-A") ficam só como aviso em db.avisosConsistencia, nunca mesclados, por decisão deliberada de segurança (blast radius de fundir registros com vínculos de falhas/planos/testes). (c) diagBox()/table()/esc() e outros pontos que só EXIBEM r.piso/r.laco cru (sem comparar) não foram alterados — está correto por design (a instrução pede canonizar comparação, não reescrever toda exibição), mas o texto exibido nessas telas continua sendo o bruto, não o formatado por exibirPiso()/exibirLaco(); trocar isso é possível numa rodada futura dedicada, mas fora do escopo de "revisão completa de comparações" pedido aqui. (d) Code.gs NÃO foi tocado — inspecionado e confirmado que não faz nenhuma comparação de piso/laço server-side (só repassa strings), então nada lá derrotaria esta camada. node --check validado sem erros (zero) logo após esta mudança. -->
 <!-- build anterior: 2026-07-11 v6.62 - MÓDULO PLANTAS: nova ação "Adicionar marcador" (📍, visível só com podeEditarPlantas()) em cada bloco de planta, um modo de inserção ALTERNATIVO ao arrastar-e-soltar já existente, focado em pontos técnicos (db.locais). Ao ativar, o próximo clique (não-arrasto — mesmo limiar de 6px de plantaIniciarDrag) no viewport captura x%/y% (mesma fórmula de rect.getBoundingClientRect() já usada no drop) em plantasUI.pendenteX/Y — estado 100% efêmero, nada é gravado antes da confirmação — e abre um modal de seleção (plantaAbrirModalInsercao). O modal lista SÓ pontos técnicos com local.plantaId!==id-da-planta-atual (exclusão sempre por id, nunca por nome, então "ROMMANEL SDAI" e "ROMMANEL CO2" são sempre tratados como registros independentes), com filtros combináveis (busca nome/LUC via filtrarRegistrosPorBusca, Sistema, Piso, Painel, Laço, Módulo, Porta, Status via plantaStatusFiltroLocal — Com falha/Em operação/Nunca testado), ordenados por Piso/Nome/Sistema/Painel/Laço/Módulo/Porta, e 3 contadores sempre recalculados na hora (disponíveis/já inseridos nesta planta/total do piso — nunca cache). Por padrão só mostra pontos do piso da planta; toggle "Mostrar pontos de outros pisos" (só para Master) permite ver de outros pisos, e ao confirmar um desses abre plantaConfirmarOutroPiso()/OutroPisoOk() — modal PRÓPRIO, nunca confirm() nativo — que audita a exceção via logLocal() antes de gravar. Selecionar um ponto (plantaSelecionarPontoInsercao→plantaConfirmarInsercao) revalida duplicidade (loc.plantaId===plantaAtual → aborta com aviso, sem gravar nada), grava plantaId/plantaX/plantaY, aplica escalaPadraoMarcador/escalaPadraoTexto da planta quando o ponto ainda não tem override (mesma regra do v6.60), grava marcadorCriadoPor/marcadorCriadoEm no próprio registro, chama logLocal('Plantas',...,'inserir_marcador',...), invalida o cache do tooltip e chama save() (que já dispara markDirty+render). O modal É REABERTO em seguida (plantaAbrirModalInsercao de novo) para atualizar lista/contadores SEM fechar — e o modo de inserção continua ativo, permitindo clicar no próximo ponto da planta imediatamente sem reabrir nada manualmente. Saída do modo de inserção: Esc (novo listener global, guardado por window._plantaEscInserirBound), botão "Cancelar inserção" ou clicar de novo em "Adicionar marcador" — todos chamam plantaSairModoInserir(), que NUNCA deixa uma posição pendente incompleta gravada. Exclusão de marcador (menu de contexto "Excluir") ganhou confirmação explícita (antes chamava plantaLimparPosicao() direto); a função em si já só limpava plantaId/plantaX/plantaY do registro (nunca apagava o cadastro nem testes/falhas), então voltar a aparecer na lista de inserção é automático (contadores/lista recalculados por leitura direta de db.locais, sem cache). GAPS HONESTOS: (1) reassociar um marcador JÁ POSICIONADO a um ponto técnico DIFERENTE (spec item 12) não foi implementado — plantaEditarMarcador() continua só editando posição/escala do MESMO item, como já era; construir essa re-vinculação exigiria uma UI nova maior, fora do pedido mínimo desta rodada. (2) o modal de inserção reconstrói o HTML inteiro a cada filtro (mesmo padrão de outras telas do sistema), o que reseta o foco do campo de busca — mitigado com um refoco manual (setTimeout+#mInsBusca) só nesse campo, mas outros selects não preservam scroll da lista. (3) "mostrar pontos de outros pisos" só aparece para isMaster() (mais restrito que podeEditarPlantas() genérico), decisão deliberada por ser uma exceção mais sensível. node --check validado sem erros (zero) logo após esta mudança.
 build anterior: 2026-07-11 v6.61 - MÓDULO PLANTAS: zoom interativo (roda do mouse SEM Ctrl, zoom centrado no
 cursor/toque, pinça de 2 dedos, escala automática de marcador por zoom, agrupamento/clustering visual). Tudo
@@ -573,7 +574,25 @@ input[type=checkbox],input[type=radio]{accent-color:var(--l3a-primary)}
 .plantaLegenda span{display:inline-flex;align-items:center;gap:5px}
 .plantaLegenda i.lg{width:11px;height:11px;border-radius:50%;display:inline-block}
 @media (max-width:900px){.plantasLayout{flex-direction:column}.plantasSide{position:static;flex:1 1 auto;width:100%;max-height:260px}}
-@media print{#plantas .plantasSide,#plantas .plantaZoomBtns{display:none!important}}
+@media print{#plantas .plantasSide,#plantas .plantaZoomBtns,#plantas .plantaSideTab,#plantas .plantaScaleControl,#plantas .plantaLegendaTecnica,#plantas .plantaLegendaToggle{display:none!important}}
+/* v6.64 — painel lateral recolhível (item 1) */
+.plantasLayout.sideColapsada .plantasSide{display:none}
+.plantaSideTab{position:sticky;top:8px;flex:0 0 auto;align-self:flex-start;background:var(--l3a-surface);border:1px solid var(--l3a-border);border-radius:10px;padding:8px 6px;font-size:11.5px;font-weight:700;cursor:pointer;writing-mode:vertical-rl;text-orientation:mixed;color:var(--l3a-text-soft)}
+.plantaSideTab:hover{background:var(--l3a-hover)}
+.plantasSide .plantaSideCollapseBtn{float:right;background:none;border:0;cursor:pointer;font-size:12px;color:var(--l3a-text-muted);padding:2px 4px}
+/* v6.64 — controle de escala rápida no viewport (item 2) */
+.plantaScaleControl{position:absolute;top:8px;right:8px;z-index:20;background:rgba(255,255,255,.92);border:1px solid var(--l3a-border);border-radius:10px;padding:6px 10px;box-shadow:0 2px 8px rgba(16,24,40,.18);display:flex;align-items:center;gap:7px;font-size:11px;font-weight:700;color:#0E2A44}
+.plantaScaleControl input[type=range]{width:110px}
+.plantaScaleControl span.pscVal{min-width:32px;text-align:right}
+/* v6.64 — legenda técnica por planta (item 5/6) */
+.plantaLegendaTecnica{position:absolute;bottom:8px;right:8px;z-index:20;background:rgba(255,255,255,.92);border:1px solid #d8dee7;border-radius:10px;box-shadow:0 2px 8px rgba(16,24,40,.16);font-size:11px;max-width:210px;overflow:hidden}
+.plantaLegendaTecnica .pltHead{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:6px 9px;font-weight:800;color:#0E2A44;cursor:pointer;border-bottom:1px solid #e6eaf0}
+.plantaLegendaTecnica.colapsada .pltBody{display:none}
+.plantaLegendaTecnica .pltBody{padding:7px 9px;display:flex;flex-direction:column;gap:5px;max-height:220px;overflow:auto}
+.plantaLegendaTecnica .pltItem{display:flex;align-items:center;gap:6px;color:#333}
+.plantaLegendaTecnica .pltItem i{width:13px;height:13px;flex:0 0 auto;display:inline-flex;color:#4a5568}
+.plantaLegendaTecnica .pltItem i svg{width:13px;height:13px}
+.plantaLegendaTecnica .pltDot{width:9px;height:9px;border-radius:50%;flex:0 0 auto;display:inline-block}
 
 /* ---------- 9. TABELAS ------------------------------------------------------ */
 .tableWrap{overflow:auto;border:1px solid var(--l3a-border);border-radius:var(--l3a-radius-md);background:var(--l3a-surface)}
@@ -7646,7 +7665,18 @@ const plantasUI={edit:false,zoom:{},pan:{},filtro:{tipo:'',piso:'',q:''},selecio
   // até a confirmação explícita no modal de seleção). modalInsercao guarda os filtros combináveis do modal.
   modoInserir:false,modoInserirPlantaId:null,pendenteX:null,pendenteY:null,
   modalInsercao:{q:'',sistema:'',piso:'',painel:'',laco:'',flm:'',porta:'',status:'',outrosPisos:false},
-  _confirmadoOutroPiso:false};
+  _confirmadoOutroPiso:false,
+  // v6.64 — preferências de UI (painel lateral / legenda técnica), só visual, carregadas de localStorage.
+  sideCollapsed:false, legendaColapsada:{}};
+// v6.64 — persistência de preferências de UI do módulo Plantas (chave dedicada, dado 100% de exibição,
+// nunca dados de negócio). Segue o mesmo padrão simples já usado em loadMenuStateLocal/saveMenuStateLocal
+// (JSON em localStorage, merge com defaults, tolerante a erro de parse).
+const PLANTA_PREFS_KEY='l3a_plantas_prefs';
+function plantaLoadPrefs(){try{return Object.assign({sideCollapsed:false,legendaColapsada:{}},JSON.parse(localStorage.getItem(PLANTA_PREFS_KEY)||'{}'))}catch(e){return {sideCollapsed:false,legendaColapsada:{}}}}
+function plantaSavePrefs(){try{localStorage.setItem(PLANTA_PREFS_KEY,JSON.stringify({sideCollapsed:plantasUI.sideCollapsed,legendaColapsada:plantasUI.legendaColapsada}))}catch(e){}}
+(function plantaInitPrefs(){const p=plantaLoadPrefs();plantasUI.sideCollapsed=!!p.sideCollapsed;plantasUI.legendaColapsada=p.legendaColapsada||{}})();
+function plantaToggleSidebar(){plantasUI.sideCollapsed=!plantasUI.sideCollapsed;plantaSavePrefs();renderPlantas()}
+function plantaToggleLegenda(plantaId){plantasUI.legendaColapsada[plantaId]=!plantasUI.legendaColapsada[plantaId];plantaSavePrefs();renderPlantas()}
 // v6.61 — limites únicos de zoom (reaproveitados por botões +/-, roda do mouse e pinça em touch).
 const PLANTA_ZOOM_MIN=0.2, PLANTA_ZOOM_MAX=5;
 // Fator de escala AUTOMÁTICO dos marcadores em função do zoom atual — multiplica (nunca substitui) a
@@ -7689,18 +7719,63 @@ function plantaStatusClassEquip(st){st=normalizeStatus(st);if(isFalhaStatus(st))
 
 // v6.60 — Escala de marcador/texto (Feature Set A): valor por item (override) cai para o padrão da
 // planta (piso) quando ausente; clamp sempre em [0.30, 5.00]. Nunca muta registros antigos ao ler.
-function plantaEscalaMarcador(item,pl){const ov=item&&item.escalaMarcador;const def=(pl&&pl.escalaPadraoMarcador)??1;const v=(ov==null?def:ov);return Math.min(5,Math.max(0.3,Number(v)||1))}
-function plantaEscalaTexto(item,pl){const ov=item&&item.escalaTexto;const def=(pl&&pl.escalaPadraoTexto)??1;const v=(ov==null?def:ov);return Math.min(5,Math.max(0.3,Number(v)||1))}
+// v6.64 (item 7) — escala por TIPO de equipamento, multiplicativa sobre a escala do item/planta. Estrutura
+// preparada (pl.escalaPorTipo={Detector:1,Acionador:1,'Módulo FLM':1,Sirene:1,Loja:1,...}) — ainda sem UI
+// dedicada para editar cada tipo nesta rodada, mas já É APLICADA no cálculo (default 1 = neutro/sem efeito
+// quando ausente, então nada muda para plantas existentes até alguém popular esse campo).
+function plantaFatorTipo(pl,tipoFiltro){const m=pl&&pl.escalaPorTipo;if(!m||!tipoFiltro)return 1;const v=m[tipoFiltro];return v==null?1:(Number(v)||1)}
+function plantaEscalaMarcador(item,pl,tipoFiltro){const ov=item&&item.escalaMarcador;const def=(pl&&pl.escalaPadraoMarcador)??1;const v=(ov==null?def:ov);return Math.min(5,Math.max(0.3,Number(v)||1))*plantaFatorTipo(pl,tipoFiltro)}
+function plantaEscalaTexto(item,pl,tipoFiltro){const ov=item&&item.escalaTexto;const def=(pl&&pl.escalaPadraoTexto)??1;const v=(ov==null?def:ov);return Math.min(5,Math.max(0.3,Number(v)||1))*plantaFatorTipo(pl,tipoFiltro)}
+// v6.64 (item 3) — um símbolo vetorial simples e distinto por TIPO (forma = tipo, nunca cor; cor = status,
+// aplicada via as classes st-ok/st-bad/st-warn/st-off já existentes no .pinDot, sempre currentColor/stroke
+// nos paths abaixo para herdar essa cor). Loja(SDAI) e Loja(CO2) são diferenciadas por 'sistema' do ponto
+// técnico (ver renderPlantas — kind 'local'), não por um novo tipoFiltro.
 const PLANTA_ICONES={
   Loja:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10 5.5 4h13L20 10M5 10v10h14V10M9.5 20v-6h5v6"/></svg>',
+  LojaCO2:'<svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1"><polygon points="12,3 20,7.8 20,16.2 12,21 4,16.2 4,7.8" fill="none" stroke="currentColor" stroke-width="2.2"/><polygon points="12,7 16.5,9.5 16.5,14.5 12,17 7.5,14.5 7.5,9.5" fill="currentColor" stroke="none"/></svg>',
   Detector:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/></svg>',
-  Acionador:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="14" rx="2"/><circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/></svg>',
+  Acionador:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polygon points="12,4 20.5,19.5 3.5,19.5"/><circle cx="12" cy="15.2" r="1.4" fill="currentColor" stroke="none"/></svg>',
   Sirene:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18h12M8 18v-5a4 4 0 0 1 8 0v5M12 5v2M5.5 7.5 7 9M18.5 7.5 17 9"/></svg>',
-  'Módulo FLM':'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><rect x="4.5" y="7" width="15" height="10" rx="2"/><path d="M8 7V5M16 7V5M8 19v-2M16 19v-2"/></svg>',
+  'Módulo FLM':'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><rect x="4.5" y="4.5" width="15" height="15" rx="2"/></svg>',
+  Central:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12,3 20,7.5 20,16.5 12,21 4,16.5 4,7.5"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/></svg>',
   power:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 4v7"/><path d="M7 7a7 7 0 1 0 10 0"/></svg>',
   check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5 10 17.5 19 7"/></svg>'
 };
 
+// v6.64 (item 5/6) — legenda técnica por planta: só os TIPOS/estados REALMENTE presentes nos pinos desta
+// planta (recalculada a partir dos pins já filtrados de cada bloco, nunca uma lista global fixa).
+function plantaLegendaTecnicaHtml(pl,pins){
+  const tipos=new Map(); // chave estável -> {label, icon}
+  let temFalha=false,temTeste=false,temOff=false,temOk=false;
+  pins.forEach(i=>{
+    if(i.kind==='local'){
+      const isCO2=up(i.ref.sistema||'')==='CO2';
+      const key=isCO2?'LojaCO2':'Loja';
+      if(!tipos.has(key))tipos.set(key,{label:isCO2?'Ponto CO₂':'Loja SDAI',icon:isCO2?PLANTA_ICONES.LojaCO2:PLANTA_ICONES.Loja});
+      const ag=statusAgregadoLoja(i.id);
+      if(ag.estado==='falha')temFalha=true; else if(ag.estado==='desativado')temOff=true; else temOk=true;
+    } else {
+      const key=i.tipoFiltro;
+      if(!tipos.has(key))tipos.set(key,{label:key,icon:PLANTA_ICONES[key]||PLANTA_ICONES.Detector});
+      const st=i.kind==='flm'?flmStatusAgregado(i.id):i.ref.status;
+      const cls=plantaStatusClassEquip(st);
+      if(cls==='st-bad')temFalha=true; else if(cls==='st-warn')temTeste=true; else if(cls==='st-off')temOff=true; else temOk=true;
+    }
+  });
+  if(!tipos.size)return '';
+  const colapsada=!!plantasUI.legendaColapsada[pl.id];
+  const itensHtml=[...tipos.values()].map(t=>`<div class="pltItem"><i>${t.icon}</i><span>${esc(t.label)}</span></div>`).join('');
+  const statusHtml=[
+    temOk?'<div class="pltItem"><span class="pltDot" style="background:#15803D"></span><span>Em operação</span></div>':'',
+    temFalha?'<div class="pltItem"><span class="pltDot" style="background:#B42318"></span><span>Com falha</span></div>':'',
+    temTeste?'<div class="pltItem"><span class="pltDot" style="background:#B45309"></span><span>Pendente / em teste</span></div>':'',
+    temOff?'<div class="pltItem"><span class="pltDot" style="background:#8695AB"></span><span>Nunca testado / desativado</span></div>':''
+  ].join('');
+  return `<div class="plantaLegendaTecnica${colapsada?' colapsada':''}">
+    <div class="pltHead" onclick="plantaToggleLegenda('${esc(pl.id)}')"><span>Legenda</span><span>${colapsada?'▸':'▾'}</span></div>
+    <div class="pltBody">${itensHtml}<div style="height:1px;background:#e6eaf0;margin:3px 0"></div>${statusHtml}</div>
+  </div>`;
+}
 function renderPlantas(){
   const el=document.getElementById('plantas'); if(!el)return;
   db.plantas=db.plantas||[];
@@ -7751,10 +7826,14 @@ function renderPlantas(){
     const pinsHtml=pins.map(i=>{
       const [dx,dy]=offset[i.kind+':'+i.id]||[0,0];
       let cls,inner,badgeN=0;
+      const isCO2=i.kind==='local'&&up(i.ref.sistema||'')==='CO2';
       if(i.kind==='local'){
         const ag=statusAgregadoLoja(i.id);
         cls=ag.estado==='falha'?'st-bad lojaFalha':ag.estado==='desativado'?'st-off':'st-ok';
-        inner=ag.estado==='falha'?PLANTA_ICONES.Sirene:ag.estado==='desativado'?PLANTA_ICONES.power:PLANTA_ICONES.check;
+        // v6.64 (item 3): forma continua ligada ao estado da loja (sirene/power já eram distintivos e
+        // continuam), mas no estado "ok" a forma passa a diferenciar Loja SDAI (check) de Ponto CO2
+        // (hexágono preenchido) — cor permanece só do status (classes st-ok/st-bad/...).
+        inner=ag.estado==='falha'?PLANTA_ICONES.Sirene:ag.estado==='desativado'?PLANTA_ICONES.power:(isCO2?PLANTA_ICONES.LojaCO2:PLANTA_ICONES.check);
         badgeN=ag.estado==='falha'?plantaFalhasAbertasLoja(i.id):0;
       } else {
         const st=i.kind==='flm'?flmStatusAgregado(i.id):i.ref.status;
@@ -7763,7 +7842,7 @@ function renderPlantas(){
       }
       // v6.60 (Feature Set B, item 1): nome permanente REMOVIDO do marcador — só ícone/cor/badge numérico.
       // O nome/detalhes completos passam a viver exclusivamente no tooltip de hover (renderTooltipMarcador).
-      const escM=plantaEscalaMarcador(i.ref,pl)*zf, escT=plantaEscalaTexto(i.ref,pl)*zf;
+      const escM=plantaEscalaMarcador(i.ref,pl,i.tipoFiltro)*zf, escT=plantaEscalaTexto(i.ref,pl,i.tipoFiltro)*zf;
       const selecionado=plantasUI.selecionado&&plantasUI.selecionado.kind===i.kind&&plantasUI.selecionado.id===i.id;
       const handles=(plantasUI.edit&&podeEditarPlantas()&&selecionado)?`<div class="plantaHandle hMarcador" data-handle="marcador" title="Redimensionar marcador"></div><div class="plantaHandle hTexto" data-handle="texto" title="Redimensionar texto (badge)"></div>`:'';
       const badge=badgeN?`<span class="pinBadge" style="transform:scale(${escT});transform-origin:center">${badgeN}</span>`:'';
@@ -7771,12 +7850,24 @@ function renderPlantas(){
       return `<div class="plantaPin ${cls}${selecionado?' selecionado':''}" data-kind="${i.kind}" data-id="${esc(i.id)}" data-local-id="${esc(i.kind==='local'?i.id:(i.ref.localId||''))}" style="left:${i.ref.plantaX}%;top:${i.ref.plantaY}%;margin-left:${dx}px;margin-top:${dy}px;z-index:${zi}">${badge}<span class="pinDot" style="transform:scale(${escM});transform-origin:center">${inner}</span>${handles}</div>`;
     }).join('');
     const pan=plantasUI.pan[pl.id]||{x:0,y:0};
+    // v6.64 (item 2) — controle de escala rápida, sempre visível, no topo-direita do viewport; escreve
+    // direto no MESMO campo escalaPadraoMarcador/escalaPadraoTexto do painel "Escala da Planta" (v6.60),
+    // reaproveitando plantaSetEscalaPadrao (preview instantâneo + save debatido), nunca um campo paralelo.
+    const emAtual=Math.round((pl.escalaPadraoMarcador??1)*100);
+    const scaleCtrl=podeEditarPlantas()?`<div class="plantaScaleControl" title="Escala dos marcadores desta planta (mesmo valor do painel Escala da Planta)">
+        <span>Escala</span>
+        <input type="range" min="50" max="150" step="10" value="${Math.min(150,Math.max(50,emAtual))}" oninput="plantaSetEscalaRapida('${esc(pl.id)}',this.value)">
+        <span class="pscVal">${emAtual}%</span>
+      </div>`:'';
+    const legendaTecnica=plantaLegendaTecnicaHtml(pl,pins);
     const corpo=pl.imagemUrl
       ?`<div class="plantaViewport ${(plantasUI.modoInserir&&plantasUI.modoInserirPlantaId===pl.id)?'plantaModoInserir':''}" data-planta="${esc(pl.id)}">
           <div class="plantaCanvas ${z<0.8?'plantaZoomOut':''}" data-planta-canvas="${esc(pl.id)}" style="aspect-ratio:${pl.imagemW||4}/${pl.imagemH||3};transform:translate(${pan.x}px,${pan.y}px) scale(${z})">
             <img class="plantaImg" src="${esc(pl.imagemUrl)}" alt="Planta ${esc(pl.piso)}">
             ${pinsHtml}
           </div>
+          ${scaleCtrl}
+          ${legendaTecnica}
         </div>`
       :`<div class="plantaViewport" data-planta="${esc(pl.id)}"><div class="plantaPlaceholder">
           ${pl.uploadFalhou?'<b>Falha no envio da imagem.</b>':'Nenhuma imagem carregada para esta planta.'}
@@ -7828,9 +7919,10 @@ function renderPlantas(){
       ${podeEditarPlantas()?`<label style="display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap"><input type="checkbox" ${plantasUI.edit?'checked':''} onchange="plantasUI.edit=this.checked;renderPlantas()"> ✏️ Modo posicionamento</label>`:''}
     </div>
     ${inconsHtml}
-    <div class="plantasLayout">
+    <div class="plantasLayout${plantasUI.sideCollapsed?' sideColapsada':''}">
+      ${plantasUI.sideCollapsed?`<div class="plantaSideTab" title="Mostrar lojas" onclick="plantaToggleSidebar()">☰ Lojas (${chips.length})</div>`:''}
       <aside class="plantasSide">
-        <h4>Itens não posicionados (${chips.length})</h4>
+        <h4>Itens não posicionados (${chips.length})<button class="plantaSideCollapseBtn" title="Ocultar painel" onclick="plantaToggleSidebar()">◀</button></h4>
         <div class="dsFilters" style="display:flex;flex-direction:column;gap:6px">
           <input placeholder="Buscar..." value="${esc(f.q)}" oninput="plantasUI.filtro.q=this.value;renderPlantas()" style="font-size:12px">
           <select onchange="plantasUI.filtro.tipo=this.value;renderPlantas()" style="font-size:12px">${selectOpts(['Loja','Detector','Acionador','Sirene','Módulo FLM'],f.tipo,'Todos os tipos')}</select>
@@ -8479,6 +8571,15 @@ function plantaEscalaPainelHtml(pl){
     </div>
   </div>`;
 }
+// v6.64 (item 2) — atalho do controle de escala rápida do viewport: aplica o mesmo valor a Marcador E
+// Texto (a planta continua permitindo ajuste fino/independente pelo painel "Escala da Planta" em modo
+// posicionamento; este slider é só o acesso rápido pedido, não um campo concorrente).
+function plantaSetEscalaRapida(plantaId,val){
+  plantaSetEscalaPadrao(plantaId,'Marcador',val);
+  plantaSetEscalaPadrao(plantaId,'Texto',val);
+  const lbl=document.querySelector(`.plantaViewport[data-planta="${CSS.escape(plantaId)}"] .plantaScaleControl .pscVal`);
+  if(lbl)lbl.textContent=Math.round(Number(val))+'%';
+}
 let _plantaEscalaSaveTimer=null;
 function plantaSetEscalaPadrao(plantaId,campo,val){
   const pl=(db.plantas||[]).find(p=>p.id===plantaId); if(!pl)return;
@@ -8495,8 +8596,8 @@ function plantaAtualizarEscalasNaTela(pl){
   document.querySelectorAll(`.plantaBloco[data-planta-bloco="${CSS.escape(pl.id)}"] .plantaPin`).forEach(pinEl=>{
     const kind=pinEl.dataset.kind,id_=pinEl.dataset.id;
     const it=itens.find(x=>x.kind===kind&&x.id===id_); if(!it)return;
-    const dot=pinEl.querySelector('.pinDot'); if(dot)dot.style.transform=`scale(${plantaEscalaMarcador(it.ref,pl)*zf})`;
-    const bd=pinEl.querySelector('.pinBadge'); if(bd)bd.style.transform=`scale(${plantaEscalaTexto(it.ref,pl)*zf})`;
+    const dot=pinEl.querySelector('.pinDot'); if(dot)dot.style.transform=`scale(${plantaEscalaMarcador(it.ref,pl,it.tipoFiltro)*zf})`;
+    const bd=pinEl.querySelector('.pinBadge'); if(bd)bd.style.transform=`scale(${plantaEscalaTexto(it.ref,pl,it.tipoFiltro)*zf})`;
   });
 }
 function plantaRestaurarEscalaPlanta(plantaId){
@@ -8589,7 +8690,7 @@ function formPlantaBaixa(i=''){
 function savePlantaBaixa(i){
   const piso=n(document.getElementById('mPlPiso')?.value); if(!piso){alert('Informe o piso.');return}
   let o=i?(db.plantas||[]).find(x=>x.id===i):null;
-  if(!o){o={id:id(),criadoEm:isoNow(),imagemUrl:'',imagemW:0,imagemH:0,escalaPadraoMarcador:1,escalaPadraoTexto:1};db.plantas.push(o)}
+  if(!o){o={id:id(),criadoEm:isoNow(),imagemUrl:'',imagemW:0,imagemH:0,escalaPadraoMarcador:1,escalaPadraoTexto:1,escalaPorTipo:{}};db.plantas.push(o)}
   o.piso=piso;
   o.titulo=n(document.getElementById('mPlTitulo')?.value)||('Planta — '+piso);
   o.ordem=Number(document.getElementById('mPlOrdem')?.value)||1;
