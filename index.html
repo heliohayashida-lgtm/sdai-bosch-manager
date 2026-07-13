@@ -1,4 +1,5 @@
 <!doctype html>
+<!-- build: 2026-07-13 v6.82 - CORREÇÃO: campo Módulo do detalhe do teste aparecia "—" mesmo com Painel/Laço/Piso/Porta corretos (caso SOLUÇÃO COSMÉTICOS). DIAGNÓSTICO OBRIGATÓRIO (item 18): (1) Função que salva o teste: criarTeste() (linha ~3901), chamada por saveTeste() — SEMPRE grava em db.testes, independente de gerar falha ou não. (2) Campos que ela gravava antes desta versão: id/localId/itemId/painelId/lacoId/flmId/portaId/responsavel/data/tipoTeste/resultado/observacao/fotos/origem/falhaId — só isso; painelId/lacoId/flmId/portaId ficavam com o valor recebido do CHAMADOR (saveTeste() nunca passa nenhum desses — só localId), então ficavam sempre ''. Nenhum campo de moduloEndereco/enderecoFisico/portaNumero/pontoTecnicoId/dispositivoId/lojaId/lojaNome/luc/sistemaId existia no registro do teste. (3) Por que moduloId/moduloEndereco ficavam vazios: a v6.81 tinha criado resolverContextoTecnicoDoTeste() e já resolvia o contexto técnico completo, mas SÓ dentro do bloco condicional de criação de FALHA (`if(confirmarFalha&&...)`) — o registro do TESTE em si nunca era tocado por essa resolução, então t.flmId continuava '' mesmo depois da v6.81. O campo Módulo do detalhe do teste (viewTeste(), criado na v6.80) lia diretamente `flmById(loc?.flmId||t.flmId)` — como loc (db.locais/ponto técnico) TAMBÉM podia não ter flmId preenchido diretamente dependendo do cadastro, e t.flmId nunca era gravado, o resultado final era sempre "—", mesmo Painel/Laço/Piso (que já usavam obterPisoDoRegistro()/obterLocalizacaoDoPonto(), com fallback por porta/módulo/laço) aparecendo corretos. (4) Campo do ponto técnico que possui o módulo: db.locais.flmId (e, quando o módulo tem múltiplas portas, db.locais.portaId aponta a porta específica daquele ponto — confirmado em renderLocais(), que já usava exatamente esses dois campos). (5)-(10) contagens exatas de quantos testes têm localId/moduloId/portaId/endereço/quantos serão saneados/quantos ficarão em conflito dependem da base real do cliente — não há acesso a ela neste ambiente; o relatório com esses números é gerado ao vivo pelo próprio sistema em Operação → Testes → "🩹 Saneamento de vínculos" (perfil Master), em modo simulação (nada salvo) antes de qualquer execução, item 10 do pedido. CORREÇÃO: (a) resolverContextoTecnicoDoTeste() (linha ~3753, criada na v6.81, MANTIDA como fonte única — item 3, nenhuma segunda lógica criada) já retornava moduloId/moduloEndereco/portaId/portaNumero/enderecoFisico; não precisou de novos campos, só passou a ser CHAMADA em mais lugares. (b) criarTeste() agora chama resolverContextoTecnicoDoTeste(novoTeste) logo após montar o registro do teste (ANTES de decidir se cria falha) e grava painelId/lacoId/flmId/portaId (só se não vieram do chamador) + moduloEndereco/portaNumero/pontoTecnicoId/dispositivoId/lojaId/lojaNome/luc/sistemaId/enderecoFisico — todo teste NOVO já nasce completo (itens 1/4). (c) enderecoFisico usa moduloEndereco como fallback quando o dispositivo não tem endereço próprio — nunca mais "Sem endereço" com módulo já identificado (item 17). (d) viewTeste() (linha ~4204) reescrito para usar resolverContextoTecnicoDoTeste(t) como única fonte de Painel/Laço/Piso/Módulo/Porta/Endereço/Loja/LUC/Sistema — resolve em TEMPO DE LEITURA mesmo para um teste antigo ainda não saneado (item 12), então a tela já mostra certo antes da migração definitiva rodar. Módulo mostra "Módulo <endereço>" quando resolvido, "Não se aplica" quando o teste é de detector/acionador sem módulo associado (item 7 — nunca mais "—" puro quando o tipo técnico permite identificar). SANEAMENTO DE TESTES (itens 8/9/10/11/14): reconstruirContextoDeTesteAntigo(t) (linha ~3899) reconstrói pela ordem exigida — pontoTecnicoId/localId → itemId/dispositivoId/flmId/portaId → endereço físico (só resolve quando bate em EXATAMENTE um item técnico; mais de um vai para db.conflitosMigracao com candidatos e motivo). simularSaneamentoTestes() calcula tudo em memória (nunca salva) — total, já com módulo, completáveis, quantos vão receber moduloId/moduloEndereco/endereço/porta, ambíguos, sem vínculo — com amostra campo a campo (loja/sistema/laço/módulo antes→proposto/endereço antes→proposto/fonte), exatamente o formato pedido no item 10. executarSaneamentoTestes() cria backup completo (testes + falhas + planos, com versão/data-hora/usuário/quantidades — item 11) em db.backupsSaneamento ANTES de tocar em qualquer registro, só preenche campo vazio (nunca sobrescreve — item 8), grava conflitos em db.conflitosMigracao, e — item 14 — também completa o módulo/piso/painel/laço/porta/endereço da FALHA vinculada quando ela existir e estiver com esses campos vazios, sem criar/duplicar nada, mantendo testeOrigemId/falhaGeradaId como já estavam. Novo botão "🩹 Saneamento de vínculos" (só Master) na barra de filtros de Operação → Testes, com o mesmo padrão de simulação-antes-de-executar já usado no saneamento de Falhas (v6.81). PLANO DE AÇÃO (item 15): já herda o contexto da falha (v6.78/v6.79); como o saneamento de testes agora também completa a falha vinculada, o Plano de Ação passa a receber os dados completos automaticamente na próxima renderização — nenhuma mudança adicional necessária em renderPlano()/buildPlanoRowsBase(). TABELA PRINCIPAL DE TESTES (item 13): não tocada — continua com as 9 colunas da v6.80 (Módulo/Endereço ficam só no detalhe, como já definido). SOLUÇÃO COSMÉTICOS (item 16): não foi recriada — se o ponto técnico já tem flmId/portaId cadastrados (o que o próprio relato confirma, já que Painel/Laço/Piso/Porta apareciam certos), a resolução em tempo de leitura (viewTeste()) já deve mostrar o módulo correto imediatamente, sem precisar rodar o saneamento; o saneamento serve para GRAVAR esse valor no registro do teste (e propagar à falha), não é pré-requisito para a exibição correta. Validação final deve ser feita pelo usuário abrindo o teste específico na base real. GAPS HONESTOS: (a) resolverContextoTecnicoDoTeste() ainda não é chamada em Plano de Ação/relatórios diretamente (eles continuam lendo os campos já resolvidos da FALHA, que agora nascem/são saneados completos) — não duplica lógica, mas também não é literalmente "a mesma chamada de função" nesses pontos; se o usuário notar campo vazio ali também, é sinal de que a FALHA correspondente ainda não foi saneada, não de uma lacuna nova. (b) detecção de conflito continua limitada a "mais de um item técnico com endereço físico idêntico". node --check validado sem erros nos scripts extraídos após todas as edições. -->
 <!-- build: 2026-07-13 v6.81 - CORREÇÃO CRÍTICA: falha criada a partir de teste "Não funcionou" não herdava painel/laço/piso (caso relatado: SOLUÇÃO COSMÉTICOS). DIAGNÓSTICO OBRIGATÓRIO (item 22): (1) Função que cria a falha a partir do teste: criarTeste() (linha ~3739), chamada por saveTeste() (linha ~3861, botão "Salvar teste" da tela Executar teste). (2) saveTeste() chamava criarTeste({localId,tipoTeste,resultado,responsavel,observacao,fotos,confirmarFalha,reuseFalha,origem}) — SEM itemId/painelId/lacoId/flmId/portaId. Dentro de criarTeste(), o bloco de criação da falha só sabia montar painelId/lacoId/piso/itemId a partir desses parâmetros (vazios) ou de um "item" achado em db.equipamentos por itemId (também vazio, então `item` sempre undefined nesse fluxo) — nunca olhava para o PONTO TÉCNICO testado (db.locais, via localId), que já carrega painelId/lacoId/piso/flmId/portaId/sistema próprios (confirmado em renderLocais()). Resultado: painelId/lacoId/piso da falha nasciam SEMPRE vazios ('') nesse fluxo. (3) Por que Central/Laço/Piso apareciam como "Todos": formFalha() (linha ~4644) monta os <select> com `<option value="${fp}" selected>${fp||'Todas as centrais'}</option>` — fp/fl/fpi vêm de `item=falhaItems().find(it=>it.id===o.itemId)`; com o.itemId='' (bug acima), item nunca é encontrado, fp/fl/fpi ficam '', e o rótulo cai no fallback "Todas as centrais"/"Todos os laços"/"Todos os pisos" — não é um valor GRAVADO como "Todos", é o placeholder do <select> aparecendo porque não havia NADA gravado para resolver. (4) Não existiam duas funções concorrentes nem template duplicado — só uma função cria falha por teste (criarTeste()) e só uma monta o formulário (formFalha()); o problema era 100% de dados incompletos entrando em criarTeste(), não de lógica duplicada. (5)/(6)/(7)/(8)/(9)/(10) contagens exatas (quantas falhas têm testeOrigemId/localId/módulo/piso, quantas foram completadas/ficaram em conflito/sem vínculo) dependem da base real do cliente — não há acesso a ela neste ambiente de edição de código; o relatório com esses números é gerado ao vivo pelo próprio sistema em Operação → Falhas → "🩹 Saneamento de vínculos" (perfil Master), que roda em modo simulação (nada é salvo) antes de qualquer execução, exatamente como pedido no item 15. CORREÇÃO: nova função central resolverContextoTecnicoDoTeste(teste) (linha ~3776, reaproveitada em TODOS os pontos que precisam de contexto técnico — criação automática de falha, reconstrução de falha antiga, sem duplicar regra alguma) resolve por prioridade ponto técnico (db.locais) → equipamento vinculado → módulo/FLM vinculado → porta vinculada, devolvendo {clienteId,sistemaId,painelId,painelNome,lacoId,lacoNumero,moduloId,moduloEndereco,portaId,portaNumero,dispositivoId,pontoTecnicoId,localId,lojaId,lojaNome,luc,piso,enderecoFisico,tipoEquipamento,modeloEquipamento,itemId}. criarTeste() agora usa essa função tanto para falha NOVA (herda painel/laço/módulo/porta/piso/loja/endereço/sistema/LUC — item 1/4) quanto para falha REAPROVEITADA (completa campos vazios de um registro antigo reaproveitado, nunca sobrescreve valor já existente — item 20/14); testeOrigemId gravado na falha e falhaGeradaId gravado no teste (vínculo bidirecional explícito, item 18, além do par legado falhaId/testeId mantido por compatibilidade). Como itemId agora é gravado no formato usado por falhaItems() ('flm:<id>[:porta:<id>]' ou id de equipamento), formFalha()/falhaSelectItem() (já existentes, não tocados) passam a encontrar o item automaticamente e preencher Central/Laço/Piso/Loja sozinhos — sem exigir nenhuma mudança no formulário de edição em si (itens 5/6 resolvidos como consequência direta da causa raiz corrigida, não por gambiarra na tela). MIGRAÇÃO DE FALHAS ANTIGAS (itens 12/13/14/15/16): reconstruirContextoDeFalhaAntiga(f) (linha ~3838) reconstrói pela ordem exigida — testeOrigemId/testeId → localId → itemId → endereço físico (só resolve por endereço quando bate em EXATAMENTE um item técnico; mais de um candidato vai para db.conflitosMigracao com os IDs candidatos e o motivo, sem escolher sozinho — item 14). simularSaneamentoFalhas() calcula tudo em memória (nunca salva) e devolve total/completas/completáveis/parciais/sem vínculo/ambíguas + detalhe campo a campo (valor anterior→proposto) — modo simulação do item 15. executarSaneamentoFalhas() cria backup completo de db.falhas (versão, data/hora, usuário, quantidade — item 16) em db.backupsSaneamento ANTES de tocar em qualquer registro, só preenche campos vazios (nunca sobrescreve), grava conflitos em db.conflitosMigracao, e recalcula status de pontos técnicos + sincroniza Plano de Ação no final (itens 17/19). abrirSaneamentoFalhas() (novo botão "🩹 Saneamento de vínculos", visível só para Master, na barra de filtros de Operação → Falhas) mostra o resumo + amostra do que será alterado ANTES de pedir confirmação para executar. SOLUÇÃO COSMÉTICOS (item 23): não foi recriada — se essa falha específica já existir na base do cliente com testeOrigemId ou localId gravado (o mais provável, dado o relato), o saneamento acima a completa automaticamente na próxima execução; não há como validar o registro real neste ambiente de edição de código-fonte (sem acesso à base do cliente), então a validação final deve ser feita pelo usuário rodando "🩹 Saneamento de vínculos" e conferindo o resultado da simulação antes de executar. GAPS HONESTOS: (a) a "hierarquia" formal de dependência entre campos do formulário (item 6) e os "campos somente leitura quando origem é item técnico" (item 21) não foram implementados como trava de UI nesta rodada — o comportamento já resultante (formFalha() preenche automaticamente os 4 selects a partir do item e os mantém em sincronia via falhaSelectItem()) cobre o efeito prático pedido, mas os campos continuam tecnicamente editáveis à mão; travar via disabled/readonly explícito fica como próximo passo, se o usuário confirmar que ainda vê incoerência depois desta correção; (b) detecção de conflito para migração é limitada a "mais de um item técnico com endereço físico idêntico" — não cobre todo tipo de ambiguidade teoricamente possível, mas nunca inventa vínculo quando encontra mais de um candidato. node --check validado sem erros nos scripts extraídos após todas as edições. -->
 <!-- build: 2026-07-13 v6.80 - REORGANIZAÇÃO DA ABA Operação → Testes em histórico rápido de inspeção. renderTestes() (linha ~3919, única função que desenha <section id="testes">): <thead> e cada <tr> reescritos para exatamente 9 colunas fixas — Data/Hora, Loja/Área, LUC, Sistema, Laço, Piso, Tipo de Teste, Resultado, Ações — na ordem exata pedida; Painel, Módulo, Porta, Endereço, Condição Encontrada, Observação, Responsável, Anexos, Falha Vinculada, Criado em e Última Alteração SAÍRAM da grade principal (colspan do estado vazio ajustado de 20 para 9). Nenhum campo foi apagado do banco — t.painel/t.modulo/t.porta/t.endereco/t.condicaoEncontrada/t.observacao/t.responsavel/t.fotos/t.falhaId/t.criadoEm/t.editadoEm continuam gravados exatamente como antes; só pararam de ter coluna própria na tabela. Piso resolvido via obterPisoDoRegistro()+exibirPiso() (fonte central, mesma usada em Lojas/Áreas e Plano de Ação) — nunca mostra "1"/"P1"/"Piso --"/endereço físico, e nunca repete o painel na célula de Laço. Sistema virou badge colorido (mesmo padrão azul/laranja já usado em Lojas/Áreas). Resultado agora mostra só "✅ Funcionou"/"❌ Não funcionou" (ou ⚪/🟡 + texto para os poucos valores legados fora desses dois, preservados sem quebrar). Ações reduzidas a Visualizar/Editar/Excluir/Abrir falha (removido o botão redundante "Abrir loja/ponto técnico", já disponível a partir da própria tela de Lojas/Áreas). DETALHE (item 12): viewTeste() (modal somente-leitura já existente) ampliado com campos próprios de Painel, Laço, Piso, Endereço, Módulo e Porta (antes só apareciam condensados na linha de cabeçalho do modal) — nenhuma informação retirada da grade principal deixou de estar acessível ao abrir o teste; Falha vinculada ganhou botão "Abrir falha" direto no detalhe. FILTROS (item 13): Data inicial/final, Loja, Sistema, Piso, Resultado, Tipo, Responsável e Busca — todos mantidos, nenhum removido nem alterado. PDF (item 14): renderRelatorioTestes() (linha ~4094, gera #testesReportOut) — listagem principal reduzida às mesmas 8 colunas de dados da tela (Data/Hora, Loja/Área, LUC, Sistema, Laço, Piso, Tipo de Teste, Resultado, com Resultado também só ✅/❌), seguida de um "Apêndice técnico" com Painel/Endereço/Condição/Observação/Responsável — nenhuma informação deixou de constar no PDF, só reorganizada em duas seções (resumo + apêndice), igual ao pedido. COMPATIBILIDADE: nenhum ID/vínculo/anexo/histórico/sincronização/geração de falha foi tocado — só a apresentação da tabela, do PDF e do modal de detalhe. node --check validado sem erros nos scripts extraídos após todas as edições. -->
 <!-- build: 2026-07-13 v6.79 - CORREÇÃO REAL DO CABEÇALHO/LINHAS DA TELA Operação → Plano de Ação (a v6.76 tinha corrigido só o PDF; a tela continuava com o template antigo). DIAGNÓSTICO OBRIGATÓRIO: (1) função que renderiza o cabeçalho E as linhas REAIS da tela é renderPlano() (linha ~6958, chamada por render() para a <section id="plano">) — é uma função DIFERENTE de gerarPdfPlanoAcao()/gerarPdfPlanoDetalhado() (que escrevem em #reportOut, usado só para impressão/PDF) e também diferente de planoRowsParaPdf()/planoRowsFiltrados()/buildPlanoRowsBase() (que só montam DADOS, não HTML de tabela). Não havia nome tabelaPlanoAcao()/planoHeader() no arquivo. (2) Por que a correção anterior não apareceu na tela: a rodada passada (v6.76, pedido "elimine lógica própria dos PDFs") tocou deliberadamente só os gerador de PDF — nunca teve como escopo o HTML da tela em si, então o <thead> com Prioridade/Loja·Área/Localização/Status da Falha/Direcionamento Técnico/Responsável/Situação/Prazo/Abertura/Conclusão/Evid./Ações (12 colunas) e a montagem de <tr> com 12 <td> permaneceram intactos em renderPlano() até agora — não é bug de cache nem de duas funções concorrentes: só não fazia parte do escopo da correção anterior. (3) Não existiam duas funções de renderização concorrentes nem template duplicado para esta tabela — renderPlano() é a ÚNICA função que escreve dentro de document.getElementById('plano').innerHTML (confirmado por busca no arquivo); a divergência era exclusivamente entre "o que já existe em renderPlano()" (12 colunas, célula única "Localização" combinando piso+laço+itemNome) e "o que tinha sido pedido" (10 colunas, Endereço e Piso separados). MUDANÇAS: <thead> reescrito para exatamente 10 <th> na ordem Prioridade/Loja · Área/Endereço/Piso/Status/Direcionamento/Responsável/Situação/Abertura/Ações — Localização, Prazo, Conclusão e Evid. removidos do cabeçalho. Montagem de cada <tr> reescrita para gerar exatamente 10 <td>, na mesma ordem, sem reaproveitar a <td> antiga de Localização: Endereço via obterEnderecoFisicoDoRegistro({piso,itemId,localId}) (fallback dispositivo→porta/módulo vinculado — mesma cadeia de obterLocalizacaoDoPonto()/formatarLocalizacaoTecnica(), texto "Sem endereço" quando não localizado, nunca traço isolado), Piso via obterLocalizacaoDoPonto()+exibirPiso() (texto "Sem piso" quando não localizado — nunca "Piso — —"/"P —"/endereço físico), Status usa r.statusFalha (status técnico da falha: Laço aberto/Módulo aberto/Módulo em curto/Incêndio disparado/Desativação — não a Situação do plano, que continua em sua própria coluna), cabeçalho "Direcionamento Técnico"→"Direcionamento" (conteúdo/lógica inalterados). Prazo/Conclusão/Evid. deixaram de ter coluna, mas os campos r.prazo/r.concluidoEm/r.fotoCount continuam existindo nos dados (nada apagado do banco) — ficam disponíveis nos modais de edição/histórico, fora do escopo desta tabela. CSS: não havia nenhuma regra de largura/grid dedicada a estas colunas por nome (a tabela usa <td style="..."> inline, sem classes .planoColLocalizacao/.planoColPrazo etc.) — nada precisou ser removido do CSS. EXPORTAÇÃO PDF: gerarPdfPlanoAcao()/gerarPdfPlanoDetalhado() já tinham sido corrigidas na v6.76/v6.78 (mesmas funções centrais, mesma ordem conceitual Piso+Endereço); confirmado por leitura que continuam consistentes com a nova ordem da tela, nenhuma mudança adicional necessária nelas nesta rodada. CONTAGEM FINAL: cada <tr> gera exatamente 10 <td>, o mesmo número de <th> do cabeçalho — sem desalinhamento. node --check validado sem erros nos scripts extraídos após a edição. GAP HONESTO: validação foi feita por leitura direta do template gerado (contagem de <th>/<td>, revisão de cada expressão) e node --check — não há navegador com display neste ambiente para captura de screenshot; se o usuário notar qualquer diferença visual ao abrir a tela, os pontos exatos de edição estão todos nesta mesma função (renderPlano(), linha ~6958). -->
@@ -3781,6 +3782,8 @@ function resolverContextoTecnicoDoTeste(teste){
     lojaNome:loc?(lucOfficialName(loc)||loc.nome||''):'',
     luc:loc?lucValorLocal(loc):'',
     piso,
+    // item 17 (v6.82): quando o módulo já foi identificado mas o dispositivo/porta não tem endereço
+    // próprio, usa o endereço do módulo como fallback — nunca deixa "Sem endereço" com módulo definido.
     enderecoFisico:eq?.endereco||flm?.endereco||'',
     tipoEquipamento:eq?.tipo||(flm?'Módulo':'')||'',
     modeloEquipamento:eq?.modelo||flm?.modelo||'',
@@ -3890,6 +3893,112 @@ function confirmarExecutarSaneamentoFalhas(){
   alert('Saneamento concluído: '+res.aplicadas+' falha(s) completadas automaticamente. '+res.relatorio.ambiguas+' em conflito (ver db.conflitosMigracao). Backup salvo (não removível pela UI ainda) com '+res.backup.qtdFalhas+' falhas.');
   render();
 }
+// ---- SANEAMENTO DE TESTES (2026-07-13, v6.82 — itens 8/9/10/11/14 do pedido) ----------------------
+// Espelha 100% o padrão já usado no saneamento de Falhas (v6.81): simulação sem gravar → confirmação
+// explícita → backup completo → execução que só preenche campo vazio (nunca sobrescreve) → conflito
+// registrado em db.conflitosMigracao quando há mais de um candidato. Reaproveita exclusivamente
+// resolverContextoTecnicoDoTeste() — nenhuma segunda lógica de resolução de módulo/porta/endereço.
+const TESTE_CAMPOS_CONTEXTO=['painelId','lacoId','piso','flmId','portaId','pontoTecnicoId','dispositivoId','lojaId','luc','sistemaId','moduloEndereco','enderecoFisico','portaNumero'];
+function testeContextoIncompleto(t){return !t.flmId&&!t.dispositivoId} // "módulo/dispositivo não identificado" é o sintoma relatado
+// reconstruirContextoDeTesteAntigo() (item 9): ordem exigida — pontoTecnicoId/localId → dispositivoId
+// → portaId → moduloId → enderecoFisico → lojaId/luc/sistemaId → painelId/lacoId → nome da loja (só
+// como ÚLTIMO recurso, e mesmo assim resolverContextoTecnicoDoTeste() nunca "adivinha" por nome).
+function reconstruirContextoDeTesteAntigo(t){
+  const semente={localId:t.pontoTecnicoId||t.localId||'',itemId:t.itemId||(t.dispositivoId||''),painelId:t.painelId,lacoId:t.lacoId,flmId:t.flmId,portaId:t.portaId};
+  if(semente.localId||semente.itemId||semente.flmId||semente.portaId)return {ctx:resolverContextoTecnicoDoTeste(semente),fonte:semente.localId?'localId':'itemId/flmId/portaId'};
+  const alvo=n(t.enderecoFisico||t.moduloEndereco);
+  if(alvo){
+    const candEq=(db.equipamentos||[]).filter(e=>e.endereco&&up(e.endereco)===up(alvo)).map(e=>e.id);
+    const candFlm=(db.flms||[]).filter(fl=>fl.endereco&&up(fl.endereco)===up(alvo)).map(fl=>'flm:'+fl.id);
+    const candidatos=candEq.concat(candFlm);
+    if(candidatos.length===1)return {ctx:resolverContextoTecnicoDoTeste({itemId:candidatos[0]}),fonte:'enderecoFisico'};
+    if(candidatos.length>1)return {ctx:null,fonte:'ambiguo',candidatos,motivo:'Endereço "'+alvo+'" corresponde a '+candidatos.length+' itens técnicos distintos.'};
+  }
+  return {ctx:null,fonte:'sem_vinculo'};
+}
+function simularSaneamentoTestes(){
+  const testes=(db.testes||[]).filter(t=>!t.excluido);
+  const relatorio={total:testes.length,comModulo:testes.filter(t=>t.flmId).length,completaveis:0,receberaoModuloId:0,receberaoModuloEndereco:0,receberaoEndereco:0,receberaoPorta:0,ambiguos:0,semVinculo:0,itens:[]};
+  testes.forEach(t=>{
+    if(!testeContextoIncompleto(t))return;
+    const {ctx,fonte,candidatos,motivo}=reconstruirContextoDeTesteAntigo(t);
+    if(!ctx){
+      if(fonte==='ambiguo'){relatorio.ambiguos++;relatorio.itens.push({testeId:t.id,fonte,motivo,candidatos,acao:'conflito'})}
+      else{relatorio.semVinculo++}
+      return;
+    }
+    const antes={},propostos={};
+    let algumCampoNovo=false;
+    TESTE_CAMPOS_CONTEXTO.forEach(campo=>{
+      const chaveCtx=campo==='flmId'?'moduloId':campo;
+      const valorAtual=t[campo];
+      const valorProposto=ctx[chaveCtx];
+      if(!valorAtual&&valorProposto){antes[campo]=valorAtual||'';propostos[campo]=valorProposto;algumCampoNovo=true}
+    });
+    if(algumCampoNovo){
+      relatorio.completaveis++;
+      if(propostos.flmId)relatorio.receberaoModuloId++;
+      if(propostos.moduloEndereco)relatorio.receberaoModuloEndereco++;
+      if(propostos.enderecoFisico)relatorio.receberaoEndereco++;
+      if(propostos.portaId)relatorio.receberaoPorta++;
+      relatorio.itens.push({testeId:t.id,fonte,acao:'completar',antes,propostos,loja:ctx.lojaNome,sistema:ctx.sistemaId,laco:ctx.lacoNumero,moduloAnterior:t.moduloEndereco||'—',moduloProposto:ctx.moduloEndereco||'—',enderecoAnterior:t.enderecoFisico||'—',enderecoProposto:ctx.enderecoFisico||'—'});
+    }
+  });
+  return relatorio;
+}
+function executarSaneamentoTestes(){
+  if(!requireAccess('editarFalhaPlano','Seu perfil não pode executar o saneamento de testes.'))return null;
+  const backup={versao:(db.config&&db.config.versaoBanner)||'',dataHora:isoNow(),usuario:(currentUser().email||currentUser().nome||''),qtdTestes:(db.testes||[]).length,qtdFalhas:(db.falhas||[]).length,qtdPlanos:(db.planos||[]).length,snapshot:JSON.parse(JSON.stringify(db.testes||[]))};
+  db.backupsSaneamento=db.backupsSaneamento||[];
+  db.backupsSaneamento.push(backup);
+  db.conflitosMigracao=db.conflitosMigracao||[];
+  const relatorio=simularSaneamentoTestes();
+  let aplicadas=0;
+  relatorio.itens.forEach(it=>{
+    const t=(db.testes||[]).find(x=>x.id===it.testeId); if(!t)return;
+    if(it.acao==='completar'){
+      Object.entries(it.propostos).forEach(([campo,valor])=>{if(!t[campo])t[campo]=valor});
+      aplicadas++;
+      // item 14: completa também o módulo na FALHA vinculada, quando existir e estiver vazia —
+      // sem criar outra falha, sem duplicar, mantendo testeOrigemId/falhaGeradaId como já estavam.
+      if(t.falhaId){
+        const f=(db.falhas||[]).find(x=>x.id===t.falhaId);
+        if(f){
+          if(!f.flmId&&t.flmId)f.flmId=t.flmId;
+          if(!f.itemId&&t.itemId)f.itemId=t.itemId;
+          if(!f.piso&&t.piso)f.piso=t.piso;
+          if(!f.painelId&&t.painelId)f.painelId=t.painelId;
+          if(!f.lacoId&&t.lacoId)f.lacoId=t.lacoId;
+          if(!f.portaId&&t.portaId)f.portaId=t.portaId;
+          if(!f.enderecoFisico&&t.enderecoFisico)f.enderecoFisico=t.enderecoFisico;
+        }
+      }
+      logLocal('teste',t.id,'saneamento_contexto','Contexto técnico completado por saneamento automático (fonte: '+it.fonte+'): '+Object.keys(it.propostos).join(', ')+'.');
+    } else if(it.acao==='conflito'){
+      db.conflitosMigracao.push({id:id(),testeId:t.id,candidatos:it.candidatos,motivo:it.motivo,dataHora:isoNow(),resolvido:false});
+    }
+  });
+  sincronizarPlanosFalhas(db);
+  recalcularStatusPontosTecnicos(db);
+  logLocal('sistema','saneamento_testes','executar','Saneamento de testes executado: '+aplicadas+' completados, '+relatorio.ambiguos+' em conflito. Backup de '+backup.qtdTestes+' testes / '+backup.qtdFalhas+' falhas / '+backup.qtdPlanos+' planos salvo em db.backupsSaneamento.');
+  return {relatorio,aplicadas,backup};
+}
+function abrirSaneamentoTestes(){
+  const r=simularSaneamentoTestes();
+  const linhasAmostra=r.itens.filter(x=>x.acao==='completar').slice(0,15).map(x=>`<tr><td style="font-size:11px">${esc(x.loja||'—')}</td><td style="font-size:11px">${esc(x.sistema||'—')}</td><td style="font-size:11px">${esc(x.laco||'—')}</td><td style="font-size:11px">${esc(x.moduloAnterior)} → ${esc(x.moduloProposto)}</td><td style="font-size:11px">${esc(x.enderecoAnterior)} → ${esc(x.enderecoProposto)}</td><td style="font-size:11px">${esc(x.fonte)}</td></tr>`).join('');
+  openModal(`<h2>Saneamento de vínculos técnicos — Testes</h2>
+  <div class="msg warn" style="margin-bottom:10px">Modo simulação (nada foi salvo ainda). Revise o resumo abaixo antes de executar.</div>
+  <div class="grid">${kpi('Total analisado',r.total)}${kpi('Já com módulo',r.comModulo)}${kpi('Completáveis agora',r.completaveis)}${kpi('Vão receber módulo',r.receberaoModuloId)}${kpi('Vão receber endereço',r.receberaoEndereco)}${kpi('Vão receber porta',r.receberaoPorta)}${kpi('Ambíguos (conflito)',r.ambiguos)}${kpi('Sem vínculo possível',r.semVinculo)}</div>
+  ${r.completaveis?`<h4 style="margin-top:12px">Amostra do que será preenchido (até 15 de ${r.completaveis})</h4><div class="tableWrap"><table><thead><tr><th>Loja</th><th>Sistema</th><th>Laço</th><th>Módulo (antes → proposto)</th><th>Endereço (antes → proposto)</th><th>Fonte</th></tr></thead><tbody>${linhasAmostra}</tbody></table></div>`:''}
+  ${r.ambiguos?`<p class="msg warn" style="margin-top:10px">${r.ambiguos} teste(s) ficarão registrados em db.conflitosMigracao para validação manual — nenhum vínculo será escolhido automaticamente para eles.</p>`:''}
+  <br>${r.completaveis?`<button class="btn" onclick="confirmarExecutarSaneamentoTestes()">Executar saneamento (${r.completaveis} testes)</button>`:''} <button class="btn secondary" onclick="closeModal()">Fechar</button>`);
+}
+function confirmarExecutarSaneamentoTestes(){
+  const res=executarSaneamentoTestes(); if(!res)return;
+  closeModal(); save();
+  alert('Saneamento concluído: '+res.aplicadas+' teste(s) completados automaticamente. '+res.relatorio.ambiguos+' em conflito (ver db.conflitosMigracao). Backup salvo com '+res.backup.qtdTestes+' testes / '+res.backup.qtdFalhas+' falhas / '+res.backup.qtdPlanos+' planos.');
+  render();
+}
 // criarTeste(): SEMPRE registra o teste em db.testes. Só cria uma falha em db.falhas quando
 // confirmarFalha===true (decisão explícita do usuário na tela, nunca automática) — corrige o
 // comportamento anterior que criava falha sozinho sempre que resultado==='Não Conforme'.
@@ -3901,6 +4010,32 @@ function confirmarExecutarSaneamentoFalhas(){
 function criarTeste({localId,itemId,painelId,lacoId,flmId,portaId,responsavel,data,tipoTeste,resultado,observacao,fotos,statusTecnico,confirmarFalha,origem,reuseFalha}){
   db.testes=db.testes||[];
   const novoTeste={id:id(),localId:localId||'',itemId:itemId||'',painelId:painelId||'',lacoId:lacoId||'',flmId:flmId||'',portaId:portaId||'',responsavel:responsavel||'',usuario:(currentUser().nome)||'',data:data||isoNow(),tipoTeste:tipoTeste||'Teste geral da loja',resultado:resultado||'Em funcionamento',observacao:observacao||'',fotos:fotos||[],origem:origem||'Manual',falhaId:'',criadoEm:isoNow(),criadoPor:(currentUser().email||currentUser().nome||''),excluido:false};
+  // CORREÇÃO (2026-07-13, v6.82 — item 1/4 do pedido): a v6.81 só resolvia o contexto técnico
+  // (resolverContextoTecnicoDoTeste) DENTRO do bloco de criação de falha — o registro do TESTE em si
+  // nunca herdava moduloId/moduloEndereco/enderecoFisico/portaNumero/pontoTecnicoId/lojaId/lojaNome/
+  // luc/sistemaId/dispositivoId, mesmo quando saveTeste() não passava esses parâmetros (o caso normal
+  // da tela "Executar teste", que só informa localId). Isso é a causa raiz do "Módulo: —" mesmo com
+  // Painel/Laço/Piso corretos (esses três já eram resolvidos em LEITURA por obterLocalizacaoDoPonto()/
+  // obterPisoDoRegistro() nas telas de Testes/Falhas — mas o campo Módulo do detalhe do teste (v6.80)
+  // lia direto `t.flmId`, que nunca tinha sido gravado). Agora todo teste NOVO já nasce com o contexto
+  // técnico completo gravado, reaproveitando 100% de resolverContextoTecnicoDoTeste() (nenhuma segunda
+  // lógica de resolução criada) — nunca sobrescreve um valor explicitamente passado pelo chamador.
+  const ctxNovo=resolverContextoTecnicoDoTeste(novoTeste);
+  novoTeste.painelId=novoTeste.painelId||ctxNovo.painelId;
+  novoTeste.lacoId=novoTeste.lacoId||ctxNovo.lacoId;
+  novoTeste.flmId=novoTeste.flmId||ctxNovo.moduloId;
+  novoTeste.portaId=novoTeste.portaId||ctxNovo.portaId;
+  novoTeste.moduloEndereco=ctxNovo.moduloEndereco||'';
+  novoTeste.portaNumero=ctxNovo.portaNumero||'';
+  novoTeste.pontoTecnicoId=ctxNovo.pontoTecnicoId||novoTeste.localId;
+  novoTeste.dispositivoId=ctxNovo.dispositivoId||'';
+  novoTeste.lojaId=ctxNovo.lojaId||novoTeste.localId;
+  novoTeste.lojaNome=ctxNovo.lojaNome||'';
+  novoTeste.luc=ctxNovo.luc||'';
+  novoTeste.sistemaId=ctxNovo.sistemaId||'';
+  // item 17: se o módulo foi identificado mas não há endereço físico próprio de dispositivo, usa o
+  // endereço do módulo como fallback — nunca mostra "Sem endereço" quando o módulo já foi resolvido.
+  novoTeste.enderecoFisico=ctxNovo.enderecoFisico||ctxNovo.moduloEndereco||'';
   db.testes.push(novoTeste);
   logLocal('teste',novoTeste.id,'registrar','Teste registrado: '+novoTeste.resultado+' — '+(locName(localId)||itemId||'')+' — tipo: '+(novoTeste.tipoTeste||'—')+' — anexos: '+(novoTeste.fotos||[]).length);
   const resultadosQuePermitemFalha=['Funcionamento parcial','Não funcionou'];
@@ -4158,7 +4293,7 @@ function renderTestes(){
       <div class="field"><label>Tipo</label><select onchange="filters.testes={...filters.testes,tipo:this.value};render()">${selectOpts(TESTE_TIPOS,f.tipo)}</select></div>
       <div class="field"><label>Responsável</label><select onchange="filters.testes={...filters.testes,responsavel:this.value};render()">${selectOpts(resps,f.responsavel)}</select></div>
       <div class="field searchField"><label>Busca</label><div class="searchBox"><input value="${escSearchVal(f.q||'')}" data-filter-input="1" data-filter-group="testes" data-filter-key="q" data-focus-key="testesBusca" placeholder="Loja, LUC, sistema, painel, laço, piso..." autocomplete="off">${f.q?`<button type="button" class="searchClear" title="Limpar busca" onclick="filters.testes={...filters.testes,q:''};render()">×</button>`:''}</div></div>
-      <div class="dsFilterActions"><button class="btn secondary small" onclick="limparFiltrosTela('testes')">Limpar filtros</button><button class="btn small" onclick="abrirRelatorioTestes()">📄 Gerar Relatório</button></div>
+      <div class="dsFilterActions"><button class="btn secondary small" onclick="limparFiltrosTela('testes')">Limpar filtros</button>${isMaster(currentUserSafe())?`<button class="btn secondary small" onclick="abrirSaneamentoTestes()" title="Completa módulo/porta/painel/laço/piso/endereço de testes antigos a partir do ponto técnico vinculado">🩹 Saneamento de vínculos</button>`:''}<button class="btn small" onclick="abrirRelatorioTestes()">📄 Gerar Relatório</button></div>
     </div>
     <div class="searchResultCount">${resultCountLabel(rows.length,semBusca.length,semResultado)}</div>
     <div class="dsTableWrap">
@@ -4175,30 +4310,32 @@ function renderTestes(){
 // viewTeste(): modal somente-leitura com todos os campos pedidos (item 4) + anexos.
 function viewTeste(idTeste){
   const t=(db.testes||[]).find(x=>x.id===idTeste); if(!t){alert('Teste não encontrado.');return}
-  const loc=localById(t.localId); const falha=t.falhaId?(db.falhas||[]).find(x=>x.id===t.falhaId):null;
-  // AMPLIADO (2026-07-13, v6.80): a tabela principal passou a ser um histórico resumido — este painel
-  // de detalhe (já existia como modal somente-leitura) ganhou Painel/Laço/Piso/Endereço/Módulo/Porta
-  // explícitos como campos próprios (antes só apareciam condensados na linha de cabeçalho do modal),
-  // para nenhuma informação técnica se perder ao sair da grade principal. Piso via obterPisoDoRegistro
-  // (fonte central), endereço via item vinculado ao teste (mesmo campo já calculado em testesFiltrados
-  // e reaproveitado aqui a partir de db.equipamentos/flmById).
-  let enderecoTeste='';
-  if(t.itemId){const isFlm=String(t.itemId).startsWith('flm:'); const item=isFlm?flmById(String(t.itemId).slice(4)):db.equipamentos.find(e=>e.id===t.itemId); enderecoTeste=item?(item.endereco||item.modelo||''):''}
-  const pisoKey=obterPisoDoRegistro({piso:loc?.piso,localId:t.localId,itemId:t.itemId,flmId:t.flmId,portaId:t.portaId});
-  const pisoTxt=pisoKey?exibirPiso(pisoKey):'Sem piso';
-  const moduloTxt=flmById(loc?.flmId||t.flmId)?.nome||'—';
-  const portaTxt=(t.portaId?db.portas.find(p=>p.id===t.portaId)?.numero:loc?.portaId?db.portas.find(p=>p.id===loc.portaId)?.numero:'')||'—';
-  openModal(`<h2>Teste — ${esc(loc?.nomeOficial||loc?.nome||'—')}</h2>
-  <div class="compactHelp" style="margin-bottom:10px"><span class="pill ${(loc?.sistema||'SDAI')==='CO2'?'warn':'info'}">${esc(loc?.sistema||'—')}</span> <b>${esc(paiName(loc?.painelId)||'—')}</b> • Laço ${esc(lacName(loc?.lacoId)||'—')} • ${esc(pisoTxt)} • LUC ${esc(loc?.luc||'—')}</div>
+  const falha=t.falhaId?(db.falhas||[]).find(x=>x.id===t.falhaId):null;
+  // CORREÇÃO (2026-07-13, v6.82 — item 12 do pedido): antes o campo Módulo lia direto `flmById(loc?.
+  // flmId||t.flmId)` — se nenhum dos dois estivesse gravado (caso normal de testes antigos, e mesmo de
+  // testes novos antes desta versão), mostrava "—" mesmo com Painel/Laço/Piso corretos (esses três já
+  // vinham de obterPisoDoRegistro()/paiName()/lacName(), que TÊM fallback por porta/local; o Módulo
+  // não tinha). Agora usa resolverContextoTecnicoDoTeste(t) — MESMA função central usada na criação do
+  // teste/falha (item 3: fonte única, nenhuma lógica paralela) — que resolve módulo/porta/endereço pela
+  // cadeia completa (ponto técnico → equipamento → módulo → porta) mesmo para um teste ainda não
+  // saneado, sem exigir migração antes de exibir corretamente (item 12: "resolver o contexto em tempo
+  // de leitura").
+  const ctx=resolverContextoTecnicoDoTeste(t);
+  const pisoTxt=ctx.piso?exibirPiso(ctx.piso):'Sem piso';
+  const moduloTxt=ctx.moduloId?('Módulo '+(ctx.moduloEndereco||ctx.moduloId)):'Não se aplica';
+  const enderecoTxt=ctx.enderecoFisico||'Sem endereço';
+  const portaTxt=ctx.portaNumero?String(ctx.portaNumero):(ctx.portaId?'—':'Não se aplica');
+  openModal(`<h2>Teste — ${esc(ctx.lojaNome||'—')}</h2>
+  <div class="compactHelp" style="margin-bottom:10px"><span class="pill ${ctx.sistemaId==='CO2'?'warn':'info'}">${esc(ctx.sistemaId||'—')}</span> <b>${esc(ctx.painelNome||'—')}</b> • Laço ${esc(ctx.lacoNumero||'—')} • ${esc(pisoTxt)} • LUC ${esc(ctx.luc||'—')}</div>
   <div class="formGrid">
     <div class="field"><label>Data/Hora</label><div>${esc((t.data||'').replace('T',' '))}</div></div>
     <div class="field"><label>Tipo de teste</label><div>${esc(t.tipoTeste||'—')}</div></div>
     <div class="field"><label>Resultado</label><div>${iconeResultadoTeste(t.resultado)} ${esc(t.resultado||'—')}</div></div>
     <div class="field"><label>Responsável</label><div>${esc(t.responsavel||'—')}</div></div>
-    <div class="field"><label>Painel</label><div>${esc(paiName(loc?.painelId)||'—')}</div></div>
-    <div class="field"><label>Laço</label><div>${esc(lacName(loc?.lacoId)||'—')}</div></div>
+    <div class="field"><label>Painel</label><div>${esc(ctx.painelNome||'—')}</div></div>
+    <div class="field"><label>Laço</label><div>${esc(ctx.lacoNumero||'—')}</div></div>
     <div class="field"><label>Piso</label><div>${esc(pisoTxt)}</div></div>
-    <div class="field"><label>Endereço</label><div>${esc(enderecoTeste||'Sem endereço')}</div></div>
+    <div class="field"><label>Endereço</label><div>${esc(enderecoTxt)}</div></div>
     <div class="field"><label>Módulo</label><div>${esc(moduloTxt)}</div></div>
     <div class="field"><label>Porta</label><div>${esc(portaTxt)}</div></div>
     <div class="field" style="grid-column:1/-1"><label>Observação</label><div>${esc(t.observacao||'—')}</div></div>
