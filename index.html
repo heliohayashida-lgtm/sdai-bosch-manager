@@ -1,4 +1,5 @@
 <!doctype html>
+<!-- build: 2026-07-13 v6.80 - REORGANIZAÇÃO DA ABA Operação → Testes em histórico rápido de inspeção. renderTestes() (linha ~3919, única função que desenha <section id="testes">): <thead> e cada <tr> reescritos para exatamente 9 colunas fixas — Data/Hora, Loja/Área, LUC, Sistema, Laço, Piso, Tipo de Teste, Resultado, Ações — na ordem exata pedida; Painel, Módulo, Porta, Endereço, Condição Encontrada, Observação, Responsável, Anexos, Falha Vinculada, Criado em e Última Alteração SAÍRAM da grade principal (colspan do estado vazio ajustado de 20 para 9). Nenhum campo foi apagado do banco — t.painel/t.modulo/t.porta/t.endereco/t.condicaoEncontrada/t.observacao/t.responsavel/t.fotos/t.falhaId/t.criadoEm/t.editadoEm continuam gravados exatamente como antes; só pararam de ter coluna própria na tabela. Piso resolvido via obterPisoDoRegistro()+exibirPiso() (fonte central, mesma usada em Lojas/Áreas e Plano de Ação) — nunca mostra "1"/"P1"/"Piso --"/endereço físico, e nunca repete o painel na célula de Laço. Sistema virou badge colorido (mesmo padrão azul/laranja já usado em Lojas/Áreas). Resultado agora mostra só "✅ Funcionou"/"❌ Não funcionou" (ou ⚪/🟡 + texto para os poucos valores legados fora desses dois, preservados sem quebrar). Ações reduzidas a Visualizar/Editar/Excluir/Abrir falha (removido o botão redundante "Abrir loja/ponto técnico", já disponível a partir da própria tela de Lojas/Áreas). DETALHE (item 12): viewTeste() (modal somente-leitura já existente) ampliado com campos próprios de Painel, Laço, Piso, Endereço, Módulo e Porta (antes só apareciam condensados na linha de cabeçalho do modal) — nenhuma informação retirada da grade principal deixou de estar acessível ao abrir o teste; Falha vinculada ganhou botão "Abrir falha" direto no detalhe. FILTROS (item 13): Data inicial/final, Loja, Sistema, Piso, Resultado, Tipo, Responsável e Busca — todos mantidos, nenhum removido nem alterado. PDF (item 14): renderRelatorioTestes() (linha ~4094, gera #testesReportOut) — listagem principal reduzida às mesmas 8 colunas de dados da tela (Data/Hora, Loja/Área, LUC, Sistema, Laço, Piso, Tipo de Teste, Resultado, com Resultado também só ✅/❌), seguida de um "Apêndice técnico" com Painel/Endereço/Condição/Observação/Responsável — nenhuma informação deixou de constar no PDF, só reorganizada em duas seções (resumo + apêndice), igual ao pedido. COMPATIBILIDADE: nenhum ID/vínculo/anexo/histórico/sincronização/geração de falha foi tocado — só a apresentação da tabela, do PDF e do modal de detalhe. node --check validado sem erros nos scripts extraídos após todas as edições. -->
 <!-- build: 2026-07-13 v6.79 - CORREÇÃO REAL DO CABEÇALHO/LINHAS DA TELA Operação → Plano de Ação (a v6.76 tinha corrigido só o PDF; a tela continuava com o template antigo). DIAGNÓSTICO OBRIGATÓRIO: (1) função que renderiza o cabeçalho E as linhas REAIS da tela é renderPlano() (linha ~6958, chamada por render() para a <section id="plano">) — é uma função DIFERENTE de gerarPdfPlanoAcao()/gerarPdfPlanoDetalhado() (que escrevem em #reportOut, usado só para impressão/PDF) e também diferente de planoRowsParaPdf()/planoRowsFiltrados()/buildPlanoRowsBase() (que só montam DADOS, não HTML de tabela). Não havia nome tabelaPlanoAcao()/planoHeader() no arquivo. (2) Por que a correção anterior não apareceu na tela: a rodada passada (v6.76, pedido "elimine lógica própria dos PDFs") tocou deliberadamente só os gerador de PDF — nunca teve como escopo o HTML da tela em si, então o <thead> com Prioridade/Loja·Área/Localização/Status da Falha/Direcionamento Técnico/Responsável/Situação/Prazo/Abertura/Conclusão/Evid./Ações (12 colunas) e a montagem de <tr> com 12 <td> permaneceram intactos em renderPlano() até agora — não é bug de cache nem de duas funções concorrentes: só não fazia parte do escopo da correção anterior. (3) Não existiam duas funções de renderização concorrentes nem template duplicado para esta tabela — renderPlano() é a ÚNICA função que escreve dentro de document.getElementById('plano').innerHTML (confirmado por busca no arquivo); a divergência era exclusivamente entre "o que já existe em renderPlano()" (12 colunas, célula única "Localização" combinando piso+laço+itemNome) e "o que tinha sido pedido" (10 colunas, Endereço e Piso separados). MUDANÇAS: <thead> reescrito para exatamente 10 <th> na ordem Prioridade/Loja · Área/Endereço/Piso/Status/Direcionamento/Responsável/Situação/Abertura/Ações — Localização, Prazo, Conclusão e Evid. removidos do cabeçalho. Montagem de cada <tr> reescrita para gerar exatamente 10 <td>, na mesma ordem, sem reaproveitar a <td> antiga de Localização: Endereço via obterEnderecoFisicoDoRegistro({piso,itemId,localId}) (fallback dispositivo→porta/módulo vinculado — mesma cadeia de obterLocalizacaoDoPonto()/formatarLocalizacaoTecnica(), texto "Sem endereço" quando não localizado, nunca traço isolado), Piso via obterLocalizacaoDoPonto()+exibirPiso() (texto "Sem piso" quando não localizado — nunca "Piso — —"/"P —"/endereço físico), Status usa r.statusFalha (status técnico da falha: Laço aberto/Módulo aberto/Módulo em curto/Incêndio disparado/Desativação — não a Situação do plano, que continua em sua própria coluna), cabeçalho "Direcionamento Técnico"→"Direcionamento" (conteúdo/lógica inalterados). Prazo/Conclusão/Evid. deixaram de ter coluna, mas os campos r.prazo/r.concluidoEm/r.fotoCount continuam existindo nos dados (nada apagado do banco) — ficam disponíveis nos modais de edição/histórico, fora do escopo desta tabela. CSS: não havia nenhuma regra de largura/grid dedicada a estas colunas por nome (a tabela usa <td style="..."> inline, sem classes .planoColLocalizacao/.planoColPrazo etc.) — nada precisou ser removido do CSS. EXPORTAÇÃO PDF: gerarPdfPlanoAcao()/gerarPdfPlanoDetalhado() já tinham sido corrigidas na v6.76/v6.78 (mesmas funções centrais, mesma ordem conceitual Piso+Endereço); confirmado por leitura que continuam consistentes com a nova ordem da tela, nenhuma mudança adicional necessária nelas nesta rodada. CONTAGEM FINAL: cada <tr> gera exatamente 10 <td>, o mesmo número de <th> do cabeçalho — sem desalinhamento. node --check validado sem erros nos scripts extraídos após a edição. GAP HONESTO: validação foi feita por leitura direta do template gerado (contagem de <th>/<td>, revisão de cada expressão) e node --check — não há navegador com display neste ambiente para captura de screenshot; se o usuário notar qualquer diferença visual ao abrir a tela, os pontos exatos de edição estão todos nesta mesma função (renderPlano(), linha ~6958). -->
 <!-- build: 2026-07-13 v6.78 - PDF/EXPORTAÇÃO: eliminada lógica própria de piso/localização nos geradores de PDF; agora usam obrigatoriamente as mesmas funções centrais da tela. DIAGNÓSTICO (por gerador, feito por leitura direta de cada função que grava em #reportOut/#testesReportOut e chama window.print(), sem subagente): (1) renderRelatorioTestes() (linha ~4078, botão "📄 Gerar PDF (A4)" em #testesReportOut) — BUG REAL: coluna "Piso" da tabela usava a coluna bruta `piso` (texto exatamente como testesFiltrados() copiou de loc.piso — "1","P1","01" etc.), diferente da tela de Testes (que já usa exibirPiso() desde v6.7x) — corrigido para formatarLocalizacaoOperacional(); também adicionada coluna "Endereço" explícita (antes ausente neste PDF), via formatarEnderecoTecnico(). (2) gerarPdfPlanoAcao()/planoRowsParaPdf() (linha ~7095, roteiro de campo por Piso/Laço) — BUG REAL, o mais grave: o agrupamento por piso usava a CHAVE BRUTA `r.piso` (`(r.piso||'Sem piso')+' | '+laco`) — registros do mesmo piso gravados em formatos diferentes ("1","P1","01") caíam em BLOCOS SEPARADOS no PDF (título do bloco também mostrava o texto bruto, ex. "P1" em vez de "Piso 1"), exatamente o sintoma relatado ("agrupamento por piso incorreto"/"piso divergente da tela"). Corrigido: chave de agrupamento agora vem de obterPisoDoRegistro() (normalizada) e o título do bloco de exibirPiso() do mesmo valor — registros equivalentes (1/01/P1/Piso1/Piso 1) agora caem SEMPRE no mesmo bloco "Piso 1". Colunas "Piso" e "Endereço" também foram adicionadas por LINHA (antes só existiam como título do bloco, sem coluna própria, e endereço não aparecia em lugar nenhum deste PDF) via formatarLocalizacaoOperacional()/formatarEnderecoTecnico(). (3) gerarPdfPlanoDetalhado() (linha ~7126) — já usava exibirPiso(r.piso) corretamente (sem bug de agrupamento, pois é um PDF de cards individuais, não agrupado); trocado por formatarLocalizacaoOperacional() por padronização e adicionada linha "Endereço" explícita (antes ausente). (4) Relatório Executivo SDAI (renderRelatorioExecutivoSDAI()/relFalhasResumo(), linha ~7235) — auditado e CONFIRMADO já correto (usa exibirPiso(r.piso) desde a correção de contagem duplicada do v6.74); nenhuma mudança necessária. NOVAS FUNÇÕES CENTRAIS (wrappers finos, thin sobre obterLocalizacaoDoPonto()/exibirPiso() já existentes — NADA duplicado): obterPisoDoRegistro(registro) (chave normalizada, para agrupamento), obterEnderecoFisicoDoRegistro(registro) (mesma cadeia de vínculos de obterLocalizacaoDoPonto: registro.endereco → equipamento por itemId/localId → módulo/FLM por flmId/porta/"flm:id"), formatarLocalizacaoOperacional(registro) (texto só-piso pronto p/ exportação, "Piso 2"/"Piso —"), formatarEnderecoTecnico(registro) (texto só-endereço, "3.1.47.0"/"—") — linha ~6787, logo após obterLocalizacaoDoPonto(). CAMPOS LEGADOS QUE AINDA ERAM LIDOS DIRETO E FORAM SUBSTITUÍDOS: testesFiltrados().piso (bruto) em renderRelatorioTestes(); r.piso (bruto) na chave/título de agrupamento de gerarPdfPlanoAcao(). CAMPOS QUE JÁ NÃO EXISTIAM/NÃO SE APLICAVAM: não há falha.localizacao/teste.localizacao/plano.localizacao nem registro.localizacao em nenhum lugar do arquivo (grep confirmado) — o sistema nunca teve esse campo; a divergência vinha só de comparar/exibir `piso` sem normalizar, não de um campo "localizacao" legado. PDFs de Falhas e de Lojas/Áreas isoladas: não existe hoje um gerador de PDF dedicado a essas duas telas (só exportação CSV/JSON em Administração → Exportações, que não usa piso/localização calculada) — a única exportação PDF que cobre Falhas é o Relatório Executivo consolidado (já correto, item 4). RESULTADO: os 3 PDFs auditados (Testes, Plano de Ação roteiro, Plano de Ação detalhado) agora usam exclusivamente as funções centrais da tela — nenhum deles recalcula piso/endereço com lógica própria. node --check validado sem erros nos scripts extraídos após todas as edições. -->
 <!-- build: 2026-07-12 v6.77 - REORGANIZAÇÃO DA TABELA DE LOJAS/ÁREAS: coluna única "Localização" (que misturava piso+painel+laço+módulo+endereço em formatarLocalizacaoTecnica()) foi separada em 4 colunas próprias, sem tocar em nenhum outro dado/vínculo. NOVA ORDEM DA TABELA (renderLocais(), thead linha ~3464, corpo linha ~3412): Loja/Área → LUC → Localização → Endereço → Status → Último Teste → Ações. (1) Loja/Área: agora mostra só nome (lucOfficialName()||r.nome) na linha principal e, na linha secundária, classificação (Loja/Área Técnica/Área Comum/Área Administrativa via localClass()) + badge do sistema — o texto "LUC N" que antes aparecia aqui foi removido (saiu para a coluna própria). (2) LUC: coluna nova, exibe só o valor de lucValorLocal(r) (ou múltiplos já unidos por "/" quando o cadastro guarda assim) ou "—", sem repetir a palavra "LUC" na célula. (3) Localização: agora mostra EXCLUSIVAMENTE o piso, resolvido via obterLocalizacaoDoPonto()/exibirPiso() (mesma função central já usada em v6.75/v6.76 — não recriada), com ⚠ se houver divergência entre fontes vinculadas; nunca mais mistura painel/laço/módulo/endereço nesta célula. (4) Endereço: coluna nova, mostra exclusivamente r.flmEndereco (endereço físico do módulo/dispositivo vinculado ao ponto, já calculado no mapeamento de `todos` no topo da função, linha ~3355) ou "—"; não inclui piso/painel/laço, como pedido. (5)(6)(7) Status/Último Teste/Ações: comportamento 100% inalterado. (8) Equipamentos: já não existia desde a correção anterior (v6.76) — confirmado ausente. COMPATIBILIDADE: nenhum filtro, vínculo, ID, teste, falha, histórico, planta, marcador ou sincronização foi tocado — só a apresentação da tabela (thead + montagem de cada <tr>); os filtros de Piso/Painel/Laço/Loja continuam usando os mesmos campos de sempre (pisoEq/lacoEq). colspan do estado vazio ajustado de 5 para 7 colunas. node --check validado sem erros nos scripts extraídos após a edição. -->
@@ -3925,34 +3926,32 @@ function renderTestes(){
   const comFalha=base.filter(t=>t.falhaId).length;
   const semResultado=f.q&&!rows.length&&semBusca.length>0;
   const lojas=unique(base.map(t=>t.loja)), pisos=uniquePiso(base.map(t=>t.piso)), resps=unique(base.map(t=>t.responsavel));
+  // REORGANIZAÇÃO (2026-07-13, v6.80): a tabela principal de Testes virou um histórico rápido de
+  // inspeção — 9 colunas fixas (Data/Hora, Loja/Área, LUC, Sistema, Laço, Piso, Tipo de Teste,
+  // Resultado, Ações). Painel/Módulo/Porta/Endereço/Condição encontrada/Observação/Responsável/
+  // Anexos/Falha vinculada/Criado em/Última alteração SAÍRAM da grade principal, mas continuam 100%
+  // no banco (t.painel/t.endereco/t.observacao/etc. não foram tocados) — só passaram a aparecer
+  // exclusivamente no painel de detalhe (viewTeste(), já existente, complementado agora com Endereço/
+  // Módulo/Porta/Painel, que faltavam nele). Piso resolvido via obterPisoDoRegistro()+exibirPiso()
+  // (mesma fonte central usada em Lojas/Áreas e nos PDFs) — nunca mostra "1"/"P1"/"Piso --"/endereço.
   const trs=rows.map(r=>{
     const resultadoIcone=iconeResultadoTeste(r.resultado);
+    const pisoKey=obterPisoDoRegistro({piso:r.piso,localId:r.localId,itemId:r.itemId,flmId:r.flmId,portaId:r.portaId});
+    const pisoTxt=pisoKey?exibirPiso(pisoKey):'—';
     return `<tr>
       <td>${dsDateHtml(r.data)}</td>
       <td><div style="font-weight:700;font-size:13px">${esc(r.loja||'—')}</div>${r.sistema?`<span class="pill ${r.sistema==='CO2'?'warn':'info'}" style="font-size:10.5px;padding:1px 6px">${esc(r.sistema)}</span>`:''}</td>
       <td>${esc(r.luc||'—')}</td>
-      <td>${esc(r.sistema||'—')}</td>
-      <td>${esc(r.painel||'—')}</td>
+      <td><span class="pill ${r.sistema==='CO2'?'warn':'info'}" style="font-size:10.5px;padding:2px 7px">${esc(r.sistema||'—')}</span></td>
       <td>${esc(r.laco||'—')}</td>
-      <td>${esc(exibirPiso(r.piso)||'—')}</td>
-      <td>${esc(r.modulo||'—')}</td>
-      <td>${esc(r.porta||'—')}</td>
-      <td>${esc(r.endereco||'—')}</td>
+      <td>${esc(pisoTxt)}</td>
       <td>${esc(r.tipoTeste||'—')}</td>
       <td>${resultadoIcone} ${esc(r.resultado||'—')}</td>
-      <td>${r.condicaoEncontrada?esc(r.condicaoEncontrada)+(r.falhaSituacao?` (${esc(r.falhaSituacao)})`:''):'—'}</td>
-      <td style="max-width:180px;font-size:12px">${esc(r.observacao||'—')}</td>
-      <td style="font-size:12px">${esc(r.responsavel||'—')}</td>
-      <td>${fotosThumbsHtml(r.fotos,32)}</td>
-      <td>${r.falhaId?`<button class="dsIco" onclick="formFalha('${r.falhaId}')" title="Abrir falha">🚩</button>`:'—'}</td>
-      <td style="font-size:11px">${esc((r.criadoEm||'').replace('T',' '))}</td>
-      <td style="font-size:11px">${esc((r.editadoEm||'—'))}</td>
       <td><div class="dsIcoGroup">
         <button class="dsIco" onclick="viewTeste('${r.id}')" title="Visualizar">👁️</button>
         <button class="dsIco" onclick="editTeste('${r.id}')" title="Editar">✏️</button>
         <button class="dsIco" onclick="excluirTeste('${r.id}')" title="Excluir">🗑️</button>
         ${r.falhaId?`<button class="dsIco" onclick="formFalha('${r.falhaId}')" title="Abrir falha">🚩</button>`:''}
-        ${r.localId?`<button class="dsIco" onclick="openLocal('${r.localId}')" title="Abrir loja/ponto técnico">🏬</button>`:''}
       </div></td>
     </tr>`;
   }).join('');
@@ -3979,12 +3978,10 @@ function renderTestes(){
     <div class="dsTableWrap">
       <table class="dsTable">
         <thead><tr>
-          <th>Data/Hora</th><th>Loja</th><th>LUC</th><th>Sistema</th><th>Painel</th><th>Laço</th>
-          <th>Piso</th><th>Módulo</th><th>Porta</th><th>Endereço</th><th>Tipo de teste</th>
-          <th>Resultado</th><th>Condição encontrada</th><th>Observação</th><th>Responsável</th>
-          <th>Anexos</th><th>Falha vinculada</th><th>Criado em</th><th>Última alteração</th><th>Ações</th>
+          <th>Data / Hora</th><th>Loja / Área</th><th>LUC</th><th>Sistema</th><th>Laço</th>
+          <th>Piso</th><th>Tipo de Teste</th><th>Resultado</th><th>Ações</th>
         </tr></thead>
-        <tbody>${trs||`<tr><td colspan="20"><div class="emptyState">${base.length?'Nenhum registro corresponde aos filtros aplicados.':'Nenhum teste registrado.'}</div></td></tr>`}</tbody>
+        <tbody>${trs||`<tr><td colspan="9"><div class="emptyState">${base.length?'Nenhum registro corresponde aos filtros aplicados.':'Nenhum teste registrado.'}</div></td></tr>`}</tbody>
       </table>
     </div>
     <div id="testesReportOut" class="printArea"></div>`;
@@ -3993,16 +3990,34 @@ function renderTestes(){
 function viewTeste(idTeste){
   const t=(db.testes||[]).find(x=>x.id===idTeste); if(!t){alert('Teste não encontrado.');return}
   const loc=localById(t.localId); const falha=t.falhaId?(db.falhas||[]).find(x=>x.id===t.falhaId):null;
+  // AMPLIADO (2026-07-13, v6.80): a tabela principal passou a ser um histórico resumido — este painel
+  // de detalhe (já existia como modal somente-leitura) ganhou Painel/Laço/Piso/Endereço/Módulo/Porta
+  // explícitos como campos próprios (antes só apareciam condensados na linha de cabeçalho do modal),
+  // para nenhuma informação técnica se perder ao sair da grade principal. Piso via obterPisoDoRegistro
+  // (fonte central), endereço via item vinculado ao teste (mesmo campo já calculado em testesFiltrados
+  // e reaproveitado aqui a partir de db.equipamentos/flmById).
+  let enderecoTeste='';
+  if(t.itemId){const isFlm=String(t.itemId).startsWith('flm:'); const item=isFlm?flmById(String(t.itemId).slice(4)):db.equipamentos.find(e=>e.id===t.itemId); enderecoTeste=item?(item.endereco||item.modelo||''):''}
+  const pisoKey=obterPisoDoRegistro({piso:loc?.piso,localId:t.localId,itemId:t.itemId,flmId:t.flmId,portaId:t.portaId});
+  const pisoTxt=pisoKey?exibirPiso(pisoKey):'Sem piso';
+  const moduloTxt=flmById(loc?.flmId||t.flmId)?.nome||'—';
+  const portaTxt=(t.portaId?db.portas.find(p=>p.id===t.portaId)?.numero:loc?.portaId?db.portas.find(p=>p.id===loc.portaId)?.numero:'')||'—';
   openModal(`<h2>Teste — ${esc(loc?.nomeOficial||loc?.nome||'—')}</h2>
-  <div class="compactHelp" style="margin-bottom:10px"><span class="pill ${(loc?.sistema||'SDAI')==='CO2'?'warn':'info'}">${esc(loc?.sistema||'—')}</span> <b>${esc(paiName(loc?.painelId)||'—')}</b> • Laço ${esc(lacName(loc?.lacoId)||'—')} • ${esc(exibirPiso(loc?.piso)||'Piso —')} • LUC ${esc(loc?.luc||'—')}</div>
+  <div class="compactHelp" style="margin-bottom:10px"><span class="pill ${(loc?.sistema||'SDAI')==='CO2'?'warn':'info'}">${esc(loc?.sistema||'—')}</span> <b>${esc(paiName(loc?.painelId)||'—')}</b> • Laço ${esc(lacName(loc?.lacoId)||'—')} • ${esc(pisoTxt)} • LUC ${esc(loc?.luc||'—')}</div>
   <div class="formGrid">
     <div class="field"><label>Data/Hora</label><div>${esc((t.data||'').replace('T',' '))}</div></div>
     <div class="field"><label>Tipo de teste</label><div>${esc(t.tipoTeste||'—')}</div></div>
     <div class="field"><label>Resultado</label><div>${iconeResultadoTeste(t.resultado)} ${esc(t.resultado||'—')}</div></div>
     <div class="field"><label>Responsável</label><div>${esc(t.responsavel||'—')}</div></div>
+    <div class="field"><label>Painel</label><div>${esc(paiName(loc?.painelId)||'—')}</div></div>
+    <div class="field"><label>Laço</label><div>${esc(lacName(loc?.lacoId)||'—')}</div></div>
+    <div class="field"><label>Piso</label><div>${esc(pisoTxt)}</div></div>
+    <div class="field"><label>Endereço</label><div>${esc(enderecoTeste||'Sem endereço')}</div></div>
+    <div class="field"><label>Módulo</label><div>${esc(moduloTxt)}</div></div>
+    <div class="field"><label>Porta</label><div>${esc(portaTxt)}</div></div>
     <div class="field" style="grid-column:1/-1"><label>Observação</label><div>${esc(t.observacao||'—')}</div></div>
-    <div class="field" style="grid-column:1/-1"><label>Condição encontrada / Falha vinculada</label><div>${falha?esc(normalizeStatus(falha.status))+' — '+(falha.resolvidaEm?'Resolvida':'Em aberto'):'—'}</div></div>
-    <div class="field" style="grid-column:1/-1"><label>Anexos</label>${fotosThumbsHtml(t.fotos,60)}</div>
+    <div class="field" style="grid-column:1/-1"><label>Condição encontrada / Falha vinculada</label><div>${falha?esc(normalizeStatus(falha.status))+' — '+(falha.resolvidaEm?'Resolvida':'Em aberto')+(t.falhaId?` <button class="dsIco" onclick="closeModal();formFalha('${t.falhaId}')" title="Abrir falha">🚩</button>`:''):'—'}</div></div>
+    <div class="field" style="grid-column:1/-1"><label>Fotos / Vídeos / Anexos</label>${fotosThumbsHtml(t.fotos,60)}</div>
     <div class="field"><label>Criado em / por</label><div style="font-size:12px">${esc((t.criadoEm||'—'))} — ${esc(t.criadoPor||'—')}</div></div>
     <div class="field"><label>Última alteração</label><div style="font-size:12px">${esc(t.editadoEm||'—')}${t.editadoPor?' — '+esc(t.editadoPor):''}</div></div>
   </div><br>
@@ -4102,15 +4117,23 @@ function renderRelatorioTestes(){
         ${kpi('Aprovação',pctAprov+'%')}
         ${kpi('Reprovação',pctReprov+'%')}
       </div>
-      <h4 style="margin-top:14px">Listagem detalhada</h4>
+      <h4 style="margin-top:14px">Listagem resumida</h4>
+      <!-- REORGANIZAÇÃO (2026-07-13, v6.80): o PDF segue agora a mesma estrutura resumida da tela
+           (item 14 do pedido) — Data/Hora, Loja/Área, LUC, Sistema, Laço, Piso, Tipo, Resultado.
+           Painel/Módulo/Porta/Endereço/Condição/Observação/Responsável saíram da listagem principal
+           e passaram para o "Apêndice técnico" logo abaixo, exibido só quando solicitado (aqui, sempre
+           impresso após a listagem resumida, como apêndice — nenhum dado deixou de constar no PDF). -->
       ${table(rows,[
-        ['Data','data',r=>esc((r.data||'').replace('T',' '))],
-        // CORREÇÃO (2026-07-13, v6.78): coluna Piso mostrava r.piso BRUTO (texto exatamente como
-        // gravado no cadastro do local, ex. "1"/"P1"/"01"), diferente do que a tela de Testes exibe
-        // (exibirPiso() normalizado). Agora usa formatarLocalizacaoOperacional() — fonte única também
-        // usada pela tela — para o PDF nunca mais divergir da interface.
-        ['Loja','loja'],['Sistema','sistema'],['Painel','painel'],['Laço','laco'],
+        ['Data/Hora','data',r=>esc((r.data||'').replace('T',' '))],
+        ['Loja / Área','loja'],['LUC','luc',r=>esc(r.luc||'—')],['Sistema','sistema'],['Laço','laco'],
         ['Piso','piso',r=>esc(formatarLocalizacaoOperacional({piso:r.piso,localId:r.localId,itemId:r.itemId,flmId:r.flmId,portaId:r.portaId}))],
+        ['Tipo de Teste','tipoTeste'],
+        ['Resultado','resultado',r=>(r.resultado==='Funcionou'||r.resultado==='Em funcionamento')?'✅ Funcionou':r.resultado==='Não funcionou'?'❌ Não funcionou':esc(r.resultado||'—')]
+      ])}
+      <h4 style="margin-top:18px">Apêndice técnico</h4>
+      ${table(rows,[
+        ['Data/Hora','data',r=>esc((r.data||'').replace('T',' '))],
+        ['Loja / Área','loja'],['Painel','painel'],['Laço','laco'],
         ['Endereço','endereco',r=>esc(formatarEnderecoTecnico({endereco:r.endereco,localId:r.localId,itemId:r.itemId,flmId:r.flmId}))],
         ['Tipo','tipoTeste'],['Resultado','resultado'],['Condição','condicaoEncontrada'],
         ['Responsável','responsavel'],['Observação','observacao']
