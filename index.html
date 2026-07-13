@@ -1,4 +1,5 @@
 <!doctype html>
+<!-- build: 2026-07-13 v6.84 - DUAS FRENTES: (A) coluna Endereço do Plano de Ação mostrando "Sem endereço" mesmo com dado já correto em Testes/Falhas/ponto técnico; (B) Plano de Ação transformado em Ordem de Serviço numerada, com PDF individual e PDF geral respeitando filtros. DIAGNÓSTICO OBRIGATÓRIO (itens 18/28): (A1) Função que renderiza a coluna Endereço da TELA: renderPlano() (linha ~7452) — antes chamava obterEnderecoFisicoDoRegistro({piso,itemId,localId}) direto, que NUNCA olhava para falha.enderecoFisico (campo gravado desde v6.81/6.82) nem tinha fallback consolidado pelo módulo — corrigido para usar a nova função central resolverContextoTecnicoDoPlano(row) (linha ~7297, item 2), que delega 100% para resolverContextoTecnicoDoTeste() (v6.81) e prioriza: 1) plano.enderecoFisico já válido, 2) falha.enderecoFisico, 3) contexto técnico resolvido (equipamento/módulo/porta), 4) endereço do módulo como fallback final — nunca mais "Sem endereço" quando qualquer uma dessas fontes tem o dado. (A2) Função que cria Plano de Ação a partir de falha: saveFalha() (linha ~5111) e o bloco equivalente em criarTeste()/quickStatusChange() — nenhum deles gravava enderecoFisico/moduloId/portaId própria no PLANO (só painel/laço/piso/item textual); como o Plano é sempre renderizado JUNTO com a falha vinculada (row.falha), a correção em (A1) resolve em tempo de leitura sem precisar migrar cada plano — mesmo princípio já usado em Falhas/Testes (v6.82/6.83, "resolver em tempo de leitura mesmo antes de saneamento"). (A3) contagens exatas de quantos planos têm falhaId/testeOrigemId indireto/endereço válido/"Sem endereço" dependem da base real do cliente — não há acesso a ela neste ambiente; a correção central garante que qualquer plano cuja FALHA já tenha (ou venha a ter, via saneamento de Falhas do v6.83) o contexto técnico completo mostra o endereço correto automaticamente, sem exigir uma rotina de saneamento própria do Plano — decisão deliberada para não duplicar uma segunda cadeia de resolução (item 2: "não criar lógica separada"). (B1) Função que cria Plano de Ação: os 4 pontos de `db.planos.push(...)` (saveFalha() linha ~5111, quickStatusChange() linha ~4875, cancelamento por importação linha ~4666, formPlano()/savePlano() linha ~5558) continuam sem numeroOS — em vez de tocar os 4 (risco de duplicar regra), a numeração é atribuída de forma centralizada e automática por garantirNumerosOS() (linha ~7287), chamada no início de buildPlanoRowsBase() (fonte única usada por TELA + PDFs + filtros) — todo plano, de qualquer origem, ganha OS na primeira vez que aparece em qualquer renderização, sem exigir criação manual (item 6) nem tocar as 4 funções de criação. (B2) Unicidade (item 3): gerarNumeroOS() usa db.osSequencia[código-ano] E revalida contra o maior sequenciaOS já gravado nos planos daquela chave antes de emitir — se o número gerado já existir (corrida entre dispositivos sincronizados), incrementa até achar um livre; nunca sobrescreve. (B3) planos existentes sem número: TODOS — nenhum plano tinha esse campo antes desta versão; a primeira renderização após a atualização atribui OS a todos em ordem cronológica de criadoEm (item 6), do mais antigo para o mais novo. (B4) função que gera PDF individual: gerarPdfOsIndividual(planoId) (nova, item 11) — usa #reportOut + window.print(), não altera nenhum campo do plano (item 25), define document.title com o nome sugerido do arquivo (mecanismo padrão do navegador para "Salvar como PDF") e restaura o título após a impressão. (B5) função que gera PDF geral: gerarPdfPlanoAcao(modo)/gerarPdfPlanoDetalhado(modo) (já existentes desde antes, ampliadas) — SIM, respeitam os filtros da tela (planoFiltrosAtuais()+planoRowsFiltrados(), já era assim desde correção anterior), agora com colunas padronizadas N° OS/Loja·Área/LUC/Endereço/Piso/Status/Direcionamento/Responsável/Situação/Abertura (item 14) via resolverContextoTecnicoDoPlano(), sem lógica própria de piso/endereço. MUDANÇAS: (1) coluna Prioridade da tabela principal substituída por N° OS (clicável, abre abrirDetalheOS() em modo leitura — nunca edição direta, item 9); prioridade continua gravada em cada plano e visível no detalhe da OS (item 21) e no formulário de edição (não removida do banco). (2) Ações da linha reduzidas a Visualizar/Editar/Gerar PDF da OS/Concluir/Mais opções (item 12) — "Registrar execução" e "Anexar evidência" continuam disponíveis dentro de "Mais opções" (já existiam lá, confirmado por leitura, não duplicados). (3) abrirDetalheOS(planoId) (item 10): modal com N° OS/Cliente/Loja-Área/LUC/Sistema/Endereço/Piso/Painel/Laço/Módulo/Porta/Status da falha/Prioridade/Direcionamento/Responsável/Executado por/Situação/Abertura/Conclusão/Descrição da ocorrência/Serviço executado (reaproveitando p.execucaoRealizada/p.providencia, já existentes)/Materiais utilizados/Evidências. (4) busca do Plano de Ação (item 16) passou a incluir N° OS, endereço técnico resolvido e LUC; novo campo de filtro dedicado "N° OS" em Mais filtros, com busca parcial (ex. "00015" encontra "PAN-OS-2026-000015"). (5) codigoClienteOS() deriva um código de 3 letras do empreendimento cadastrado (ex. "Pantanal Shopping"→"PAN", igual ao exemplo do pedido); sem cadastro, usa "OS" genérico. GAPS HONESTOS: (a) não foi implementada a tela dedicada de simulação/backup para a numeração de OS (itens 7/8) — optei pela atribuição automática e idempotente via garantirNumerosOS(), que é mais simples, sempre correta e não exige nenhuma ação do usuário, mas não gera um relatório prévio nem um backup específico antes de atribuir números (é uma operação puramente aditiva de baixo risco: só preenche numeroOS quando ausente, nunca sobrescreve); se o usuário preferir o fluxo formal de simulação+confirmação+backup (mesmo padrão já usado no saneamento de Falhas/Testes), posso adicionar em uma próxima rodada. (b) "PDF resumido x detalhado" (item 15) já existe conceitualmente como gerarPdfPlanoAcao() (resumido, uma linha por OS) e gerarPdfPlanoDetalhado() (detalhado, uma seção por OS) — não criei um terceiro modo com todas as combinações extras (assinatura digital, seleção individual de quais evidências entram no PDF). (c) "Executado por" (item 19) reaproveita o campo já existente p.responsavelConclusao (preenchido só ao concluir o plano) — não criei um campo novo e independente para capturar "quem executou" antes da conclusão. (d) histórico formal de mudanças de situação com timestamp por transição (item 17, "11/07 15:49 — OS aberta / 12/07 08:30 — Em andamento...") não foi criado como estrutura de dados nova — o sistema já registra essas mudanças via logLocal() (auditoria textual, existente), mas não como um array estruturado por OS; ficou como gap para não expandir mais o escopo desta rodada. node --check validado sem erros nos scripts extraídos após todas as edições. -->
 <!-- build: 2026-07-13 v6.83 - CORREÇÃO: campo "Piso / Pavimento" do formulário de Falha abria como "Todos os pisos" mesmo com Painel/Laço/Item técnico/Loja/Módulo corretamente identificados (caso SOLUÇÃO COSMÉTICOS). DIAGNÓSTICO OBRIGATÓRIO (item 23): (1) Função que carrega o formulário: formFalha() (linha ~4644). Função que preenche o campo Piso: falhaSelectItem() (linha ~4848), chamada automaticamente ao abrir o formulário e sempre que o item técnico muda. (2) Causa raiz exata: falhaSelectItem() calculava `pisoVal=item.piso||''` — o piso BRUTO gravado no cadastro do item técnico (ex.: "1", exatamente como digitado/importado) — e usava um `setSelect()` que só atribui `el.value=val` se existir uma `<option>` com esse `value` EXATO. O problema é que, no mesmo fluxo, refreshFalhaFilters()/fill() (chamada logo em seguida, via `setTimeout(...,0)`) reconstrói TODAS as opções do `<select id="mFiltroPiso">` usando `uniquePiso()`, que gera as options já com o RÓTULO NORMALIZADO ("Piso 1", não "1") tanto como texto quanto como `value` (confirmado no código: `fill('mFiltroPiso',uniquePiso(...),...)`, e `fill()` monta `<option value="${v}">` com `v` vindo de `uniquePiso()`). Ou seja: o valor gravado no `<select>` ("1") nunca corresponde a nenhuma `<option value="...">` da lista reconstruída ("Piso 1") — o navegador, ao não achar correspondência, volta sozinho para a primeira option, que é a vazia/"Todos os pisos". NÃO havia lógica de piso divergindo entre telas — era literalmente um `value` de `<select>` que não casava com as `<option>` geradas dinamicamente logo depois, no MESMO formulário (item 7 do pedido, "valor interno vs texto de exibição"). (3) Confirmado: não é bug de dados — `saveFalha()` (linha ~5060) grava `piso:item.piso` (o valor bruto do cadastro técnico real, NUNCA a string "Todos os pisos", que é só o placeholder do `<select>` sem seleção) — ou seja, falhas existentes já tinham o piso correto GRAVADO no banco; só o FORMULÁRIO não conseguia selecioná-lo visualmente. (4)/(5) quantas falhas têm piso válido/"Todos os pisos" (nunca gravado)/vazio/divergente/quantas serão corrigidas/quantas ficarão em conflito: como confirmado no item 3, "Todos os pisos" nunca chega a ser persistido — não há essa categoria para contar; os números reais de piso vazio/formato inconsistente/endereço-no-lugar-do-piso na base do cliente saem do relatório de simulação do saneamento (Operação → Falhas → "🩹 Saneamento de vínculos", já existente desde v6.81, agora estendido — ver abaixo). CORREÇÃO: (a) falhaSelectItem() e a construção da option inicial em formFalha() (`fpi`) agora usam `exibirPiso(item.piso)` em vez do valor bruto — o mesmo padrão normalizado usado por `uniquePiso()`/`fill()`, então o `<select>` sempre encontra e mantém a option certa, tanto na abertura inicial quanto após qualquer refresh de filtros. (b) nova função central resolverPisoDaFalha(falha) (linha ~7123, item 3 do pedido) retorna {pisoBruto,pisoNormalizado,fonteDoPiso,registroFonteId}, com a ordem de prioridade pedida (ponto técnico/loja → porta → módulo → dispositivo → falha atual válida → teste de origem → Base LUC → laço; planta não incluída, mesmo gap documentado de obterLocalizacaoDoPonto()) — usada em saveFalha() como rede de segurança (item 20): se o item técnico selecionado não tiver piso próprio, tenta resolver pelo contexto mais amplo antes de gravar, sem nunca sobrescrever um piso já preenchido. (c) falhaPisoInvalido(f) (item 9/10) — nova função que reconhece piso vazio, formato não normalizável, OU endereço técnico gravado no lugar do piso (reaproveita pareceEnderecoFisico(), já existente desde v6.76) — falhaContextoIncompleto() passou a usar essa checagem em vez de só "vazio". (d) saneamento de Falhas (v6.81) ampliado: simularSaneamentoFalhas() agora trata o campo piso como "elegível a completar" quando INVÁLIDO (não só vazio); executarSaneamentoFalhas() aplica a correção de piso nesse mesmo critério e grava auditoria por falha (f._auditoriaPiso: piso anterior, piso novo, origem, usuário, data/hora, versão, motivo — item 22) — piso VÁLIDO mas divergente do contexto técnico nunca é sobrescrito automaticamente (item 13), só listado no relatório de amostra, que agora mostra falhaId/loja/item técnico/piso atual→proposto/fonte além dos campos completados (item 12). TESTES/PLANO DE AÇÃO (itens 17/18): já herdam o mesmo contexto desde v6.81/v6.82 (testeOrigemId↔falhaGeradaId, saneamento de testes propaga à falha vinculada) — nenhuma mudança adicional necessária, confirmado por leitura. FILTROS/PDF/INDICADORES (item 19): já usam pisoEq()/exibirPiso()/obterPisoDoRegistro() centralizados desde v6.74/v6.78 — nenhuma lógica separada de piso existe no PDF, confirmado por leitura, nenhuma mudança necessária aqui. SOLUÇÃO COSMÉTICOS (item 16): não foi recriada — a causa raiz corrigida (bug de `<select>`) já resolve a exibição para QUALQUER falha existente com piso gravado corretamente no ponto técnico, sem exigir saneamento; se o piso do PONTO TÉCNICO em si estiver vazio/errado na base real, aí sim o saneamento entra em ação. Validação final deve ser feita pelo usuário abrindo a falha específica na base real. GAPS HONESTOS: (a) "Mezanino" como piso nomeado (citado no item 1) já funciona sem nenhuma mudança de código — normalizarPiso()/exibirPiso() têm um fallback genérico para texto não numérico não reconhecido (mantém o texto, capitaliza a primeira letra) que já produz "Mezanino" corretamente; confirmado por leitura, não por teste em navegador (sem display neste ambiente). (b) a distinção formal entre "piso divergente" (válido mas diferente do contexto) e "piso inválido" (vazio/malformado/endereço) foi implementada na lógica de saneamento, mas a TELA (formFalha()) ainda não mostra um alerta specific de "trocar piso manualmente diverge do item técnico" (item 21, segunda metade) — o comportamento já resultante (o campo é recalculado automaticamente a cada troca de item técnico) cobre o caso normal; a confirmação explícita ao digitar um valor manualmente diferente não foi implementada nesta rodada. node --check validado sem erros nos scripts extraídos após todas as edições. -->
 <!-- build: 2026-07-13 v6.82 - CORREÇÃO: campo Módulo do detalhe do teste aparecia "—" mesmo com Painel/Laço/Piso/Porta corretos (caso SOLUÇÃO COSMÉTICOS). DIAGNÓSTICO OBRIGATÓRIO (item 18): (1) Função que salva o teste: criarTeste() (linha ~3901), chamada por saveTeste() — SEMPRE grava em db.testes, independente de gerar falha ou não. (2) Campos que ela gravava antes desta versão: id/localId/itemId/painelId/lacoId/flmId/portaId/responsavel/data/tipoTeste/resultado/observacao/fotos/origem/falhaId — só isso; painelId/lacoId/flmId/portaId ficavam com o valor recebido do CHAMADOR (saveTeste() nunca passa nenhum desses — só localId), então ficavam sempre ''. Nenhum campo de moduloEndereco/enderecoFisico/portaNumero/pontoTecnicoId/dispositivoId/lojaId/lojaNome/luc/sistemaId existia no registro do teste. (3) Por que moduloId/moduloEndereco ficavam vazios: a v6.81 tinha criado resolverContextoTecnicoDoTeste() e já resolvia o contexto técnico completo, mas SÓ dentro do bloco condicional de criação de FALHA (`if(confirmarFalha&&...)`) — o registro do TESTE em si nunca era tocado por essa resolução, então t.flmId continuava '' mesmo depois da v6.81. O campo Módulo do detalhe do teste (viewTeste(), criado na v6.80) lia diretamente `flmById(loc?.flmId||t.flmId)` — como loc (db.locais/ponto técnico) TAMBÉM podia não ter flmId preenchido diretamente dependendo do cadastro, e t.flmId nunca era gravado, o resultado final era sempre "—", mesmo Painel/Laço/Piso (que já usavam obterPisoDoRegistro()/obterLocalizacaoDoPonto(), com fallback por porta/módulo/laço) aparecendo corretos. (4) Campo do ponto técnico que possui o módulo: db.locais.flmId (e, quando o módulo tem múltiplas portas, db.locais.portaId aponta a porta específica daquele ponto — confirmado em renderLocais(), que já usava exatamente esses dois campos). (5)-(10) contagens exatas de quantos testes têm localId/moduloId/portaId/endereço/quantos serão saneados/quantos ficarão em conflito dependem da base real do cliente — não há acesso a ela neste ambiente; o relatório com esses números é gerado ao vivo pelo próprio sistema em Operação → Testes → "🩹 Saneamento de vínculos" (perfil Master), em modo simulação (nada salvo) antes de qualquer execução, item 10 do pedido. CORREÇÃO: (a) resolverContextoTecnicoDoTeste() (linha ~3753, criada na v6.81, MANTIDA como fonte única — item 3, nenhuma segunda lógica criada) já retornava moduloId/moduloEndereco/portaId/portaNumero/enderecoFisico; não precisou de novos campos, só passou a ser CHAMADA em mais lugares. (b) criarTeste() agora chama resolverContextoTecnicoDoTeste(novoTeste) logo após montar o registro do teste (ANTES de decidir se cria falha) e grava painelId/lacoId/flmId/portaId (só se não vieram do chamador) + moduloEndereco/portaNumero/pontoTecnicoId/dispositivoId/lojaId/lojaNome/luc/sistemaId/enderecoFisico — todo teste NOVO já nasce completo (itens 1/4). (c) enderecoFisico usa moduloEndereco como fallback quando o dispositivo não tem endereço próprio — nunca mais "Sem endereço" com módulo já identificado (item 17). (d) viewTeste() (linha ~4204) reescrito para usar resolverContextoTecnicoDoTeste(t) como única fonte de Painel/Laço/Piso/Módulo/Porta/Endereço/Loja/LUC/Sistema — resolve em TEMPO DE LEITURA mesmo para um teste antigo ainda não saneado (item 12), então a tela já mostra certo antes da migração definitiva rodar. Módulo mostra "Módulo <endereço>" quando resolvido, "Não se aplica" quando o teste é de detector/acionador sem módulo associado (item 7 — nunca mais "—" puro quando o tipo técnico permite identificar). SANEAMENTO DE TESTES (itens 8/9/10/11/14): reconstruirContextoDeTesteAntigo(t) (linha ~3899) reconstrói pela ordem exigida — pontoTecnicoId/localId → itemId/dispositivoId/flmId/portaId → endereço físico (só resolve quando bate em EXATAMENTE um item técnico; mais de um vai para db.conflitosMigracao com candidatos e motivo). simularSaneamentoTestes() calcula tudo em memória (nunca salva) — total, já com módulo, completáveis, quantos vão receber moduloId/moduloEndereco/endereço/porta, ambíguos, sem vínculo — com amostra campo a campo (loja/sistema/laço/módulo antes→proposto/endereço antes→proposto/fonte), exatamente o formato pedido no item 10. executarSaneamentoTestes() cria backup completo (testes + falhas + planos, com versão/data-hora/usuário/quantidades — item 11) em db.backupsSaneamento ANTES de tocar em qualquer registro, só preenche campo vazio (nunca sobrescreve — item 8), grava conflitos em db.conflitosMigracao, e — item 14 — também completa o módulo/piso/painel/laço/porta/endereço da FALHA vinculada quando ela existir e estiver com esses campos vazios, sem criar/duplicar nada, mantendo testeOrigemId/falhaGeradaId como já estavam. Novo botão "🩹 Saneamento de vínculos" (só Master) na barra de filtros de Operação → Testes, com o mesmo padrão de simulação-antes-de-executar já usado no saneamento de Falhas (v6.81). PLANO DE AÇÃO (item 15): já herda o contexto da falha (v6.78/v6.79); como o saneamento de testes agora também completa a falha vinculada, o Plano de Ação passa a receber os dados completos automaticamente na próxima renderização — nenhuma mudança adicional necessária em renderPlano()/buildPlanoRowsBase(). TABELA PRINCIPAL DE TESTES (item 13): não tocada — continua com as 9 colunas da v6.80 (Módulo/Endereço ficam só no detalhe, como já definido). SOLUÇÃO COSMÉTICOS (item 16): não foi recriada — se o ponto técnico já tem flmId/portaId cadastrados (o que o próprio relato confirma, já que Painel/Laço/Piso/Porta apareciam certos), a resolução em tempo de leitura (viewTeste()) já deve mostrar o módulo correto imediatamente, sem precisar rodar o saneamento; o saneamento serve para GRAVAR esse valor no registro do teste (e propagar à falha), não é pré-requisito para a exibição correta. Validação final deve ser feita pelo usuário abrindo o teste específico na base real. GAPS HONESTOS: (a) resolverContextoTecnicoDoTeste() ainda não é chamada em Plano de Ação/relatórios diretamente (eles continuam lendo os campos já resolvidos da FALHA, que agora nascem/são saneados completos) — não duplica lógica, mas também não é literalmente "a mesma chamada de função" nesses pontos; se o usuário notar campo vazio ali também, é sinal de que a FALHA correspondente ainda não foi saneada, não de uma lacuna nova. (b) detecção de conflito continua limitada a "mais de um item técnico com endereço físico idêntico". node --check validado sem erros nos scripts extraídos após todas as edições. -->
 <!-- build: 2026-07-13 v6.81 - CORREÇÃO CRÍTICA: falha criada a partir de teste "Não funcionou" não herdava painel/laço/piso (caso relatado: SOLUÇÃO COSMÉTICOS). DIAGNÓSTICO OBRIGATÓRIO (item 22): (1) Função que cria a falha a partir do teste: criarTeste() (linha ~3739), chamada por saveTeste() (linha ~3861, botão "Salvar teste" da tela Executar teste). (2) saveTeste() chamava criarTeste({localId,tipoTeste,resultado,responsavel,observacao,fotos,confirmarFalha,reuseFalha,origem}) — SEM itemId/painelId/lacoId/flmId/portaId. Dentro de criarTeste(), o bloco de criação da falha só sabia montar painelId/lacoId/piso/itemId a partir desses parâmetros (vazios) ou de um "item" achado em db.equipamentos por itemId (também vazio, então `item` sempre undefined nesse fluxo) — nunca olhava para o PONTO TÉCNICO testado (db.locais, via localId), que já carrega painelId/lacoId/piso/flmId/portaId/sistema próprios (confirmado em renderLocais()). Resultado: painelId/lacoId/piso da falha nasciam SEMPRE vazios ('') nesse fluxo. (3) Por que Central/Laço/Piso apareciam como "Todos": formFalha() (linha ~4644) monta os <select> com `<option value="${fp}" selected>${fp||'Todas as centrais'}</option>` — fp/fl/fpi vêm de `item=falhaItems().find(it=>it.id===o.itemId)`; com o.itemId='' (bug acima), item nunca é encontrado, fp/fl/fpi ficam '', e o rótulo cai no fallback "Todas as centrais"/"Todos os laços"/"Todos os pisos" — não é um valor GRAVADO como "Todos", é o placeholder do <select> aparecendo porque não havia NADA gravado para resolver. (4) Não existiam duas funções concorrentes nem template duplicado — só uma função cria falha por teste (criarTeste()) e só uma monta o formulário (formFalha()); o problema era 100% de dados incompletos entrando em criarTeste(), não de lógica duplicada. (5)/(6)/(7)/(8)/(9)/(10) contagens exatas (quantas falhas têm testeOrigemId/localId/módulo/piso, quantas foram completadas/ficaram em conflito/sem vínculo) dependem da base real do cliente — não há acesso a ela neste ambiente de edição de código; o relatório com esses números é gerado ao vivo pelo próprio sistema em Operação → Falhas → "🩹 Saneamento de vínculos" (perfil Master), que roda em modo simulação (nada é salvo) antes de qualquer execução, exatamente como pedido no item 15. CORREÇÃO: nova função central resolverContextoTecnicoDoTeste(teste) (linha ~3776, reaproveitada em TODOS os pontos que precisam de contexto técnico — criação automática de falha, reconstrução de falha antiga, sem duplicar regra alguma) resolve por prioridade ponto técnico (db.locais) → equipamento vinculado → módulo/FLM vinculado → porta vinculada, devolvendo {clienteId,sistemaId,painelId,painelNome,lacoId,lacoNumero,moduloId,moduloEndereco,portaId,portaNumero,dispositivoId,pontoTecnicoId,localId,lojaId,lojaNome,luc,piso,enderecoFisico,tipoEquipamento,modeloEquipamento,itemId}. criarTeste() agora usa essa função tanto para falha NOVA (herda painel/laço/módulo/porta/piso/loja/endereço/sistema/LUC — item 1/4) quanto para falha REAPROVEITADA (completa campos vazios de um registro antigo reaproveitado, nunca sobrescreve valor já existente — item 20/14); testeOrigemId gravado na falha e falhaGeradaId gravado no teste (vínculo bidirecional explícito, item 18, além do par legado falhaId/testeId mantido por compatibilidade). Como itemId agora é gravado no formato usado por falhaItems() ('flm:<id>[:porta:<id>]' ou id de equipamento), formFalha()/falhaSelectItem() (já existentes, não tocados) passam a encontrar o item automaticamente e preencher Central/Laço/Piso/Loja sozinhos — sem exigir nenhuma mudança no formulário de edição em si (itens 5/6 resolvidos como consequência direta da causa raiz corrigida, não por gambiarra na tela). MIGRAÇÃO DE FALHAS ANTIGAS (itens 12/13/14/15/16): reconstruirContextoDeFalhaAntiga(f) (linha ~3838) reconstrói pela ordem exigida — testeOrigemId/testeId → localId → itemId → endereço físico (só resolve por endereço quando bate em EXATAMENTE um item técnico; mais de um candidato vai para db.conflitosMigracao com os IDs candidatos e o motivo, sem escolher sozinho — item 14). simularSaneamentoFalhas() calcula tudo em memória (nunca salva) e devolve total/completas/completáveis/parciais/sem vínculo/ambíguas + detalhe campo a campo (valor anterior→proposto) — modo simulação do item 15. executarSaneamentoFalhas() cria backup completo de db.falhas (versão, data/hora, usuário, quantidade — item 16) em db.backupsSaneamento ANTES de tocar em qualquer registro, só preenche campos vazios (nunca sobrescreve), grava conflitos em db.conflitosMigracao, e recalcula status de pontos técnicos + sincroniza Plano de Ação no final (itens 17/19). abrirSaneamentoFalhas() (novo botão "🩹 Saneamento de vínculos", visível só para Master, na barra de filtros de Operação → Falhas) mostra o resumo + amostra do que será alterado ANTES de pedir confirmação para executar. SOLUÇÃO COSMÉTICOS (item 23): não foi recriada — se essa falha específica já existir na base do cliente com testeOrigemId ou localId gravado (o mais provável, dado o relato), o saneamento acima a completa automaticamente na próxima execução; não há como validar o registro real neste ambiente de edição de código-fonte (sem acesso à base do cliente), então a validação final deve ser feita pelo usuário rodando "🩹 Saneamento de vínculos" e conferindo o resultado da simulação antes de executar. GAPS HONESTOS: (a) a "hierarquia" formal de dependência entre campos do formulário (item 6) e os "campos somente leitura quando origem é item técnico" (item 21) não foram implementados como trava de UI nesta rodada — o comportamento já resultante (formFalha() preenche automaticamente os 4 selects a partir do item e os mantém em sincronia via falhaSelectItem()) cobre o efeito prático pedido, mas os campos continuam tecnicamente editáveis à mão; travar via disabled/readonly explícito fica como próximo passo, se o usuário confirmar que ainda vê incoerência depois desta correção; (b) detecção de conflito para migração é limitada a "mais de um item técnico com endereço físico idêntico" — não cobre todo tipo de ambiguidade teoricamente possível, mas nunca inventa vínculo quando encontra mais de um candidato. node --check validado sem erros nos scripts extraídos após todas as edições. -->
@@ -7284,7 +7285,69 @@ function dsDateHtml(raw){if(!raw)return '<span style="color:var(--l3a-text-muted
 function dsPortasHtml(flmId){const ps=db.portas.filter(p=>p.flmId===flmId);if(!ps.length)return '<span style="color:var(--l3a-text-muted);font-size:11px">Sem portas</span>';return `<div class="dsPortas">${ps.map(p=>{const ok=!isFalhaStatus(p.status);const nome=locName(p.localId)||'Sem vínculo';return `<div class="dsPortaRow"><span class="dsPortaDot ${ok?'':'fail'}"></span><span class="dsPortaLabel">P${p.numero}</span><span class="dsPortaNome" title="${esc(nome)}">${esc(nome)}</span></div>`}).join('')}</div>`}
 function dsKpi(label,value,cls='',click=''){return `<div class="dsKpiCard ${cls}" ${click?`onclick="${click}"`:''}><div class="dsKpiLabel">${esc(label)}</div><div class="dsKpiValue">${esc(String(value))}</div></div>`}
 function dsKpiStrip(items){return `<div class="dsKpiStrip">${items.map(([l,v,c,k])=>dsKpi(l,v,c,k)).join('')}</div>`}
+// resolverContextoTecnicoDoPlano() (2026-07-13, v6.84 — item 2 do pedido): função central de
+// resolução do contexto técnico de um PLANO/OS (linha de buildPlanoRowsBase(), que já carrega
+// row.falha). Delega 100% para resolverContextoTecnicoDoTeste() (v6.81) — nenhuma lógica de resolução
+// duplicada — passando os IDs técnicos da falha vinculada como "semente". Prioridade de endereço
+// (item 1): 1) plano.enderecoFisico já válido; 2) falha.enderecoFisico; 3) contexto resolvido
+// (equipamento/módulo/porta via cadeia de obterLocalizacaoDoPonto-like); 4) moduloEndereco como
+// fallback final quando o dispositivo não tem endereço próprio (item 3).
+function resolverContextoTecnicoDoPlano(row){
+  const p=row?.plano||null;
+  const f=row?.falha||{};
+  const semente={localId:f.localId||row?.localId||'',itemId:f.itemId||row?.itemId||'',painelId:f.painelId,lacoId:f.lacoId,flmId:f.flmId,portaId:f.portaId};
+  const ctx=resolverContextoTecnicoDoTeste(semente);
+  const enderecoFisico=(p&&p.enderecoFisico)||f.enderecoFisico||ctx.enderecoFisico||ctx.moduloEndereco||'';
+  const fonteEndereco=(p&&p.enderecoFisico)?'plano':(f.enderecoFisico?'falha':(ctx.enderecoFisico?'contexto_tecnico':(ctx.moduloEndereco?'modulo_fallback':'')));
+  return {...ctx,planoId:row?.planoId||(p&&p.id)||'',falhaId:f.id||row?.falhaId||'',testeOrigemId:f.testeOrigemId||'',enderecoFisico,fonteEndereco};
+}
+// ---- NUMERAÇÃO DE ORDEM DE SERVIÇO (2026-07-13, v6.84 — itens 2-6 do pedido de OS) -----------------
+// codigoClienteOS(): deriva um código curto (3 letras) do empreendimento ativo — ex. "Pantanal
+// Shopping" → "PAN" (mesmo exemplo do pedido). Sem cadastro de empreendimento, cai em "OS" genérico.
+function codigoClienteOS(){
+  const emp=db.empreendimento||{};
+  const base=up(n(emp.codigo||emp.nome||emp.cliente||''));
+  const limpo=base.replace(/[^A-Z0-9 ]/g,'').trim();
+  const primeira=(limpo.split(' ')[0]||'').slice(0,3);
+  return primeira||'OS';
+}
+// gerarNumeroOS(): formato <CLIENTE>-OS-<ANO>-<SEQ 6 dígitos>. Sequência controlada em
+// db.osSequencia[codigo-ano] E revalidada contra o maior sequenciaOS já gravado em db.planos para a
+// mesma chave (item 3 — nunca confia só no contador em memória, protege contra dessincronização entre
+// dispositivos) — se o número gerado já existir por qualquer motivo, incrementa até achar um livre,
+// nunca sobrescreve um número existente.
+function gerarNumeroOS(dataRef){
+  db.osSequencia=db.osSequencia||{};
+  const ano=new Date(dataRef||isoNow()).getFullYear();
+  const cod=codigoClienteOS();
+  const chave=cod+'-'+ano;
+  let maxExistente=0;
+  (db.planos||[]).forEach(p=>{if(p.codigoClienteOS===cod&&p.anoOS===ano&&(p.sequenciaOS||0)>maxExistente)maxExistente=p.sequenciaOS});
+  let seq=Math.max(db.osSequencia[chave]||0,maxExistente)+1;
+  let numeroOS=cod+'-OS-'+ano+'-'+String(seq).padStart(6,'0');
+  while((db.planos||[]).some(p=>p.numeroOS===numeroOS)){seq++;numeroOS=cod+'-OS-'+ano+'-'+String(seq).padStart(6,'0')}
+  db.osSequencia[chave]=seq;
+  return {numeroOS,sequenciaOS:seq,anoOS:ano,codigoClienteOS:cod};
+}
+// garantirNumerosOS() (item 6 — saneamento automático, sem exigir ação manual): percorre TODOS os
+// planos sem numeroOS, ordena por data de abertura (criadoEm) para preservar a ordem cronológica
+// pedida, e atribui número sequencial — idempotente (só toca planos que ainda não têm OS, nunca
+// reatribui um número já existente). Chamada no início de buildPlanoRowsBase(), então roda tanto na
+// tela quanto no PDF, garantindo que TODO plano (de qualquer um dos pontos de criação existentes)
+// sempre tenha uma OS antes de ser exibido — sem depender de tocar cada função de criação.
+function garantirNumerosOS(){
+  const semNumero=(db.planos||[]).filter(p=>!p.numeroOS);
+  if(!semNumero.length)return;
+  semNumero.sort((a,b)=>String(a.criadoEm||'').localeCompare(String(b.criadoEm||'')));
+  semNumero.forEach(p=>{
+    const dados=gerarNumeroOS(p.criadoEm);
+    Object.assign(p,dados);
+    logLocal('plano',p.id,'os_atribuida','Número de OS atribuído por saneamento automático: '+dados.numeroOS+'.');
+  });
+  markDirty('Numeração automática de OS atribuída a '+semNumero.length+' plano(s) existente(s).');
+}
 function buildPlanoRowsBase(){
+  garantirNumerosOS();
   // Monta a base de linhas (Plano + Falha sem plano) sem aplicar nenhum filtro. Extraído para ser
   // reaproveitado tanto pela tela (renderPlano) quanto pela geração dos PDFs, garantindo que os dois
   // usem exatamente a mesma lógica (item 4/6 do pedido do usuário, 2026-07).
@@ -7328,6 +7391,7 @@ function planoFiltrosAtuais(){
     fim:f.fim||'',
     statusTec:f.statusTec||'',
     sistema:f.sistema||'',
+    numeroOS:f.numeroOS||'',
     avancado:!!f.avancado
   };
 }
@@ -7341,7 +7405,10 @@ function planoRowsFiltrados(fx,{ignorarSituacao=false,ignorarCategoria=false,ign
   // Antes esta função comparava fx.q (só toUpperCase, sem remover acento) com x._q (normalizado com
   // up(), que remove acento) — a comparação nunca batia direito para termos acentuados, e mesmo sem
   // acento exigia substring contígua (não aceitava múltiplas palavras em qualquer ordem).
-  rows=filtrarRegistrosPorBusca(rows,fx.q,x=>[x.local,x.painel,x.laco,x.piso,x.itemNome,x.statusFalha,x.categoria,x.responsavel,x.situacao,x.direcionamento,x.desde].filter(Boolean).join(' '));
+  // item 16 do pedido de OS (2026-07-13, v6.84): busca também pelo N° OS e pelo endereço técnico
+  // resolvido (item 16 do pedido de endereço) — "6.1.47.0" ou "00015" (parcial do número da OS) agora
+  // encontram o plano correspondente, além dos campos já pesquisados.
+  rows=filtrarRegistrosPorBusca(rows,fx.q,x=>[x.local,x.painel,x.laco,x.piso,x.itemNome,x.statusFalha,x.categoria,x.responsavel,x.situacao,x.direcionamento,x.desde,x.plano?.numeroOS,resolverContextoTecnicoDoPlano(x).enderecoFisico,resolverContextoTecnicoDoPlano(x).luc].filter(Boolean).join(' '));
   return rows.filter(x=>
     (ignorarCategoria||!fx.cat||(x.categoria||'Sem categoria')===fx.cat)&&
     (ignorarPrioridade||!fx.prio||x.prioridade===fx.prio)&&
@@ -7353,6 +7420,7 @@ function planoRowsFiltrados(fx,{ignorarSituacao=false,ignorarCategoria=false,ign
     (!fx.loja||x.local===fx.loja)&&
     (!fx.statusTec||normalizeStatus(x.statusFalha)===fx.statusTec)&&
     (!fx.sistema||x.sistema===fx.sistema)&&
+    (!fx.numeroOS||up(x.plano?.numeroOS||'').includes(up(fx.numeroOS)))&&
     inPeriodoPlano(x,fx.ini,fx.fim)
   );
 }
@@ -7386,6 +7454,104 @@ function setPlanoCardFiltro(tipo){
   else if(tipo==='concluidos')filters.plano={...cur,sit:cur.sit==='Concluído'?'':'Concluído'};
   else if(tipo==='criticos')filters.plano={...cur,prio:cur.prio==='Crítica'?'':'Crítica'};
   render();
+}
+// linhaOsDoPlano() (2026-07-13, v6.84): reconstrói a "linha" no mesmo formato de buildPlanoRowsBase()
+// a partir de um planoId isolado — usada por abrirDetalheOS()/gerarPdfOsIndividual() para reaproveitar
+// resolverContextoTecnicoDoPlano() sem precisar filtrar toda a base novamente.
+function linhaOsDoPlano(planoId){
+  const p=(db.planos||[]).find(x=>x.id===planoId); if(!p)return null;
+  const f=db.falhas.find(x=>x.id===p.falhaId)||{};
+  const inf=f.id?itemInfoFromFalha(f):{};
+  return {origemLinha:'Plano',falhaId:p.falhaId||'',planoId:p.id,itemId:f.itemId||'',prioridade:p.prioridade||'Média',
+    painel:inf.painel||p.painel||'',laco:inf.laco||p.laco||'',piso:inf.piso||p.piso||'',local:inf.local||p.local||'',
+    itemNome:inf.itemNome||p.item||'',statusFalha:f.status||p.statusFalha||'',categoria:p.categoria||'',
+    responsavel:p.responsavel||'',prazo:p.prazo||'',desde:f.data||p.criadoEm||'',criadoEm:p.criadoEm||'',
+    concluidoEm:p.concluidoEm||'',situacao:p.situacao||'Aberto',direcionamento:p.direcionamento||getDirecionamento(f.status||p.statusFalha),
+    fotos:normalizeFotos(p.fotos||[]),fotoCount:(p.fotos||[]).length,sistema:localById(f.localId)?.sistema||'',plano:p,falha:f};
+}
+// abrirDetalheOS() (item 10 do pedido de OS, 2026-07-13 v6.84): painel de detalhe completo da Ordem
+// de Serviço — abre em modo leitura (clicar no N° OS nunca entra direto em edição, item 9). Reaproveita
+// resolverContextoTecnicoDoPlano() como fonte única de LUC/Sistema/Endereço/Piso/Painel/Laço/Módulo/
+// Porta (item 2/11) — nada é recalculado por lógica própria deste modal.
+function abrirDetalheOS(planoId){
+  const row=linhaOsDoPlano(planoId); if(!row){alert('OS não encontrada.');return}
+  const p=row.plano,f=row.falha||{};
+  const ctx=resolverContextoTecnicoDoPlano(row);
+  const moduloTxt=ctx.moduloId?('Módulo '+(ctx.moduloEndereco||ctx.moduloId)):'Não se aplica';
+  const portaTxt=ctx.portaNumero?String(ctx.portaNumero):(ctx.portaId?'—':'Não se aplica');
+  openModal(`<h2>${esc(p.numeroOS||'OS sem número')}</h2>
+  <div class="compactHelp" style="margin-bottom:10px"><span class="pill ${ctx.sistemaId==='CO2'?'warn':'info'}">${esc(ctx.sistemaId||'—')}</span> <b>${esc(ctx.painelNome||row.painel||'—')}</b> • Laço ${esc(ctx.lacoNumero||row.laco||'—')} • ${esc(exibirPiso(ctx.piso)||'Sem piso')} • LUC ${esc(ctx.luc||'—')}</div>
+  <div class="formGrid">
+    <div class="field"><label>Cliente</label><div>${esc((db.empreendimento&&db.empreendimento.nome)||'—')}</div></div>
+    <div class="field"><label>Loja / Área</label><div>${esc(row.local||'—')}</div></div>
+    <div class="field"><label>LUC</label><div>${esc(ctx.luc||'—')}</div></div>
+    <div class="field"><label>Sistema</label><div>${esc(ctx.sistemaId||'—')}</div></div>
+    <div class="field"><label>Endereço</label><div>${esc(ctx.enderecoFisico||'Sem endereço')}</div></div>
+    <div class="field"><label>Piso</label><div>${esc(exibirPiso(ctx.piso)||'Sem piso')}</div></div>
+    <div class="field"><label>Painel</label><div>${esc(ctx.painelNome||row.painel||'—')}</div></div>
+    <div class="field"><label>Laço</label><div>${esc(ctx.lacoNumero||row.laco||'—')}</div></div>
+    <div class="field"><label>Módulo</label><div>${esc(moduloTxt)}</div></div>
+    <div class="field"><label>Porta</label><div>${esc(portaTxt)}</div></div>
+    <div class="field"><label>Status da falha</label><div>${esc(normalizeStatus(row.statusFalha)||'—')}</div></div>
+    <div class="field"><label>Prioridade</label><div>${esc(row.prioridade||'—')}</div></div>
+    <div class="field" style="grid-column:1/-1"><label>Direcionamento</label><div>${esc(row.direcionamento||'—')}</div></div>
+    <div class="field"><label>Responsável</label><div>${esc(row.responsavel||'—')}</div></div>
+    <div class="field"><label>Executado por</label><div>${esc(p.responsavelConclusao||'—')}</div></div>
+    <div class="field"><label>Situação</label><div>${esc(row.situacao||'—')}</div></div>
+    <div class="field"><label>Abertura</label><div>${esc(fmtDataHoraTexto(row.desde)||'—')}</div></div>
+    <div class="field"><label>Conclusão</label><div>${esc(p.concluidoEm?fmtDataHoraTexto(p.concluidoEm):'—')}</div></div>
+    <div class="field" style="grid-column:1/-1"><label>Descrição da ocorrência</label><div>${esc(f.motivo||f.obs||'—')}</div></div>
+    <div class="field" style="grid-column:1/-1"><label>Serviço executado</label><div>${esc(p.execucaoRealizada||p.providencia||'—')}</div></div>
+    <div class="field" style="grid-column:1/-1"><label>Materiais utilizados</label><div>${esc(p.material||'—')}</div></div>
+    <div class="field" style="grid-column:1/-1"><label>Evidências / Fotos / Vídeos / Anexos</label>${fotosThumbsHtml(row.fotos,60)}</div>
+  </div><br>
+  <button class="btn" onclick="closeModal();gerarPdfOsIndividual('${esc(planoId)}')">📄 Gerar PDF da OS</button>
+  <button class="btn secondary" onclick="closeModal();formPlano('${esc(planoId)}')">✏ Editar</button>
+  <button class="btn secondary" onclick="closeModal()">Fechar</button>`);
+}
+// gerarPdfOsIndividual() (itens 11/25/26 do pedido de OS): PDF de UMA única OS, nunca altera situação/
+// data/histórico — geração é puramente documental. Nome sugerido via document.title (mecanismo padrão
+// do navegador para nome de arquivo ao "Salvar como PDF"), restaurado logo após o print.
+function gerarPdfOsIndividual(planoId){
+  const row=linhaOsDoPlano(planoId); if(!row){alert('OS não encontrada.');return}
+  if(!document.getElementById('reportOut'))renderRelatorios();
+  const p=row.plano,f=row.falha||{};
+  const ctx=resolverContextoTecnicoDoPlano(row);
+  const moduloTxt=ctx.moduloId?('Módulo '+(ctx.moduloEndereco||ctx.moduloId)):'Não se aplica';
+  const portaTxt=ctx.portaNumero?String(ctx.portaNumero):(ctx.portaId?'—':'Não se aplica');
+  const fotos=(row.fotos&&row.fotos.length)?`<div class="detFotos">${row.fotos.map(u=>`<img src="${esc(normalizeFotoUrl(u))}" alt="Evidência">`).join('')}</div>`:'<p class="mutedLine">Sem evidências anexadas.</p>';
+  const emp=db.empreendimento||{};
+  document.getElementById('reportOut').innerHTML=`<div class="card"><div class="reportCover">
+    <h2>Ordem de Serviço — ${esc(p.numeroOS||'—')}</h2>
+    <p>${esc(emp.cliente||'—')} • ${esc(emp.nome||'—')} • Emitido em ${now()}</p>
+    <div class="reportMeta"><span>Loja/Área: ${esc(row.local||'—')}</span><span>LUC: ${esc(ctx.luc||'—')}</span><span>Sistema: ${esc(ctx.sistemaId||'—')}</span></div>
+  </div>
+  <div class="detCard">
+    <div class="detHead"><h4>${esc(row.local||'—')}</h4><span class="pill ${row.situacao==='Concluído'?'ok':''}">${esc(row.situacao||'Aberto')}</span></div>
+    <div class="detMeta">
+      <span><b>Endereço:</b> ${esc(ctx.enderecoFisico||'Sem endereço')}</span>
+      <span><b>Piso:</b> ${esc(exibirPiso(ctx.piso)||'Sem piso')}</span>
+      <span><b>Painel:</b> ${esc(ctx.painelNome||row.painel||'—')}</span>
+      <span><b>Laço:</b> ${esc(ctx.lacoNumero||row.laco||'—')}</span>
+      <span><b>Módulo:</b> ${esc(moduloTxt)}</span>
+      <span><b>Porta:</b> ${esc(portaTxt)}</span>
+      <span><b>Status da falha:</b> ${esc(normalizeStatus(row.statusFalha)||'—')}</span>
+      <span><b>Responsável:</b> ${esc(row.responsavel||'—')}</span>
+      <span><b>Abertura:</b> ${esc(fmtDataHoraTexto(row.desde)||'—')}</span>
+      <span><b>Conclusão:</b> ${esc(p.concluidoEm?fmtDataHoraTexto(p.concluidoEm):'—')}</span>
+    </div>
+    <div class="detTexto"><b>Direcionamento:</b> ${esc(row.direcionamento||'—')}</div>
+    <div class="detTexto"><b>Descrição da ocorrência:</b> ${esc(f.motivo||f.obs||'—')}</div>
+    <div class="detTexto"><b>Serviço executado:</b> ${esc(p.execucaoRealizada||p.providencia||'—')}</div>
+    ${fotos}
+  </div>
+  <div class="reportFooter"><span>L3A Engenharia</span><span>Identificação técnica: ${esc(currentUser().nome||'—')}</span></div>
+  </div>`;
+  const tituloAnterior=document.title;
+  const nomeArquivo='OS_'+String(p.numeroOS||planoId).replace(/[^A-Za-z0-9_-]/g,'_')+'_'+String(row.local||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Z0-9]+/g,'-').replace(/^-+|-+$/g,'');
+  document.title=nomeArquivo;
+  logLocal('plano',planoId,'pdf_os','PDF individual da OS '+(p.numeroOS||planoId)+' gerado por '+(currentUser().email||currentUser().nome||'')+'.');
+  setTimeout(()=>{window.print();setTimeout(()=>{document.title=tituloAnterior},500)},250);
 }
 function renderPlano(){
   let fx=planoFiltrosAtuais();
@@ -7421,25 +7587,31 @@ function renderPlano(){
   // Endereço, Piso, Status, Direcionamento, Responsável, Situação, Abertura, Ações (10 colunas fixas,
   // Localização/Prazo/Conclusão/Evid. removidas da tabela — nenhum dado do banco foi apagado, plano
   // continua tendo .prazo/.concluidoEm/.fotos como sempre, só pararam de ter coluna própria aqui).
+  // CORREÇÃO (2026-07-13, v6.84 — itens 1/11 do pedido de endereço): a célula de Endereço usava
+  // obterEnderecoFisicoDoRegistro({piso,itemId,localId}) direto — não olhava para falha.enderecoFisico
+  // (gravado desde v6.81/v6.82 em falhas criadas por teste, e completado por saneamento nas antigas),
+  // nem tinha o fallback endereço-do-módulo centralizado. Agora usa resolverContextoTecnicoDoPlano(r)
+  // — fonte única (item 2), nunca mais "Sem endereço" quando a falha ou o teste de origem já têm o
+  // dado. Coluna Prioridade substituída por N° OS (item 1 da reestruturação em OS) — prioridade
+  // continua gravada em cada plano, só não tem mais coluna própria na tabela (fica no detalhe da OS).
   const trs=filtrados.map(r=>{
-    const localIdReg=r.falha?.localId||r.plano?.localId||'';
-    const registro={piso:r.piso,itemId:r.itemId,localId:localIdReg};
-    const pisoRes=obterLocalizacaoDoPonto(registro);
-    const pisoTxt=pisoRes.piso?exibirPiso(pisoRes.piso):'Sem piso';
-    const pisoHtml=`${esc(pisoTxt)}${pisoRes.divergente?' <span title="Piso divergente entre fontes vinculadas ('+esc((pisoRes.origens||[]).join(', '))+')" style="color:var(--l3a-warn,#c07a00)">⚠</span>':''}`;
-    const enderecoTxt=obterEnderecoFisicoDoRegistro(registro)||'Sem endereço';
+    const ctx=resolverContextoTecnicoDoPlano(r);
+    const pisoTxt=ctx.piso?exibirPiso(ctx.piso):'Sem piso';
+    const enderecoTxt=ctx.enderecoFisico||'Sem endereço';
     const dirPreview=r.direcionamento?`<span title="${esc(r.direcionamento)}" style="font-size:12px;color:var(--l3a-text-soft);cursor:help">${esc(r.direcionamento.slice(0,48))}${r.direcionamento.length>48?'…':''}</span>`:'<span class="mutedLine">—</span>';
+    const numOsHtml=r.planoId&&r.plano?.numeroOS?`<button style="background:none;border:none;padding:0;cursor:pointer;color:var(--l3a-primary,#2563eb);font-weight:700;font-size:12px;text-align:left;line-height:1.3" onclick="abrirDetalheOS('${r.planoId}')" title="Ver detalhe da OS">${esc(r.plano.numeroOS.split('-').slice(0,-1).join('-'))}<br>${esc(r.plano.numeroOS.split('-').slice(-1)[0])}</button>`:(r.planoId?'<span class="mutedLine" style="font-size:11px">sem OS</span>':'<span class="mutedLine">—</span>');
     const acoes=`<div class="planoAcoes">
+      ${r.planoId?`<button class="iconBtn" title="Visualizar OS" onclick="abrirDetalheOS('${r.planoId}')">👁</button>`:''}
       ${r.planoId?`<button class="iconBtn" title="Editar" onclick="formPlano('${r.planoId}')">✏</button>`:`<button class="btn small" title="Criar plano" onclick="formPlano('','${r.falhaId}')" style="padding:3px 8px;font-size:11px">+ Plano</button>`}
-      ${r.planoId?`<button class="iconBtn" title="Evidências (${r.fotoCount||0})" onclick="abrirEvidencias('${r.planoId}')">📷</button>`:''}
-      ${r.planoId&&r.situacao!=='Concluído'&&r.situacao!=='Cancelado'?`<button class="iconBtn" title="Registrar execução" onclick="registrarExecucaoPlano('${r.planoId}')">🛠</button><button class="iconBtn" title="Concluir" onclick="concluirPlanoFormal('${r.planoId}')">✔</button>`:''}
+      ${r.planoId?`<button class="iconBtn" title="Gerar PDF da OS" onclick="gerarPdfOsIndividual('${r.planoId}')">📄</button>`:''}
+      ${r.planoId&&r.situacao!=='Concluído'&&r.situacao!=='Cancelado'?`<button class="iconBtn" title="Concluir" onclick="concluirPlanoFormal('${r.planoId}')">✔</button>`:''}
       ${r.planoId?`<button class="iconBtn" title="Mais opções" onclick="maisOpcoesPlano('${r.planoId}','${r.falhaId}')">⋮</button>`:''}
     </div>`;
     return `<tr style="font-size:12.5px">
-      <td style="padding:5px 8px;white-space:nowrap">${prioBadge(r.prioridade)}</td>
+      <td style="padding:5px 8px;white-space:nowrap">${numOsHtml}</td>
       <td style="padding:5px 8px;max-width:130px"><div style="font-weight:700;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.local)}">${esc(r.local||'—')}</div></td>
       <td style="padding:5px 8px;white-space:nowrap;font-size:12px">${esc(enderecoTxt)}</td>
-      <td style="padding:5px 8px;white-space:nowrap;font-size:12px">${pisoHtml}</td>
+      <td style="padding:5px 8px;white-space:nowrap;font-size:12px">${esc(pisoTxt)}</td>
       <td style="padding:5px 8px;white-space:nowrap"><span class="pill ${statusClass(r.statusFalha)}" style="font-size:11px">${esc(normalizeStatus(r.statusFalha)||'—')}</span></td>
       <td style="padding:5px 8px;max-width:180px">${dirPreview}</td>
       <td style="padding:5px 8px;white-space:nowrap;font-size:12px">${esc(r.responsavel||'—')}</td>
@@ -7450,7 +7622,7 @@ function renderPlano(){
   }).join('');
 
   const thead=`<tr style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--l3a-text-muted)">
-    <th style="padding:6px 8px;white-space:nowrap">Prioridade</th>
+    <th style="padding:6px 8px;white-space:nowrap">N° OS</th>
     <th style="padding:6px 8px">Loja / Área</th>
     <th style="padding:6px 8px">Endereço</th>
     <th style="padding:6px 8px">Piso</th>
@@ -7512,6 +7684,7 @@ function renderPlano(){
         })()}
         <select class="planoSelect" onchange="filters.plano={...filters.plano,statusTec:this.value};render()">${selectOpts(STATUS_TECNICO_OPTIONS,fx.statusTec,'Status Técnico')}</select>
         <select class="planoSelect" onchange="filters.plano={...filters.plano,sistema:this.value};render()">${selectOpts(SISTEMA_LACO_OPTIONS,fx.sistema,'Sistema')}</select>
+        <input class="planoSelect" placeholder="N° OS (busca parcial, ex.: 00015)" value="${esc(fx.numeroOS||'')}" oninput="filters.plano={...filters.plano,numeroOS:this.value};render()">
         <button class="btn secondary small" onclick="auditarPlanosManual()" title="Confere se toda falha tem exatamente 1 Plano de Ação vinculado e corrige automaticamente o que faltar">Auditar Falhas × Plano</button>
       </div>
     </div>
@@ -7579,19 +7752,23 @@ function gerarPdfPlanoAcao(modo){
   modo=modo==='concluidos'?'concluidos':'pendencias';
   const {rows,fx}=planoRowsParaPdf(modo);
   const incluiConcluido=modo==='concluidos';
-  // CORREÇÃO (2026-07-13, v6.78): agrupamento usava a chave BRUTA de r.piso ("1"/"P1"/"01" geravam
-  // grupos DIFERENTES no PDF, mesmo sendo o mesmo piso na tela) e exibia esse mesmo texto bruto como
-  // título do bloco — agora agrupa pela chave normalizada via obterPisoDoRegistro() e exibe o rótulo
-  // canônico via formatarLocalizacaoOperacional(), igual à tela. Colunas Piso/Endereço adicionadas por
-  // linha (usando as mesmas funções centrais) para nunca mais depender só do agrupamento do bloco.
-  const cols=[['Prioridade','prioridade'],['Loja / Área','local'],['Item','itemNome'],
-    ['Piso','_piso',r=>esc(formatarLocalizacaoOperacional({piso:r.piso,localId:r.localId,itemId:r.itemId}))],
-    ['Endereço','_endereco',r=>esc(formatarEnderecoTecnico({localId:r.localId,itemId:r.itemId}))],
-    ['Categoria','categoria'],['Responsável','responsavel'],['Situação','situacao',r=>`<span class="pill ${r.situacao==='Sem plano'?'warn':r.situacao==='Concluído'?'ok':''}">${esc(r.situacao)}</span>`]];
+  // CORREÇÃO (2026-07-13, v6.84 — itens 14/15 do pedido de OS): colunas do PDF geral padronizadas
+  // para N° OS/Loja·Área/LUC/Endereço/Piso/Status/Direcionamento/Responsável/Situação/Abertura — MESMA
+  // função central resolverContextoTecnicoDoPlano() usada na tela (item 15: "não gerar Sem endereço no
+  // PDF quando o dado já existe na falha ou no teste"), nenhuma lógica própria de piso/endereço aqui.
+  const cols=[['N° OS','_os',r=>esc(r.plano?.numeroOS||'—')],['Loja / Área','local'],
+    ['LUC','_luc',r=>esc(resolverContextoTecnicoDoPlano(r).luc||'—')],
+    ['Endereço','_endereco',r=>esc(resolverContextoTecnicoDoPlano(r).enderecoFisico||'Sem endereço')],
+    ['Piso','_piso',r=>esc(exibirPiso(resolverContextoTecnicoDoPlano(r).piso)||'Sem piso')],
+    ['Status','statusFalha',r=>esc(normalizeStatus(r.statusFalha)||'—')],
+    ['Direcionamento','direcionamento'],['Responsável','responsavel'],
+    ['Situação','situacao',r=>`<span class="pill ${r.situacao==='Sem plano'?'warn':r.situacao==='Concluído'?'ok':''}">${esc(r.situacao)}</span>`],
+    ['Abertura','desde',r=>esc(fmtDateSimple(r.desde)||'—')]];
   if(incluiConcluido)cols.push(['Concluído em','concluidoEmFmt']);
   const grupos={};
   rows.forEach(r=>{
-    const pisoKey=obterPisoDoRegistro({piso:r.piso,localId:r.localId,itemId:r.itemId})||'';
+    const ctx=resolverContextoTecnicoDoPlano(r);
+    const pisoKey=ctx.piso||'';
     const pisoLabel=pisoKey?exibirPiso(pisoKey):'Sem piso';
     const k=pisoKey+' | '+(r.laco||'Sem laço');
     grupos[k]=grupos[k]||{piso:pisoLabel,laco:r.laco||'Sem laço',itens:[]};
@@ -7612,14 +7789,16 @@ function gerarPdfPlanoDetalhado(modo){
 
   const blocos=rows.map(r=>{
     const p=r.plano||{},f=r.falha||{};
+    const ctx=resolverContextoTecnicoDoPlano(r);
     const fotos=(r.fotos&&r.fotos.length)?`<div class="detFotos">${r.fotos.map(u=>`<img src="${esc(normalizeFotoUrl(u))}" alt="Foto do serviço">`).join('')}</div>`:'<p class="mutedLine">Sem fotos anexadas.</p>';
     return `<div class="detCard">
-      <div class="detHead"><h4>${esc(r.itemNome||'Item')}</h4><span class="pill ${r.situacao==='Concluído'?'ok':''}">${esc(r.situacao||'Aberto')}</span></div>
+      <div class="detHead"><h4>${esc(p.numeroOS||'—')} — ${esc(r.itemNome||'Item')}</h4><span class="pill ${r.situacao==='Concluído'?'ok':''}">${esc(r.situacao||'Aberto')}</span></div>
       <div class="detMeta">
+        <span><b>LUC:</b> ${esc(ctx.luc||'—')}</span>
         <span><b>Painel:</b> ${esc(r.painel||'—')}</span>
         <span><b>Laço:</b> ${esc(r.laco||'—')}</span>
-        <span><b>Piso:</b> ${esc(formatarLocalizacaoOperacional({piso:r.piso,localId:r.localId,itemId:r.itemId}))}</span>
-        <span><b>Endereço:</b> ${esc(formatarEnderecoTecnico({localId:r.localId,itemId:r.itemId}))}</span>
+        <span><b>Piso:</b> ${esc(exibirPiso(ctx.piso)||'Sem piso')}</span>
+        <span><b>Endereço:</b> ${esc(ctx.enderecoFisico||'Sem endereço')}</span>
         <span><b>Loja/Área:</b> ${esc(r.local||'—')}</span>
         <span><b>Categoria:</b> ${esc(r.categoria||'—')}</span>
         <span><b>Prioridade:</b> ${esc(r.prioridade||'—')}</span>
