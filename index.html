@@ -2323,11 +2323,45 @@ function classificarEstadoSincronizacao(metaLocal, metaGoogle){
 // por aqui antes de agir. Enquanto o Modo Manutenção estiver ativo, NENHUMA chamada de rede é
 // feita (nem leitura) — retorna um diagnóstico "bloqueado" imediatamente, para garantir que o
 // painel de conflito também não dispare tráfego real por engano.
+// ---- FASE 15: LIBERAÇÃO TEMPORÁRIA DE LEITURA SOMENTE-DIAGNÓSTICO ------------------------
+// Flag em memória (NUNCA persistida em localStorage) — dura só a sessão/aba atual e é
+// resetada a cada reload. Enquanto ativa, e SOMENTE enquanto o Modo Manutenção também
+// estiver ativo, avaliarEstadoSincronizacao() pode fazer UM GET (jsonpDbAtual, que é
+// estritamente leitura) para montar o diagnóstico comparativo real. Nenhuma outra rotina
+// deste arquivo consulta esta flag — push/save/write/sync/clear/update continuam checando
+// syncMaintenanceMode() normalmente e permanecem bloqueadas.
+function syncDiagReadUnlocked(){ return window._syncDiagReadUnlock===true; }
+function liberarLeituraDiagnostico(){
+  if(!confirm('Isso permite UMA leitura (GET) somente-diagnóstico da base do Google, apenas para comparar com a base local neste painel.\n\nNENHUMA gravação, push, save, sync, clear ou update será executada — o Modo Manutenção continua bloqueando tudo isso normalmente.\n\nA liberação vale só para esta aba/sessão (não fica salva) e você pode revogar a qualquer momento. Continuar?'))return;
+  window._syncDiagReadUnlock=true;
+  registrarLogSync({acao:'liberar_leitura_diagnostico', resultado:'ok'});
+  abrirPainelConflitoSync();
+}
+function revogarLeituraDiagnostico(){
+  window._syncDiagReadUnlock=false;
+  registrarLogSync({acao:'revogar_leitura_diagnostico', resultado:'ok'});
+  abrirPainelConflitoSync();
+}
 async function avaliarEstadoSincronizacao(){
   montarMetaAtual();
   const metaLocal = db._meta;
   if(syncMaintenanceMode()){
-    return {estado:'modo_manutencao', acaoRecomendada:'Sincronização bloqueada para manutenção — nenhuma leitura ou gravação no Google foi feita para montar este diagnóstico. Desative o Modo Manutenção (Sistema) para permitir a comparação real com o Google.', metaLocal, metaGoogle:null, bloqueadoPorManutencao:true};
+    if(!syncDiagReadUnlocked()){
+      return {estado:'modo_manutencao', acaoRecomendada:'Sincronização bloqueada para manutenção — nenhuma leitura ou gravação no Google foi feita para montar este diagnóstico. A comparação completa depende da liberação temporária da leitura remota (somente-diagnóstico) ou de desativar o Modo Manutenção (Sistema).', metaLocal, metaGoogle:null, bloqueadoPorManutencao:true, googleNaoConsultado:true};
+    }
+    // Leitura somente-diagnóstico liberada: faz APENAS um GET (jsonpDbAtual não grava nada),
+    // e continua reportando bloqueadoPorManutencao:true (push/pull normal seguem bloqueados).
+    const cid=(typeof clienteAtivo==='function')?clienteAtivo():'';
+    if(!cid) return {estado:'sem_cliente', acaoRecomendada:'Nenhum cliente ativo selecionado — selecione um cliente antes de avaliar a sincronização.', metaLocal, metaGoogle:null, bloqueadoPorManutencao:true};
+    try{
+      const r = await jsonpDbAtual();
+      if(!r.ok) return {estado:'erro', acaoRecomendada:'Falha ao ler metadados do Google (leitura somente-diagnóstico): '+(r.error||''), metaLocal, metaGoogle:null, bloqueadoPorManutencao:true};
+      const metaGoogle = (r.db && r.db._meta) ? r.db._meta : null;
+      const classificacao = classificarEstadoSincronizacao(metaLocal, metaGoogle);
+      return Object.assign({metaLocal, metaGoogle, dbGoogle:r.db, bloqueadoPorManutencao:true, leituraDiagnosticoUsada:true}, classificacao);
+    }catch(e){
+      return {estado:'erro', acaoRecomendada:'Falha ao avaliar estado de sincronização (leitura somente-diagnóstico): '+e.message, metaLocal, metaGoogle:null, bloqueadoPorManutencao:true};
+    }
   }
   const cid=(typeof clienteAtivo==='function')?clienteAtivo():'';
   if(!cid) return {estado:'sem_cliente', acaoRecomendada:'Nenhum cliente ativo selecionado — selecione um cliente antes de avaliar a sincronização.', metaLocal, metaGoogle:null};
@@ -2340,6 +2374,117 @@ async function avaliarEstadoSincronizacao(){
   }catch(e){
     return {estado:'erro', acaoRecomendada:'Falha ao avaliar estado de sincronização: '+e.message, metaLocal, metaGoogle:null};
   }
+}
+
+// ---- DIAGNÓSTICO POR REGISTRO — "qual item exatamente está preso na fila e por quê" ------
+// Diferente do checksum agregado por coleção (que só diz "algo mudou" numa coleção inteira),
+// esta função compara ITEM A ITEM (por id) a base local com a base atual do Google, e aponta
+// exatamente qual registro diverge, em qual campo, e o motivo provável. NUNCA remove nada da
+// fila sozinha — apenas diagnostica (ver reconciliarFilaPendente() logo abaixo para a única
+// forma segura de zerar, e mesmo essa exige confirmação de que não há diferença real).
+async function diagnosticarFilaPendente(){
+  if(typeof syncMaintenanceMode==='function' && syncMaintenanceMode() && !(typeof syncDiagReadUnlocked==='function' && syncDiagReadUnlocked())){
+    return {ok:false, motivo:'Modo Manutenção de Sincronização está ativo. Use "Liberar leitura somente-diagnóstico" no painel de Diagnóstico, ou desative o Modo Manutenção, antes de investigar a fila.'};
+  }
+  const cid=(typeof clienteAtivo==='function')?clienteAtivo():'';
+  if(!cid) return {ok:false, motivo:'Nenhum cliente ativo selecionado — selecione um cliente antes de investigar a fila.'};
+  let r;
+  try{ r = await jsonpDbAtual(); }catch(e){ return {ok:false, motivo:'Falha ao consultar o Google Sheets: '+e.message}; }
+  if(!r || !r.ok || !r.db) return {ok:false, motivo:'Resposta inválida do Google ao consultar a base ('+(r&&r.error?r.error:'sem detalhe')+').'};
+  const dbGoogle = r.db;
+  // Mesmas coleções cobertas por checksumColecoes() — mantém os dois diagnósticos (agregado e por
+  // registro) consistentes entre si.
+  const colecoes=['falhas','planos','testes','equipamentos','flms','locais','paineis','lacos','portas','historico','plantas','cftv','acessoPontos','ambienteEquip'];
+  const achados=[];
+  colecoes.forEach(col=>{
+    const locais = Array.isArray(db[col]) ? db[col] : [];
+    const remotos = Array.isArray(dbGoogle[col]) ? dbGoogle[col] : [];
+    const mapaRemoto = {}; remotos.forEach(x=>{ if(x && x.id!=null) mapaRemoto[String(x.id)]=x; });
+    const idsLocaisVistos = new Set();
+    locais.forEach(itemLocal=>{
+      if(!itemLocal || itemLocal.id==null) return;
+      const chaveId = String(itemLocal.id);
+      idsLocaisVistos.add(chaveId);
+      const itemRemoto = mapaRemoto[chaveId];
+      if(!itemRemoto){
+        achados.push({colecao:col, id:itemLocal.id, operacao:'insert', clienteId:cid, timestamp:(itemLocal.atualizadoEm||itemLocal.data||itemLocal.criadoEm||itemLocal.ultimaAlteracao||''), motivo:'Existe na base local mas NÃO existe na base do Google — o envio pode não ter incluído este registro (ver Logs de sincronização) ou a escrita nesta aba falhou de forma silenciosa.'});
+        return;
+      }
+      const camposDivergentes=[];
+      const chaves = new Set(Object.keys(itemLocal).concat(Object.keys(itemRemoto)));
+      chaves.forEach(k=>{
+        if(k==='fotos') return; // listas de URL — divergência aqui seria capturada por outro campo de status/data
+        let vl = itemLocal[k], vr = itemRemoto[k];
+        // Defensivo: normaliza Date que eventualmente ainda chegue aqui como objeto (dado legado
+        // gravado antes da correção em Code.gs/readSheetObjects_, ou ambiente com fuso diferente).
+        if(Object.prototype.toString.call(vr)==='[object Date]') vr = vr.toISOString();
+        if(Object.prototype.toString.call(vl)==='[object Date]') vl = vl.toISOString();
+        const sl = (vl===undefined||vl===null)?'':String(vl);
+        const sr = (vr===undefined||vr===null)?'':String(vr);
+        if(sl!==sr) camposDivergentes.push({campo:k, local:sl, google:sr});
+      });
+      if(camposDivergentes.length){
+        const camposData = camposDivergentes.filter(c=>/data|Em$|Alteracao|Atualizacao/i.test(c.campo));
+        const provavelCoercaoData = camposData.some(c=>/^\d{4}-\d{2}-\d{2}T/.test(c.local) && !/^\d{4}-\d{2}-\d{2}T/.test(c.google));
+        achados.push({
+          colecao:col, id:itemLocal.id, operacao:'update', clienteId:cid,
+          timestamp:(itemLocal.atualizadoEm||itemLocal.data||itemLocal.criadoEm||itemLocal.ultimaAlteracao||''),
+          motivo: provavelCoercaoData
+            ? 'Campo de data/hora divergente e com formato incompatível com ISO 8601 do lado do Google — indício de que o Sheets converteu a string em um valor de Date na gravação anterior (ver correção em Code.gs). Campo(s): '+camposDivergentes.map(c=>c.campo).join(', ')
+            : 'Conteúdo diferente entre local e Google no(s) campo(s): '+camposDivergentes.map(c=>c.campo).join(', '),
+          camposDivergentes
+        });
+      }
+    });
+    remotos.forEach(itemRemoto=>{
+      if(itemRemoto && itemRemoto.id!=null && !idsLocaisVistos.has(String(itemRemoto.id))){
+        achados.push({colecao:col, id:itemRemoto.id, operacao:'delete', clienteId:cid, timestamp:(itemRemoto.atualizadoEm||itemRemoto.data||itemRemoto.criadoEm||itemRemoto.ultimaAlteracao||''), motivo:'Existe na base do Google mas NÃO existe mais localmente — provavelmente uma exclusão local que ainda não foi confirmada no Google, ou o registro foi apagado direto na planilha.'});
+      }
+    });
+  });
+  return {ok:true, achados, revisionLocal:db._revision||0, revisionGoogle:(dbGoogle._meta&&dbGoogle._meta.revision)||dbGoogle._revision||0, checksumLocal:checksumColecoes(db), checksumGoogle:checksumColecoes(dbGoogle)};
+}
+
+// Botão "Ver alterações pendentes": mostra coleção, ID, operação, quando e o motivo exato pelo
+// qual cada registro não saiu da fila — nunca some nada por conta própria.
+function verAlteracoesPendentes(){
+  openModalWide(`<h2>Ver alterações pendentes</h2><p class="compactHelp">Comparando a base local com a base atual do Google Sheets, registro a registro…</p><div id="filaPendenteBody">Carregando…</div><div class="premiumActions" style="margin-top:10px"><button class="btn secondary" onclick="closeModal()">Fechar</button></div>`);
+  diagnosticarFilaPendente().then(res=>{
+    const body=document.getElementById('filaPendenteBody'); if(!body)return;
+    if(!res.ok){ body.innerHTML=`<div class="msg err">${esc(res.motivo)}</div>`; return; }
+    if(!res.achados.length){
+      body.innerHTML=`<div class="msg ok">Nenhuma diferença encontrada registro a registro entre local e Google (checksum local: ${esc(res.checksumLocal)} · checksum Google: ${esc(res.checksumGoogle)} · revisão local: ${esc(String(res.revisionLocal))} · revisão Google: ${esc(String(res.revisionGoogle))}).</div>
+        <p class="compactHelp" style="margin-top:8px">O indicador mostra "Alterações pendentes" mas o conteúdo já bate — use "Reconciliar fila" para confirmar e zerar o indicador.</p>
+        <button class="btn" style="margin-top:6px" onclick="reconciliarFilaPendente()">Reconciliar fila</button>`;
+      return;
+    }
+    const linhas = res.achados.map(a=>`<tr>
+        <td>${esc(a.colecao)}</td><td>${esc(String(a.id))}</td><td>${esc(a.operacao)}</td><td>${esc(a.timestamp||'—')}</td>
+        <td>${esc(a.motivo)}</td>
+      </tr>`+(a.camposDivergentes||[]).map(c=>`<tr><td colspan="4" style="padding-left:24px;color:#666">↳ <b>${esc(c.campo)}</b>: local="${esc(c.local)}" · google="${esc(c.google)}"</td></tr>`).join('')).join('');
+    body.innerHTML=`<table class="tbl"><thead><tr><th>Coleção</th><th>ID</th><th>Operação</th><th>Quando</th><th>Motivo</th></tr></thead><tbody>${linhas}</tbody></table>
+      <p class="compactHelp" style="margin-top:10px"><b>${res.achados.length}</b> registro(s) realmente divergente(s) — cliente: ${esc(res.achados[0].clienteId)}. Não remova manualmente: corrija a causa (ex.: "Sincronizar agora") e confira de novo. Se o motivo indicar coerção de data pelo Sheets, reimplante o Code.gs corrigido e sincronize novamente.</p>`;
+  });
+}
+
+// Botão "Reconciliar fila": só zera "Alterações pendentes" depois de confirmar, registro a
+// registro, que o conteúdo local e o do Google são idênticos. Se houver qualquer diferença real,
+// mantém a fila e mostra exatamente qual é a diferença — nunca limpa às cegas.
+async function reconciliarFilaPendente(){
+  const res = await diagnosticarFilaPendente();
+  if(!res.ok){ alert('Não foi possível reconciliar: '+res.motivo); return; }
+  if(res.achados.length){
+    alert('NÃO reconciliado: ainda existem '+res.achados.length+' diferença(s) real(is) entre local e Google. Abra novamente "Ver alterações pendentes" para ver exatamente quais.');
+    registrarLogSync({acao:'reconciliar_fila', resultado:'rejeitado', erro:res.achados.length+' divergência(s) real(is)'});
+    return;
+  }
+  if(!confirm('A comparação registro a registro não encontrou nenhuma diferença entre a base local e a do Google. Confirmar reconciliação e zerar "Alterações pendentes"?'))return;
+  setBaseRevisionAtual();
+  const checksumAtual = checksumColecoes(db);
+  setSyncCfg({dirty:false, lastSync:new Date().toLocaleTimeString('pt-BR'), lastChecksumEnviado:checksumAtual});
+  registrarLogSync({acao:'reconciliar_fila', resultado:'ok', checksumNovo:checksumAtual, revisaoNova:db._revision||0});
+  if(typeof renderSistema==='function') renderSistema();
+  alert('Fila reconciliada: local e Google conferem registro a registro. "Alterações pendentes" foi zerado.');
 }
 
 // ---- FASE 14: LOG DE OPERAÇÕES DE SYNC ----------------------------------------------------
@@ -2451,40 +2596,80 @@ async function abrirPainelConflitoSync(erroServidor){
   renderPainelSincronizacao(diag, erroServidor);
 }
 function renderPainelSincronizacao(diag, erroServidor){
-  const ml=diag.metaLocal||{}, mg=diag.metaGoogle||{};
-  const linha=(label,vl,vg)=>`<tr><td>${esc(label)}</td><td>${esc(vl==null?'—':String(vl))}</td><td>${esc(vg==null?'—':String(vg))}</td></tr>`;
-  const contagensLinhas = (()=>{
+  const ml=diag.metaLocal||{};
+  // "Google não consultado" = nenhuma leitura real foi feita (bloqueado por manutenção e
+  // sem liberação de diagnóstico ativa). Nesse caso mg é sempre null — NUNCA tratamos isso
+  // como zero. Só existe metaGoogle real quando de fato houve um GET (fora do modo manutenção,
+  // ou com a liberação somente-diagnóstico ativa via diag.leituraDiagnosticoUsada).
+  const googleConsultado = !!diag.metaGoogle;
+  const mg = diag.metaGoogle||{};
+  // Cada campo em sua própria linha (label em cima, valor embaixo), com quebra de palavra
+  // para checksums/timestamps longos — elimina a sobreposição em qualquer resolução.
+  const campo=(label,valor,naoConsultado)=>`<div class="syncField">
+      <div class="syncFieldLabel">${esc(label)}</div>
+      <div class="syncFieldValor${naoConsultado?' syncFieldNC':''}">${naoConsultado?'NÃO CONSULTADO':esc(valor==null||valor===''?'—':String(valor))}</div>
+    </div>`;
+  const contagensLinhas = googleConsultado ? (()=>{
     const chaves = Array.from(new Set([...Object.keys(ml.recordCounts||{}),...Object.keys(mg.recordCounts||{})]));
     return chaves.map(k=>{
       const vl=(ml.recordCounts||{})[k]??0, vg=(mg.recordCounts||{})[k]??0;
       return `<tr><td>${esc(k)}</td><td>${vl}</td><td>${vg}${vl!==vg?' ⚠':''}</td></tr>`;
     }).join('');
-  })();
+  })() : '';
+  const styleBloco = `<style>
+    .syncGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-top:10px}
+    .syncCard{border:1px solid #ddd;border-radius:8px;padding:10px 12px;min-width:0}
+    .syncCard h3{margin:0 0 8px 0}
+    .syncField{padding:6px 0;border-bottom:1px solid #f0f0f0}
+    .syncField:last-child{border-bottom:none}
+    .syncFieldLabel{font-size:12px;color:#666;margin-bottom:2px}
+    .syncFieldValor{font-size:14px;word-break:break-all;overflow-wrap:anywhere}
+    .syncFieldNC{color:#b00020;font-weight:600;word-break:normal}
+  </style>`;
+  const bannerGoogleNaoConsultado = (!googleConsultado) ? `
+    <div class="note" style="border:1px solid #f0c060;background:#fff8e6;padding:10px 12px;border-radius:8px;margin-top:12px">
+      <b>GOOGLE NÃO CONSULTADO</b><br>
+      Nenhuma leitura foi feita na base do Google (Modo Manutenção ativo). Por isso não há comparação,
+      diferenças, checksum ou contagem do lado do Google — nada foi assumido como zero.
+      A comparação completa depende de liberar temporariamente a leitura remota, somente para diagnóstico
+      (GET), sem permitir push/save/write/sync/clear/update.<br><br>
+      <button class="btn secondary" onclick="liberarLeituraDiagnostico()">Liberar leitura para diagnóstico (somente GET)</button>
+    </div>` : '';
+  const bannerLeituraDiagnostico = (googleConsultado && diag.leituraDiagnosticoUsada) ? `
+    <div class="note" style="border:1px solid #9ec7ff;background:#eef5ff;padding:10px 12px;border-radius:8px;margin-top:12px">
+      <b>Leitura somente-diagnóstico ativa</b> — os dados do Google abaixo vieram de um GET liberado manualmente
+      só para esta comparação. O Modo Manutenção continua bloqueando push/save/write/sync/clear/update.<br><br>
+      <button class="btn secondary" onclick="revogarLeituraDiagnostico()">Revogar liberação de leitura</button>
+    </div>` : '';
   const html = `
+    ${styleBloco}
     <h2>${diag.bloqueadoPorManutencao?'Sincronização BLOQUEADA (Modo Manutenção)':'Diagnóstico de sincronização'}</h2>
     ${erroServidor?`<p class="note" style="color:#b00020">${esc(erroServidor)}</p>`:''}
     <p class="note"><b>Estado:</b> ${esc(diag.estado||'—')}<br><b>Ação recomendada:</b> ${esc(diag.acaoRecomendada||'—')}</p>
-    <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:10px">
-      <div style="flex:1;min-width:260px"><h3>BASE LOCAL</h3><table class="tbl"><tbody>
-        ${linha('Cliente', ml.clienteNome||ml.clienteId, null)}
-        ${linha('Database ID', ml.databaseId, null)}
-        ${linha('Revisão', ml.revision, null)}
-        ${linha('Base Revision', ml.baseRevision, null)}
-        ${linha('Atualizado em', ml.updatedAt, null)}
-        ${linha('Atualizado por', ml.updatedBy, null)}
-        ${linha('Checksum', ml.checksum, null)}
-        ${linha('Dirty (pendente)', syncCfg().dirty?'sim':'não', null)}
-      </tbody></table></div>
-      <div style="flex:1;min-width:260px"><h3>BASE GOOGLE</h3><table class="tbl"><tbody>
-        ${linha('Cliente', null, mg.clienteNome||mg.clienteId)}
-        ${linha('Database ID', null, mg.databaseId)}
-        ${linha('Revisão', null, mg.revision)}
-        ${linha('Base Revision', null, mg.baseRevision)}
-        ${linha('Atualizado em', null, mg.updatedAt)}
-        ${linha('Atualizado por', null, mg.updatedBy)}
-        ${linha('Checksum', null, mg.checksum)}
-      </tbody></table></div>
+    <div class="syncGrid">
+      <div class="syncCard"><h3>BASE LOCAL</h3>
+        ${campo('Cliente', ml.clienteNome||ml.clienteId)}
+        ${campo('Database ID', ml.databaseId)}
+        ${campo('Revisão', ml.revision)}
+        ${campo('Base Revision', ml.baseRevision)}
+        ${campo('Atualizado em', ml.updatedAt)}
+        ${campo('Atualizado por', ml.updatedBy)}
+        ${campo('Checksum', ml.checksum)}
+        ${campo('Dirty (pendente)', syncCfg().dirty?'sim':'não')}
+      </div>
+      <div class="syncCard"><h3>BASE GOOGLE</h3>
+        ${campo('Status', googleConsultado?'Consultado':'Leitura remota bloqueada', false)}
+        ${campo('Cliente', mg.clienteNome||mg.clienteId, !googleConsultado)}
+        ${campo('Database ID', mg.databaseId, !googleConsultado)}
+        ${campo('Revisão', mg.revision, !googleConsultado)}
+        ${campo('Base Revision', mg.baseRevision, !googleConsultado)}
+        ${campo('Atualizado em', mg.updatedAt, !googleConsultado)}
+        ${campo('Atualizado por', mg.updatedBy, !googleConsultado)}
+        ${campo('Checksum', mg.checksum, !googleConsultado)}
+      </div>
     </div>
+    ${bannerGoogleNaoConsultado}
+    ${bannerLeituraDiagnostico}
     ${(function(){
       // ETAPA 4 (auditoria 2026-07-17): quando o cliente ativo é marcado como homologação, o painel
       // de diagnóstico passa a exibir também os identificadores técnicos completos — só leitura,
@@ -2495,18 +2680,21 @@ function renderPainelSincronizacao(diag, erroServidor){
       const propKey='SDAI_CLI_'+String(cid).replace(/[^a-zA-Z0-9_]/g,'_');
       return `<div class="premiumPanel" style="margin-top:14px;border:1px solid #f0d060;background:#fffdf3">
         <h3>🧪 Identificadores técnicos (cliente de homologação)</h3>
-        <table class="tbl"><tbody>
-          ${linha('clienteId', cid, null)}
-          ${linha('databaseId (local, db._meta.databaseId)', ml.databaseId, mg.databaseId)}
-          ${linha('Propriedade Apps Script (PropertiesService)', propKey, null)}
-          ${linha('Apps Script (Web App URL)', API_URL, null)}
-          ${linha('ID/URL da planilha do Google', '(criada sob demanda por getOrCreateClienteSS_ na 1ª gravação/leitura real com este cliente — não consultável a partir do frontend sem uma chamada de rede real, que este ambiente de auditoria não pode fazer)', null)}
-        </tbody></table>
+        ${campo('clienteId', cid)}
+        ${campo('databaseId (local, db._meta.databaseId)', ml.databaseId)}
+        ${campo('databaseId (Google)', mg.databaseId, !googleConsultado)}
+        ${campo('Propriedade Apps Script (PropertiesService)', propKey)}
+        ${campo('Apps Script (Web App URL)', API_URL)}
+        ${campo('ID/URL da planilha do Google', '(criada sob demanda por getOrCreateClienteSS_ na 1ª gravação/leitura real com este cliente — não consultável a partir do frontend sem uma chamada de rede real)')}
       </div>`;
     })()}
+    ${googleConsultado ? `
     <h3 style="margin-top:14px">Diferenças encontradas (por coleção — contagem + checksum agregados)</h3>
-    <table class="tbl"><thead><tr><th>Coleção</th><th>Local</th><th>Google</th></tr></thead><tbody>${contagensLinhas||'<tr><td colspan=3>Sem dados do Google para comparar (modo manutenção ativo ou falha de leitura).</td></tr>'}</tbody></table>
+    <table class="tbl"><thead><tr><th>Coleção</th><th>Local</th><th>Google</th></tr></thead><tbody>${contagensLinhas||'<tr><td colspan=3>Sem coleções para comparar.</td></tr>'}</tbody></table>
     <p class="note" style="margin-top:8px"><i>Limitação conhecida e documentada: esta comparação é agregada por coleção (contagem + checksum global), não um diff campo-a-campo por registro individual — inviável de completar com segurança no tempo disponível desta etapa. "Mesclar assistido" cobre o caso mais simples (registros que existem só de um lado).</i></p>
+    ` : `
+    <p class="note" style="margin-top:14px"><i>Nenhuma diferença, divergência ou conflito é calculado enquanto o Google não foi consultado — isso evitaria uma comparação falsa contra "zero".</i></p>
+    `}
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px">
       <button class="btn secondary" onclick="closeModal()">Cancelar</button>
       <button class="btn secondary" onclick="abrirPainelConflitoSync()">Comparar bases</button>
@@ -6577,6 +6765,8 @@ function renderSistema(){
      <button class="btn secondary" onclick="abrirRestaurarJsonRecuperado()">Restaurar JSON</button>
      <button class="btn secondary" onclick="verLogsSync()">Ver Logs</button>
      <button class="btn secondary" ${manut?'disabled title="Bloqueado pelo Modo Manutenção"':''} onclick="testarConexaoSomenteLeitura()">Testar Conexão (somente leitura)</button>
+     <button class="btn secondary" ${manut?'disabled title="Bloqueado pelo Modo Manutenção"':''} onclick="verAlteracoesPendentes()">Ver alterações pendentes</button>
+     <button class="btn secondary" ${manut?'disabled title="Bloqueado pelo Modo Manutenção"':''} onclick="reconciliarFilaPendente()">Reconciliar fila</button>
    </div>
  </div>
  <div class="premiumPanel">${renderPainelMigracaoLegado()}</div>`;
