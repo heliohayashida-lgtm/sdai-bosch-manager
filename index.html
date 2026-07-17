@@ -2347,32 +2347,39 @@ async function avaliarEstadoSincronizacao(){
   const metaLocal = db._meta;
   if(syncMaintenanceMode()){
     if(!syncDiagReadUnlocked()){
-      return {estado:'modo_manutencao', acaoRecomendada:'Sincronização bloqueada para manutenção — nenhuma leitura ou gravação no Google foi feita para montar este diagnóstico. A comparação completa depende da liberação temporária da leitura remota (somente-diagnóstico) ou de desativar o Modo Manutenção (Sistema).', metaLocal, metaGoogle:null, bloqueadoPorManutencao:true, googleNaoConsultado:true};
+      // ÚNICO ponto legítimo de "GET nunca disparado": Modo Manutenção ativo e leitura de
+      // diagnóstico não liberada. leituraExecutada:false é reservado exclusivamente para este caso.
+      return {estado:'modo_manutencao', acaoRecomendada:'Sincronização bloqueada para manutenção — nenhuma leitura ou gravação no Google foi feita para montar este diagnóstico. A comparação completa depende da liberação temporária da leitura remota (somente-diagnóstico) ou de desativar o Modo Manutenção (Sistema).', metaLocal, metaGoogle:null, bloqueadoPorManutencao:true, googleNaoConsultado:true, leituraExecutada:false, googleReadStatus:'bloqueado_manutencao'};
     }
     // Leitura somente-diagnóstico liberada: faz APENAS um GET (jsonpDbAtual não grava nada),
     // e continua reportando bloqueadoPorManutencao:true (push/pull normal seguem bloqueados).
     const cid=(typeof clienteAtivo==='function')?clienteAtivo():'';
-    if(!cid) return {estado:'sem_cliente', acaoRecomendada:'Nenhum cliente ativo selecionado — selecione um cliente antes de avaliar a sincronização.', metaLocal, metaGoogle:null, bloqueadoPorManutencao:true};
+    if(!cid) return {estado:'sem_cliente', acaoRecomendada:'Nenhum cliente ativo selecionado — selecione um cliente antes de avaliar a sincronização.', metaLocal, metaGoogle:null, bloqueadoPorManutencao:true, leituraExecutada:false, googleReadStatus:'sem_cliente'};
     try{
       const r = await jsonpDbAtual();
-      if(!r.ok) return {estado:'erro', acaoRecomendada:'Falha ao ler metadados do Google (leitura somente-diagnóstico): '+(r.error||''), metaLocal, metaGoogle:null, bloqueadoPorManutencao:true};
+      if(!r.ok) return {estado:'erro', acaoRecomendada:'Falha ao ler metadados do Google (leitura somente-diagnóstico): '+(r.error||''), metaLocal, metaGoogle:null, bloqueadoPorManutencao:true, leituraExecutada:false, googleReadStatus:'erro_leitura', erroLeitura:r.error||''};
+      // O GET aconteceu e respondeu ok:true a partir daqui — leituraExecutada é SEMPRE true,
+      // mesmo que a planilha ainda não tenha _meta gravado (primeira vez / nunca sincronizada).
       const metaGoogle = (r.db && r.db._meta) ? r.db._meta : null;
       const classificacao = classificarEstadoSincronizacao(metaLocal, metaGoogle);
-      return Object.assign({metaLocal, metaGoogle, dbGoogle:r.db, bloqueadoPorManutencao:true, leituraDiagnosticoUsada:true}, classificacao);
+      return Object.assign({metaLocal, metaGoogle, dbGoogle:r.db, bloqueadoPorManutencao:true, leituraDiagnosticoUsada:true, leituraExecutada:true, googleReadStatus: metaGoogle?'ok':'sem_meta'}, classificacao);
     }catch(e){
-      return {estado:'erro', acaoRecomendada:'Falha ao avaliar estado de sincronização (leitura somente-diagnóstico): '+e.message, metaLocal, metaGoogle:null, bloqueadoPorManutencao:true};
+      return {estado:'erro', acaoRecomendada:'Falha ao avaliar estado de sincronização (leitura somente-diagnóstico): '+e.message, metaLocal, metaGoogle:null, bloqueadoPorManutencao:true, leituraExecutada:false, googleReadStatus:'erro_leitura', erroLeitura:e.message};
     }
   }
   const cid=(typeof clienteAtivo==='function')?clienteAtivo():'';
-  if(!cid) return {estado:'sem_cliente', acaoRecomendada:'Nenhum cliente ativo selecionado — selecione um cliente antes de avaliar a sincronização.', metaLocal, metaGoogle:null};
+  if(!cid) return {estado:'sem_cliente', acaoRecomendada:'Nenhum cliente ativo selecionado — selecione um cliente antes de avaliar a sincronização.', metaLocal, metaGoogle:null, leituraExecutada:false, googleReadStatus:'sem_cliente'};
   try{
     const r = await jsonpDbAtual();
-    if(!r.ok) return {estado:'erro', acaoRecomendada:'Falha ao ler metadados do Google: '+(r.error||''), metaLocal, metaGoogle:null};
+    if(!r.ok) return {estado:'erro', acaoRecomendada:'Falha ao ler metadados do Google: '+(r.error||''), metaLocal, metaGoogle:null, leituraExecutada:false, googleReadStatus:'erro_leitura', erroLeitura:r.error||''};
+    // GET concluído com sucesso — leituraExecutada:true SEMPRE, independentemente de a planilha já
+    // ter ou não metadados _meta gravados (base nova/nunca sincronizada é um resultado válido do
+    // GET, não um bloqueio de leitura).
     const metaGoogle = (r.db && r.db._meta) ? r.db._meta : null;
     const classificacao = classificarEstadoSincronizacao(metaLocal, metaGoogle);
-    return Object.assign({metaLocal, metaGoogle, dbGoogle:r.db}, classificacao);
+    return Object.assign({metaLocal, metaGoogle, dbGoogle:r.db, leituraExecutada:true, googleReadStatus: metaGoogle?'ok':'sem_meta'}, classificacao);
   }catch(e){
-    return {estado:'erro', acaoRecomendada:'Falha ao avaliar estado de sincronização: '+e.message, metaLocal, metaGoogle:null};
+    return {estado:'erro', acaoRecomendada:'Falha ao avaliar estado de sincronização: '+e.message, metaLocal, metaGoogle:null, leituraExecutada:false, googleReadStatus:'erro_leitura', erroLeitura:e.message};
   }
 }
 
@@ -2597,12 +2604,28 @@ async function abrirPainelConflitoSync(erroServidor){
 }
 function renderPainelSincronizacao(diag, erroServidor){
   const ml=diag.metaLocal||{};
-  // "Google não consultado" = nenhuma leitura real foi feita (bloqueado por manutenção e
-  // sem liberação de diagnóstico ativa). Nesse caso mg é sempre null — NUNCA tratamos isso
-  // como zero. Só existe metaGoogle real quando de fato houve um GET (fora do modo manutenção,
-  // ou com a liberação somente-diagnóstico ativa via diag.leituraDiagnosticoUsada).
-  const googleConsultado = !!diag.metaGoogle;
+  // BUGFIX: antes, "googleConsultado" era inferido só de `!!diag.metaGoogle` — o que confundia dois
+  // casos totalmente diferentes: (a) o GET nunca rodou (bloqueado por manutenção/sem cliente/erro de
+  // rede) e (b) o GET rodou e respondeu ok:true, mas a planilha do Google ainda não tem _meta gravado
+  // (base nova ou nunca sincronizada) — nesse caso `metaGoogle` também fica null, e a tela mostrava
+  // "GOOGLE NÃO CONSULTADO"/"Leitura remota bloqueada" mesmo com o Modo Manutenção desligado e a
+  // leitura tendo ocorrido normalmente. Agora usamos os campos explícitos que avaliarEstadoSincronizacao()
+  // já retorna (leituraExecutada / googleReadStatus) em vez de inferir pelo conteúdo.
+  const leituraExecutada = diag.leituraExecutada===true;
+  const googleReadStatus = diag.googleReadStatus||(leituraExecutada?'ok':'bloqueado_manutencao');
+  const googleConsultado = !!diag.metaGoogle; // continua útil para decidir se HÁ metadados para comparar
   const mg = diag.metaGoogle||{};
+  const statusTextos = {
+    bloqueado_manutencao:'Leitura remota bloqueada (Modo Manutenção ativo)',
+    sem_cliente:'Nenhum cliente ativo selecionado — GET não foi disparado',
+    erro_leitura:'Falha ao consultar o Google'+(diag.erroLeitura?(': '+diag.erroLeitura):''),
+    sem_meta:'Consultado (GET ok) — planilha do Google ainda sem metadados de sincronização (nunca sincronizada)',
+    ok:'Consultado (GET ok)'
+  };
+  const statusTexto = statusTextos[googleReadStatus] || (googleConsultado?'Consultado':'Leitura remota bloqueada');
+  // "NÃO CONSULTADO" nos campos individuais só faz sentido quando o GET de fato não rodou — quando
+  // rodou mas voltou sem _meta (sem_meta), o campo correto é "—" (vazio de verdade), não "bloqueado".
+  const naoExecutou = !leituraExecutada;
   // Cada campo em sua própria linha (label em cima, valor embaixo), com quebra de palavra
   // para checksums/timestamps longos — elimina a sobreposição em qualquer resolução.
   const campo=(label,valor,naoConsultado)=>`<div class="syncField">
@@ -2626,16 +2649,21 @@ function renderPainelSincronizacao(diag, erroServidor){
     .syncFieldValor{font-size:14px;word-break:break-all;overflow-wrap:anywhere}
     .syncFieldNC{color:#b00020;font-weight:600;word-break:normal}
   </style>`;
-  const bannerGoogleNaoConsultado = (!googleConsultado) ? `
+  const bannerGoogleNaoConsultado = naoExecutou ? `
     <div class="note" style="border:1px solid #f0c060;background:#fff8e6;padding:10px 12px;border-radius:8px;margin-top:12px">
-      <b>GOOGLE NÃO CONSULTADO</b><br>
-      Nenhuma leitura foi feita na base do Google (Modo Manutenção ativo). Por isso não há comparação,
-      diferenças, checksum ou contagem do lado do Google — nada foi assumido como zero.
-      A comparação completa depende de liberar temporariamente a leitura remota, somente para diagnóstico
-      (GET), sem permitir push/save/write/sync/clear/update.<br><br>
-      <button class="btn secondary" onclick="liberarLeituraDiagnostico()">Liberar leitura para diagnóstico (somente GET)</button>
+      <b>GET NÃO EXECUTADO</b><br>
+      Nenhuma leitura foi feita na base do Google — motivo: ${esc(statusTexto)}.
+      Por isso não há comparação, diferenças, checksum ou contagem do lado do Google — nada foi assumido como zero.
+      ${googleReadStatus==='bloqueado_manutencao' ? 'A comparação completa depende de liberar temporariamente a leitura remota, somente para diagnóstico (GET), sem permitir push/save/write/sync/clear/update.<br><br><button class="btn secondary" onclick="liberarLeituraDiagnostico()">Liberar leitura para diagnóstico (somente GET)</button>' : ''}
     </div>` : '';
-  const bannerLeituraDiagnostico = (googleConsultado && diag.leituraDiagnosticoUsada) ? `
+  const bannerSemMeta = (googleReadStatus==='sem_meta') ? `
+    <div class="note" style="border:1px solid #9ec7ff;background:#eef5ff;padding:10px 12px;border-radius:8px;margin-top:12px">
+      <b>GET executado com sucesso</b> — a leitura remota da base do Google funcionou normalmente, mas a
+      planilha ainda não tem metadados de sincronização (_meta) gravados: provavelmente ela nunca recebeu
+      um "Sincronizar agora" bem-sucedido para este cliente. Isso é um estado válido (base nova), não um
+      bloqueio de leitura.
+    </div>` : '';
+  const bannerLeituraDiagnostico = (leituraExecutada && diag.leituraDiagnosticoUsada) ? `
     <div class="note" style="border:1px solid #9ec7ff;background:#eef5ff;padding:10px 12px;border-radius:8px;margin-top:12px">
       <b>Leitura somente-diagnóstico ativa</b> — os dados do Google abaixo vieram de um GET liberado manualmente
       só para esta comparação. O Modo Manutenção continua bloqueando push/save/write/sync/clear/update.<br><br>
@@ -2658,17 +2686,18 @@ function renderPainelSincronizacao(diag, erroServidor){
         ${campo('Dirty (pendente)', syncCfg().dirty?'sim':'não')}
       </div>
       <div class="syncCard"><h3>BASE GOOGLE</h3>
-        ${campo('Status', googleConsultado?'Consultado':'Leitura remota bloqueada', false)}
-        ${campo('Cliente', mg.clienteNome||mg.clienteId, !googleConsultado)}
-        ${campo('Database ID', mg.databaseId, !googleConsultado)}
-        ${campo('Revisão', mg.revision, !googleConsultado)}
-        ${campo('Base Revision', mg.baseRevision, !googleConsultado)}
-        ${campo('Atualizado em', mg.updatedAt, !googleConsultado)}
-        ${campo('Atualizado por', mg.updatedBy, !googleConsultado)}
-        ${campo('Checksum', mg.checksum, !googleConsultado)}
+        ${campo('Status', statusTexto, false)}
+        ${campo('Cliente', mg.clienteNome||mg.clienteId, naoExecutou)}
+        ${campo('Database ID', mg.databaseId, naoExecutou)}
+        ${campo('Revisão', mg.revision, naoExecutou)}
+        ${campo('Base Revision', mg.baseRevision, naoExecutou)}
+        ${campo('Atualizado em', mg.updatedAt, naoExecutou)}
+        ${campo('Atualizado por', mg.updatedBy, naoExecutou)}
+        ${campo('Checksum', mg.checksum, naoExecutou)}
       </div>
     </div>
     ${bannerGoogleNaoConsultado}
+    ${bannerSemMeta}
     ${bannerLeituraDiagnostico}
     ${(function(){
       // ETAPA 4 (auditoria 2026-07-17): quando o cliente ativo é marcado como homologação, o painel
@@ -2682,7 +2711,7 @@ function renderPainelSincronizacao(diag, erroServidor){
         <h3>🧪 Identificadores técnicos (cliente de homologação)</h3>
         ${campo('clienteId', cid)}
         ${campo('databaseId (local, db._meta.databaseId)', ml.databaseId)}
-        ${campo('databaseId (Google)', mg.databaseId, !googleConsultado)}
+        ${campo('databaseId (Google)', mg.databaseId, naoExecutou)}
         ${campo('Propriedade Apps Script (PropertiesService)', propKey)}
         ${campo('Apps Script (Web App URL)', API_URL)}
         ${campo('ID/URL da planilha do Google', '(criada sob demanda por getOrCreateClienteSS_ na 1ª gravação/leitura real com este cliente — não consultável a partir do frontend sem uma chamada de rede real)')}
@@ -2693,7 +2722,7 @@ function renderPainelSincronizacao(diag, erroServidor){
     <table class="tbl"><thead><tr><th>Coleção</th><th>Local</th><th>Google</th></tr></thead><tbody>${contagensLinhas||'<tr><td colspan=3>Sem coleções para comparar.</td></tr>'}</tbody></table>
     <p class="note" style="margin-top:8px"><i>Limitação conhecida e documentada: esta comparação é agregada por coleção (contagem + checksum global), não um diff campo-a-campo por registro individual — inviável de completar com segurança no tempo disponível desta etapa. "Mesclar assistido" cobre o caso mais simples (registros que existem só de um lado).</i></p>
     ` : `
-    <p class="note" style="margin-top:14px"><i>Nenhuma diferença, divergência ou conflito é calculado enquanto o Google não foi consultado — isso evitaria uma comparação falsa contra "zero".</i></p>
+    <p class="note" style="margin-top:14px"><i>${leituraExecutada?'O GET foi executado, mas a planilha do Google ainda não tem metadados (_meta) para comparar — sincronize ao menos uma vez para gerar uma base de comparação.':'Nenhuma diferença, divergência ou conflito é calculado enquanto o Google não foi consultado — isso evitaria uma comparação falsa contra "zero".'}</i></p>
     `}
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px">
       <button class="btn secondary" onclick="closeModal()">Cancelar</button>
