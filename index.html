@@ -3348,6 +3348,33 @@ function _plantaVinculosTecnicos(localId){
 function membrosConsolidados(localId){
   return [localId,...(db.locais||[]).filter(l=>l.marcadorPrincipalId===localId&&!l.excluido).map(l=>l.id)];
 }
+// CORREÇÃO (bug relatado 2026-07-16): a aba Lojas/Áreas exibia o badge de status, o filtro "Com
+// falha"/"Em operação" e os KPIs (Em operação/Com falha) direto do campo bruto `l.status` (o próprio
+// cadastro da loja), enquanto o pino na aba Plantas usa statusAgregadoLoja() — que soma o status de
+// TODOS os equipamentos/módulos/portas vinculados à loja (e do grupo consolidado, quando aplicável).
+// Resultado: uma loja aparecia "Em operação" em Lojas/Áreas mesmo com um detector/módulo/acionador
+// dela em falha, porque a falha nunca é escrita de volta em `l.status` — só nos registros dos
+// dispositivos. A Planta já mostrava o estado correto (vermelho); a tabela é que estava desalinhada.
+// statusEfetivoLoja() reaproveita a MESMA agregação de statusAgregadoLoja()/membrosConsolidados() já
+// usada pela Planta, mas devolve o rótulo específico (ex.: "Módulo aberto", "Incêndio disparado"),
+// não só o estado genérico "falha", para manter o vocabulário já usado em normalizeStatus()/dsBadgeHtml
+// em toda a tela. Prioridade de severidade quando há mais de um tipo de falha simultânea no grupo:
+// Incêndio disparado > Módulo em curto > Laço aberto > Módulo aberto (mesma ordem de gravidade já
+// documentada em statusAgregadoLoja: "falha > desativação > operação"). Não altera nenhum dado
+// salvo — é só a leitura consolidada para exibição/filtro/KPI, o campo `l.status` do cadastro
+// continua existindo e intocado (histórico, importação, exportação e Google Sheets não são afetados).
+const STATUS_PRIORIDADE_FALHA=['Incêndio disparado','Módulo em curto','Laço aberto','Módulo aberto'];
+function statusEfetivoLoja(localId){
+  const membros=membrosConsolidados(localId);
+  const eqs=(db.equipamentos||[]).filter(e=>membros.includes(e.localId));
+  const flmsDaLoja=(db.portas||[]).filter(p=>membros.includes(p.localId)).map(p=>p.flmId);
+  const stats=[...eqs.map(e=>normalizeStatus(e.status)),...flmsDaLoja.map(fid=>flmStatusAgregado(fid))];
+  membros.forEach(mid=>{const loja=(db.locais||[]).find(x=>x.id===mid); if(loja&&loja.status)stats.push(normalizeStatus(loja.status))});
+  for(const p of STATUS_PRIORIDADE_FALHA){if(stats.includes(p))return p}
+  const outraFalha=stats.find(isFalhaStatus); if(outraFalha)return outraFalha;
+  if(stats.length&&stats.every(isDesativadoStatus))return 'Desativação';
+  return 'Em operação';
+}
 // simularConsolidacaoMarcadores(): NUNCA salva (item 3). Varre TODOS os pontos técnicos posicionados em
 // alguma planta (inclui SDAI/CO2/outros subsistemas, módulos/portas ficam de fora pois eles têm marcador
 // próprio só quando avulsos — o agrupamento pedido é por LOJA/ÁREA, ver item 2 do pedido) e agrupa por
@@ -3503,15 +3530,21 @@ function renderLocais(){
   // — mesma regra usada em Falhas e Plano de Ação (seção 8 do pedido do usuário, 2026-07). O campo
   // `sistema` (SDAI/CO2) já é gravado por PONTO TÉCNICO desde antes desta seção — a busca "SERRA
   // CO2" já retornava só o ponto CO2 (multi-termo AND sobre r.sistema incluso abaixo).
+  // CORREÇÃO (bug 2026-07-16): `statusEfetivo` passa a ser a fonte usada para badge/filtro/KPI desta
+  // tela — reaproveita a MESMA agregação já usada pelo pino da aba Plantas (statusAgregadoLoja/
+  // statusEfetivoLoja), então uma loja com falha em qualquer equipamento/módulo vinculado aparece
+  // como falha aqui também, e não só no mapa. `status` (bruto, do cadastro) continua disponível em
+  // r.status para quem precisar do valor original, sem quebrar nada que já lia esse campo.
   let todos=db.locais.map(l=>({
     ...l,
     painel:paiName(l.painelId),laco:lacName(l.lacoId),
     flmEndereco:flmById(l.flmId)?.endereco||'',
     portaNum:db.portas.find(p=>p.id===l.portaId)?.numero||'',
-    sistema:l.sistema||'SDAI'
+    sistema:l.sistema||'SDAI',
+    statusEfetivo:statusEfetivoLoja(l.id)
   }));
   let comFiltroSistema=todos.filter(r=>!fSistema||r.sistema===fSistema);
-  let rows=filtrarRegistrosPorBusca(comFiltroSistema,q,r=>[r.nome,r.nomeOficial,r.luc,r.tipo,r.painel,r.laco,r.piso,r.flmEndereco,r.portaNum?'Porta '+r.portaNum:'',r.sistema,r.status,r.obs].filter(Boolean).join(' '));
+  let rows=filtrarRegistrosPorBusca(comFiltroSistema,q,r=>[r.nome,r.nomeOficial,r.luc,r.tipo,r.painel,r.laco,r.piso,r.flmEndereco,r.portaNum?'Porta '+r.portaNum:'',r.sistema,r.statusEfetivo,r.obs].filter(Boolean).join(' '));
 
   // item 2: resolve o último teste de cada ponto ANTES de aplicar os filtros de Data/Resultado/
   // Responsável (que operam sobre o teste, não sobre o cadastro do local).
@@ -3525,7 +3558,7 @@ function renderLocais(){
   if(fPainel)rows=rows.filter(r=>r.painel===fPainel);
   if(fLaco)rows=rows.filter(r=>lacoEq(r.laco,fLaco));
   if(fLoja)rows=rows.filter(r=>(r.nomeOficial||r.nome)===fLoja);
-  if(fStatus)rows=rows.filter(r=>fStatus==='Com falha'?isFalhaStatus(r.status):!isFalhaStatus(r.status));
+  if(fStatus)rows=rows.filter(r=>fStatus==='Com falha'?isFalhaStatus(r.statusEfetivo):!isFalhaStatus(r.statusEfetivo));
   if(fResultado){
     rows=rows.filter(r=>{
       const t=r._ultimoTeste;
@@ -3548,8 +3581,8 @@ function renderLocais(){
   // db.locais = um vínculo técnico independente, com seu próprio status/histórico).
   const total=rows.length;
   const lojasComerciais=new Set(rows.map(r=>up(r.nomeOficial||r.nome||r.id))).size;
-  const emOp=rows.filter(r=>!isFalhaStatus(r.status)).length;
-  const comFalha=rows.filter(r=>isFalhaStatus(r.status)).length;
+  const emOp=rows.filter(r=>!isFalhaStatus(r.statusEfetivo)).length;
+  const comFalha=rows.filter(r=>isFalhaStatus(r.statusEfetivo)).length;
   const testados=rows.filter(r=>r._ultimoTeste).length;
   const lojasTestadas=new Set(rows.filter(r=>r._ultimoTeste).map(r=>up(r.nomeOficial||r.nome||r.id))).size;
   const aprovados=rows.filter(r=>r._ultimoTeste?.resultado==='Em funcionamento').length;
@@ -3588,7 +3621,7 @@ function renderLocais(){
       <td>${lucHtml}</td>
       <td>${pisoHtml}</td>
       <td>${enderecoHtml}</td>
-      <td>${dsBadgeHtml(r.status)}</td>
+      <td>${dsBadgeHtml(r.statusEfetivo)}</td>
       <td>${ultimoTesteHtml(r.id)}</td>
       <td><div class="dsIcoGroup">
         <button class="dsIco" onclick="formTeste('${r.id}')" title="Executar teste">📋</button>
