@@ -1381,52 +1381,26 @@ function fecharOutrosBlocosDeTopo(){
   menuState.openSistemaGrp=null;
   const g=loadMenuGlobalState(); g.open=false; saveMenuGlobalState(g);
 }
-function toggleSubsys(key){
-  const abrindo=menuState.openSubsys!==key;
-  fecharOutrosBlocosDeTopo();
-  menuState.openSubsys=abrindo?key:null;
-  saveMenuStateLocal(); buildNavTree();
-}
-function toggleGrp(subsysKey,grpKey){
-  const cur=menuState.openGroups[subsysKey];
-  menuState.openGroups[subsysKey]=(cur===grpKey?null:grpKey);
-  saveMenuStateLocal(); buildNavTree();
-}
-/* Bloco "Gestão do Cliente" (funções que operam sobre o cliente ativo: Gestão de Dados,
-   Configurações, Backup, Logs — todas leem/gravam o `db` em memória, trocado por cliente) — estado
-   por-cliente, mesma chave já usada por openSubsys/openGroups. */
-function toggleSistemaGrp(key){
-  const abrindo=menuState.openSistemaGrp!==key;
-  fecharOutrosBlocosDeTopo();
-  menuState.openSistemaGrp=abrindo?key:null;
-  saveMenuStateLocal(); buildNavTree();
-}
-/* Bloco "Administração Global" (Clientes/Usuários e Permissões/Sobre — nenhum depende do cliente
-   ativo) — estado guardado FORA da chave por-cliente (ver MENU_GLOBAL_STATE_KEY), justamente para
-   não ser perdido/duplicado ao trocar de cliente. */
-function toggleAdministracaoGlobal(){
-  const g=loadMenuGlobalState();
-  const abrindo=!g.open;
-  fecharOutrosBlocosDeTopo();
-  saveMenuGlobalState({open:abrindo});
-  saveMenuStateLocal();
-  buildNavTree();
-}
-function buildNavTree(){
-  const tree=document.getElementById('navTree'); if(!tree)return;
-  menuState=loadMenuStateLocal();
+// ── CAUSA RAIZ DO BUG DE NAVEGAÇÃO (corrigido) ───────────────────────────────────────────────
+// Antes, o bloco que sincroniza "qual grupo de topo deve estar aberto" com currentView vivia
+// DENTRO de buildNavTree() e rodava incondicionalmente a cada chamada — inclusive as chamadas
+// feitas pelos próprios toggles (toggleSubsys/toggleSistemaGrp/toggleAdministracaoGlobal), que
+// SÓ mudam qual bloco está aberto, sem navegar (currentView não muda). Resultado: ao clicar em
+// "Gestão do Cliente" estando em qualquer tela do SDAI, toggleSistemaGrp abria o bloco e chamava
+// buildNavTree() — mas dentro dela, como currentView ainda era uma tela do SDAI, a MESMA lógica
+// de sincronização re-fechava o bloco imediatamente (currentView "vencia" o clique). Só "funcionava"
+// depois de ir para Visão Geral porque essa tela não pertence a nenhum bloco (loc=null,
+// emGestaoCliente=false, emAdmGlobal=false) — nesse caso a sincronização não mexia em nada, então
+// o toggle manual finalmente "grudava". A correção: 1) a sincronização por currentView só roda a
+// partir de navegarParaTela()/navigate() (ou seja, só quando a TELA de fato muda), nunca dentro de
+// buildNavTree() em si; 2) clicar no NOME de um grupo agora navega direto para a tela padrão
+// daquele grupo (item 4 do pedido) — o que por si só já atualiza currentView corretamente, sem
+// depender de mais nada.
+function sincronizarMenuComTela_(view){
+  const loc=viewLocation(view);
+  const emGestaoCliente=MENU_ADMINISTRACAO_ITEMS.some(i=>i.view===view);
+  const emAdmGlobal=MENU_PLATAFORMA_ITEMS.some(i=>i.view===view);
   let globalState=loadMenuGlobalState();
-  const c=clienteAtivoObj();
-  const modulos=modulosClienteAtivo();
-  const u=currentUserSafe();
-  const uvs=userViews(u);
-  const loc=viewLocation(currentView);
-  const emGestaoCliente=MENU_ADMINISTRACAO_ITEMS.some(i=>i.view===currentView);
-  const emAdmGlobal=MENU_PLATAFORMA_ITEMS.some(i=>i.view===currentView);
-  // Sincroniza o bloco de topo com a tela atual, sempre respeitando a exclusividade mútua (item 6):
-  // a tela atual dita QUAL bloco deve estar aberto, e os outros dois são fechados junto — nunca dois
-  // blocos de topo abertos ao mesmo tempo, seja por clique do usuário, seja por navegação direta
-  // (ex.: abrir um link para "Usuários" com o SDAI previamente aberto).
   if(loc){
     if(menuState.openSubsys!==loc.subsys||menuState.openSistemaGrp||globalState.open){
       menuState.openSubsys=loc.subsys; menuState.openSistemaGrp=null;
@@ -1446,6 +1420,74 @@ function buildNavTree(){
       globalState={open:true}; saveMenuGlobalState(globalState);
     }
   }
+}
+function toggleSubsys(key){
+  const abrindo=menuState.openSubsys!==key;
+  fecharOutrosBlocosDeTopo();
+  menuState.openSubsys=abrindo?key:null;
+  saveMenuStateLocal();
+  // Item 4 do pedido: clicar no NOME do grupo navega para a tela padrão dele (o primeiro item do
+  // primeiro subgrupo — normalmente o Dashboard) — assim currentView já fica correto e nenhuma
+  // sincronização posterior pode "brigar" com o clique.
+  if(abrindo){
+    const s=MENU_TREE_SUBSYS.find(x=>x.key===key);
+    const first=s&&s.groups[0]&&s.groups[0].items[0]&&s.groups[0].items[0].view;
+    if(first){ navigate(first); return; }
+  }
+  buildNavTree();
+}
+function toggleGrp(subsysKey,grpKey){
+  const cur=menuState.openGroups[subsysKey];
+  const abrindo=cur!==grpKey;
+  menuState.openGroups[subsysKey]=(abrindo?grpKey:null);
+  saveMenuStateLocal();
+  if(abrindo){
+    const g=MENU_TREE_SUBSYS.find(s=>s.key===subsysKey)?.groups.find(x=>x.key===grpKey);
+    const first=g&&g.items[0]&&g.items[0].view;
+    if(first){ navigate(first); return; }
+  }
+  buildNavTree();
+}
+/* Bloco "Gestão do Cliente" (funções que operam sobre o cliente ativo: Gestão de Dados,
+   Configurações, Backup, Logs — todas leem/gravam o `db` em memória, trocado por cliente) — estado
+   por-cliente, mesma chave já usada por openSubsys/openGroups. */
+function toggleSistemaGrp(key){
+  const abrindo=menuState.openSistemaGrp!==key;
+  fecharOutrosBlocosDeTopo();
+  menuState.openSistemaGrp=abrindo?key:null;
+  saveMenuStateLocal();
+  if(abrindo && key==='gestaoCliente'){
+    const first=MENU_ADMINISTRACAO_ITEMS[0]&&MENU_ADMINISTRACAO_ITEMS[0].view;
+    if(first){ navigate(first); return; }
+  }
+  buildNavTree();
+}
+/* Bloco "Administração Global" (Clientes/Usuários e Permissões/Sobre — nenhum depende do cliente
+   ativo) — estado guardado FORA da chave por-cliente (ver MENU_GLOBAL_STATE_KEY), justamente para
+   não ser perdido/duplicado ao trocar de cliente. */
+function toggleAdministracaoGlobal(){
+  const g=loadMenuGlobalState();
+  const abrindo=!g.open;
+  fecharOutrosBlocosDeTopo();
+  saveMenuGlobalState({open:abrindo});
+  saveMenuStateLocal();
+  if(abrindo){
+    const first=MENU_PLATAFORMA_ITEMS[0]&&MENU_PLATAFORMA_ITEMS[0].view;
+    if(first){ navigate(first); return; }
+  }
+  buildNavTree();
+}
+function buildNavTree(){
+  const tree=document.getElementById('navTree'); if(!tree)return;
+  menuState=loadMenuStateLocal();
+  let globalState=loadMenuGlobalState();
+  const c=clienteAtivoObj();
+  const modulos=modulosClienteAtivo();
+  const u=currentUserSafe();
+  const uvs=userViews(u);
+  const loc=viewLocation(currentView);
+  const emGestaoCliente=MENU_ADMINISTRACAO_ITEMS.some(i=>i.view===currentView);
+  const emAdmGlobal=MENU_PLATAFORMA_ITEMS.some(i=>i.view===currentView);
 
   let html='';
   html+=`<div class="navSectionLabel">Gestão Geral</div>`;
@@ -7402,7 +7444,18 @@ const RENDER_POR_TELA={
   clientes:renderClientes,sistema:renderSistema,usuarios:renderUsuarios,
   configuracoes:renderConfiguracoes,backup:renderBackup,logs:renderLogs,sobre:renderSobre
 };
-function render(){ensureDefaultUsers(); if(!isLoggedIn()){showLogin();return}else{hideLogin()} applyNavPermissions(); document.querySelectorAll('.view').forEach(v=>v.classList.remove('active')); const _sectionId=VIEW_TO_SECTION[currentView]||currentView; document.getElementById(_sectionId)?.classList.add('active'); const t=document.getElementById('pageTitle'); if(t)t.textContent=L3A_VIEWS[currentView]||'Contratos L3A';
+function render(){ensureDefaultUsers(); if(!isLoggedIn()){showLogin();return}else{hideLogin()} applyNavPermissions();
+ // Sincroniza qual bloco de topo do menu (SDAI/CFTV/Acesso/Ambiente, Gestão do Cliente,
+ // Administração Global) deve estar aberto, a partir da tela atual — roda aqui (uma vez por
+ // render() de verdade), NÃO dentro de buildNavTree(). Isso é o que corrige a navegação direta
+ // entre seções: os toggles do menu (toggleSubsys/toggleGrp/toggleSistemaGrp/
+ // toggleAdministracaoGlobal), quando estão apenas FECHANDO um bloco, chamam buildNavTree()
+ // diretamente (sem passar por render()) — então esta sincronização não roda nesse caso e não
+ // desfaz o clique do usuário. Quando estão ABRINDO um bloco, eles navegam para a tela padrão do
+ // grupo (via navigate()), o que chega até aqui com currentView já correto. Ver
+ // sincronizarMenuComTela_ para o comentário completo da causa raiz original do bug.
+ try{ menuState=loadMenuStateLocal(); sincronizarMenuComTela_(currentView); }catch(e){}
+ document.querySelectorAll('.view').forEach(v=>v.classList.remove('active')); const _sectionId=VIEW_TO_SECTION[currentView]||currentView; document.getElementById(_sectionId)?.classList.add('active'); const t=document.getElementById('pageTitle'); if(t)t.textContent=L3A_VIEWS[currentView]||'Contratos L3A';
   const _loc=viewLocation(currentView);
   if(_loc&&!viewValidaParaCliente(currentView)){
     const _sec=document.getElementById(VIEW_TO_SECTION[currentView]||currentView);
