@@ -10156,10 +10156,20 @@ async function readRowsFromFile(f){let ext=f.name.split('.').pop().toLowerCase()
 /* [removido na limpeza 2026-07: versão antiga substituída pela declaração final desta função] */
 /* [removido na limpeza 2026-07: versão antiga substituída pela declaração final desta função] */
 function lucFindBestLocal(base){let best={local:null,score:0,motivo:''}; (db.locais||[]).forEach(l=>{let score=lucSimilarity(l.nomeOficial||l.nome,base.nome); let motivo='Similaridade textual'; if(l.luc&&base.luc&&String(l.luc)===String(base.luc)){score=100; motivo='Mesmo LUC'} else if(lucPisosCompat(l.piso,base.piso)&&score>=55){score=Math.max(score,90); motivo='Mesmo piso + nome compatível; prevalece nome oficial da Base LUC'} else if(lucPisosCompat(l.piso,base.piso)&&score>=40){score=Math.max(score,70); motivo='Mesmo piso, mas nome exige conferência'} if(score>best.score)best={local:l,score,motivo}}); return best}
-function applyLucToLocal(local,base,score,force){if(!local||!base)return; if(local.lucEditadoManual&&!force)return; if(!local.nomeOriginalCadastro)local.nomeOriginalCadastro=local.nome; local.nome=base.nome||local.nome; local.nomeOficial=base.nome||local.nome; local.luc=base.luc||local.luc||''; local.tipoLojaBaseLuc=base.tipo||''; local.piso=base.piso||local.piso||''; local.areaContrato=base.areaContrato||local.areaContrato||''; local.origem='Base LUC'; local.origemNome='Base LUC'; local.statusAssociacao='Vinculado'; local.baseLojaId=base.id; local.ultimaAtualizacao=isoNow(); base.statusAssociacao='Vinculada'; base.localId=local.id; base.percentualSimilaridade=score; base.ultimaAtualizacao=isoNow(); lucSincronizarIrmaos(local)}
+function applyLucToLocal(local,base,score,force,origemAssociacao){if(!local||!base)return; if(local.lucEditadoManual&&!force)return; if(!local.nomeOriginalCadastro)local.nomeOriginalCadastro=local.nome; local.nome=base.nome||local.nome; local.nomeOficial=base.nome||local.nome; local.luc=base.luc||local.luc||''; local.tipoLojaBaseLuc=base.tipo||''; local.piso=base.piso||local.piso||''; local.areaContrato=base.areaContrato||local.areaContrato||''; local.origem='Base LUC'; local.origemNome='Base LUC'; local.statusAssociacao='Vinculado'; local.baseLojaId=base.id; local.ultimaAtualizacao=isoNow(); base.statusAssociacao='Vinculada'; base.localId=local.id; base.percentualSimilaridade=score;
+  // Item 2/9 do pedido "Desassociar loja": rastreia como/quando a associação foi feita — usado para
+  // mostrar "origem da associação" e o estado (Associada automaticamente/manualmente) na tela.
+  base.origemAssociacao=origemAssociacao||base.origemAssociacao||'Automática';
+  base.associadoEm=isoNow(); base.associadoPor=(function(){try{return currentUser().nome||currentUser().email||'sistema'}catch(e){return 'sistema'}})();
+  base.ultimaAtualizacao=isoNow(); lucSincronizarIrmaos(local)}
 /* [removido na limpeza 2026-07: versão antiga substituída pela declaração final desta função] */
 function lucIgnorarConflito(conflitoId){ensureLucSchema(); const c=(db.conflitosAssociacao||[]).find(x=>x.id===conflitoId); if(c){const base=(db.baseLojas||[]).find(x=>x.id===c.baseLojaId); if(base){base.statusAssociacao='Pendente'; base.observacoes='Conflito ignorado manualmente em '+isoNow()}} db.conflitosAssociacao=(db.conflitosAssociacao||[]).filter(x=>x.id!==conflitoId); markDirty('conflito LUC ignorado'); renderImportacao()}
-function executarAssociacaoLuc(autoSilent=false){ensureLucSchema(); db.conflitosAssociacao=[]; let vinculadas=0,pendentes=0,conflitos=0; (db.baseLojas||[]).forEach(base=>{const best=lucFindBestLocal(base); if(best.local&&best.score>=82){applyLucToLocal(best.local,base,best.score);vinculadas++} else if(best.local&&best.score>=45){base.statusAssociacao='Conflito'; base.percentualSimilaridade=best.score; base.localId=''; conflitos++; db.conflitosAssociacao.push({id:id(),lojaCadastrada:best.local.nomeOriginalCadastro||best.local.nome,lojaCadastradaAtual:best.local.nome,lojaBaseLuc:base.nome,motivo:best.motivo||'Baixa confiança na associação automática',percentualSimilaridade:best.score,data:isoNow(),localId:best.local.id,baseLojaId:base.id,pisoCadastro:best.local.piso||'',pisoBaseLuc:base.piso||''})} else {base.statusAssociacao='Pendente'; base.percentualSimilaridade=best.score||0; pendentes++}}); if(!autoSilent){markDirty('associação LUC/Loja');render();alert(`Associação concluída. Vinculadas: ${vinculadas}. Pendentes: ${pendentes}. Conflitos: ${conflitos}.`)} return {vinculadas,pendentes,conflitos}}
+function executarAssociacaoLuc(autoSilent=false){ensureLucSchema(); db.conflitosAssociacao=[]; db.lucRejeicoes=db.lucRejeicoes||[]; let vinculadas=0,pendentes=0,conflitos=0; (db.baseLojas||[]).forEach(base=>{const best=lucFindBestLocal(base);
+  // Item 12 do pedido "Desassociar loja": nunca reassocia automaticamente uma combinação que já
+  // foi explicitamente desassociada/rejeitada antes — vira sugestão para revisão manual, sinalizada
+  // como tal, em vez de ser confirmada de novo silenciosamente.
+  const foiRejeitada = best.local && db.lucRejeicoes.some(r=>r.baseLojaId===base.id && r.localId===best.local.id);
+  if(best.local&&best.score>=82&&!foiRejeitada){applyLucToLocal(best.local,base,best.score,false,'Automática');vinculadas++} else if(best.local&&(best.score>=45||foiRejeitada)){base.statusAssociacao='Conflito'; base.percentualSimilaridade=best.score; base.localId=''; conflitos++; db.conflitosAssociacao.push({id:id(),lojaCadastrada:best.local.nomeOriginalCadastro||best.local.nome,lojaCadastradaAtual:best.local.nome,lojaBaseLuc:base.nome,motivo:(foiRejeitada?'Associação anteriormente rejeitada — revise manualmente. ':'')+(best.motivo||'Baixa confiança na associação automática'),percentualSimilaridade:best.score,data:isoNow(),localId:best.local.id,baseLojaId:base.id,pisoCadastro:best.local.piso||'',pisoBaseLuc:base.piso||''})} else {base.statusAssociacao='Pendente'; base.percentualSimilaridade=best.score||0; pendentes++}}); if(!autoSilent){markDirty('associação LUC/Loja');render();alert(`Associação concluída. Vinculadas: ${vinculadas}. Pendentes: ${pendentes}. Conflitos: ${conflitos}.`)} return {vinculadas,pendentes,conflitos}}
 /* [removido na limpeza 2026-07: versão antiga substituída pela declaração final desta função] */
 /* [removido na limpeza 2026-07: versão antiga substituída pela declaração final desta função] */
 function lucResumo(){ensureLucSchema(); const lojas=db.baseLojas||[]; const pisos=unique(lojas.map(x=>x.piso)); const tipos=unique(lojas.map(x=>x.tipo)); return {lojas:lojas.length,pisos:pisos.length,tipos:tipos.length,vinculadas:lojas.filter(x=>x.statusAssociacao==='Vinculada').length,pendentes:lojas.filter(x=>x.statusAssociacao==='Pendente').length,conflitos:(db.conflitosAssociacao||[]).length,ultima:(lojas.map(x=>x.dataImportacao).sort().at(-1)||'—')}}
@@ -10712,7 +10722,7 @@ function lucConfirmarConflito(conflitoId){
   const local=(db.locais||[]).find(x=>x.id===localId);
   const erro=lucValidarSemDuplicidade(base,local);
   if(erro){alert(erro);return;}
-  applyLucToLocal(local,base,c.percentualSimilaridade||0);
+  applyLucToLocal(local,base,c.percentualSimilaridade||0,false,'Manual');
   db.conflitosAssociacao=(db.conflitosAssociacao||[]).filter(x=>x.id!==conflitoId && x.baseLojaId!==base.id && x.localId!==local.id);
   markDirty('confirmação manual conflito LUC');
   renderImportacao();
@@ -10723,7 +10733,7 @@ function lucAtribuirManual(baseLojaId,localId){
   const local=(db.locais||[]).find(x=>x.id===localId);
   const erro=lucValidarSemDuplicidade(base,local);
   if(erro){alert(erro);return false;}
-  applyLucToLocal(local,base,100);
+  applyLucToLocal(local,base,100,false,'Manual');
   db.conflitosAssociacao=(db.conflitosAssociacao||[]).filter(x=>x.baseLojaId!==base.id && x.localId!==local.id);
   markDirty('atribuição manual LUC');
   renderImportacao();
@@ -10735,6 +10745,93 @@ function lucConflitosRows(){
     const base=(db.baseLojas||[]).find(b=>b.id===c.baseLojaId)||{};
     return {...c,luc:base.luc||c.luc||'',lojaBaseLuc:base.nome||c.lojaBaseLuc||'',selecaoLocal:lucLocaisDisponiveisSelect(c)};
   });
+}
+// ── DESASSOCIAR LOJA (pedido "Conflitos de Associação") ──────────────────────────────────────
+// Item 9: vocabulário único de estados da associação, usado na tabela "Associação Automática".
+function lucEstadoAssociacao(base){
+  if(base.statusAssociacao==='Desassociada')return 'Desassociada para correção';
+  if(base.statusAssociacao==='Vinculada')return base.origemAssociacao==='Manual'?'Associada manualmente':'Associada automaticamente';
+  if(base.statusAssociacao==='Conflito')return 'Sugestão disponível';
+  if(!(db.locais||[]).some(l=>!l.excluido))return 'Sem loja disponível';
+  return 'Não associada';
+}
+// Item 1: só é chamado quando já existe vínculo (botão só aparece nesse caso — ver lucImportInterface).
+function lucDesassociar(baseLojaId){
+  ensureLucSchema();
+  const base=(db.baseLojas||[]).find(b=>b.id===baseLojaId);
+  if(!base||!base.localId){alert('Esta Base LUC não possui loja associada.');return}
+  const local=(db.locais||[]).find(l=>l.id===base.localId);
+  // Item 5: aviso se existirem vínculos técnicos — a desassociação NUNCA remove esses vínculos.
+  const temVinculosTecnicos = !!local && (
+    (db.equipamentos||[]).some(e=>e.localId===local.id) ||
+    (db.portas||[]).some(p=>p.localId===local.id) ||
+    (db.falhas||[]).some(f=>f.localId===local.id&&!f.excluida) ||
+    (db.locais||[]).some(l=>l.plantaId&&l.id===local.id)
+  );
+  const motivos=['Associação incorreta','Loja errada','Similaridade incorreta','Piso divergente','Duplicidade','Outro'];
+  openModal(`<h2>Desassociar loja</h2>
+    <p class="note">Você está prestes a remover a associação entre:</p>
+    <p class="compactHelp">
+      <b>LUC:</b> ${esc(base.luc||'—')}<br>
+      <b>Loja da base:</b> ${esc(base.nome||'—')}<br>
+      <b>Loja cadastrada:</b> ${esc(local?(lucOfficialName(local)||local.nome):'—')}
+    </p>
+    <p class="compactHelp">Essa ação não excluirá a loja nem o registro da Base LUC. Apenas removerá o vínculo para que uma nova associação possa ser realizada.</p>
+    ${temVinculosTecnicos?'<div class="msg warn" style="margin-top:8px">Esta loja possui vínculos técnicos existentes. A desassociação da Base LUC não removerá esses vínculos.</div>':''}
+    <div class="field" style="margin-top:10px"><label>Motivo</label><select id="mMotivoDesassoc" onchange="document.getElementById('campoObsDesassoc').style.display=this.value==='Outro'?'block':'none'">${motivos.map(m=>`<option>${esc(m)}</option>`).join('')}</select></div>
+    <div class="field" id="campoObsDesassoc" style="display:none;margin-top:6px"><label>Observação (obrigatória para "Outro")</label><textarea id="mObsDesassoc" placeholder="Descreva o motivo"></textarea></div>
+    <div class="premiumActions" style="margin-top:12px">
+      <button class="btn danger" id="btnConfirmarDesassoc" onclick="confirmarDesassociacaoLuc('${base.id}')">Confirmar desassociação</button>
+      <button class="btn secondary" onclick="closeModal()">Cancelar</button>
+    </div>`);
+}
+function confirmarDesassociacaoLuc(baseLojaId){
+  if(window._desassocSaving)return; // item 10 (mesmo padrão de proteção contra duplo clique já usado no sistema)
+  const base=(db.baseLojas||[]).find(b=>b.id===baseLojaId); if(!base){alert('Base LUC não encontrada.');return}
+  const motivo=document.getElementById('mMotivoDesassoc')?.value||'Outro';
+  const obs=n(document.getElementById('mObsDesassoc')?.value);
+  if(motivo==='Outro'&&!obs){alert('Descreva o motivo em "Observação" antes de confirmar.');return}
+  window._desassocSaving=true;
+  const btn=document.getElementById('btnConfirmarDesassoc'); if(btn){btn.disabled=true;btn.textContent='Desassociando...'}
+  try{
+    const local=(db.locais||[]).find(l=>l.id===base.localId);
+    const origemAnterior=base.origemAssociacao||'—';
+    const nomeLocalAnterior=local?(lucOfficialName(local)||local.nome):'—';
+    const localIdAnterior=base.localId;
+    const motivoCompleto=motivo+(obs?(': '+obs):'');
+
+    // Item 12: registra a combinação rejeitada para nunca mais reassociar automaticamente sem aviso.
+    db.lucRejeicoes=db.lucRejeicoes||[];
+    db.lucRejeicoes.push({baseLojaId:base.id, localId:localIdAnterior, usuario:(currentUser().nome||currentUser().email||'usuário'), data:isoNow(), motivo:motivoCompleto});
+
+    // Item 4: limpa SOMENTE os campos de associação — nunca o registro da Base_LUC nem a loja em si.
+    // Preserva explicitamente: luc, nome (da base), tipo, areaContrato, piso, histórico, registros técnicos.
+    base.localId=''; base.statusAssociacao='Desassociada'; base.percentualSimilaridade=0;
+    base.desassociadoEm=isoNow(); base.desassociadoPor=(currentUser().nome||currentUser().email||'usuário'); base.motivoDesassociacao=motivoCompleto;
+    if(local){
+      // Item 5: NUNCA toca em porta/FLM/painel/laço/equipamento/falha/plano/teste/marcador de planta —
+      // só os campos cadastrais que ligam este local à Base_LUC.
+      local.baseLojaId=''; local.statusAssociacao='Desassociado'; local.ultimaAtualizacao=isoNow();
+    }
+
+    // Item 7/8: novo evento de histórico — nunca apaga o histórico de associação anterior.
+    logLocal('base_luc', base.id, 'DESASSOCIACAO_BASE_LUC',
+      'LUC: '+(base.luc||'—')+' — Loja da base: '+(base.nome||'—')+' — Loja anteriormente associada: '+nomeLocalAnterior+
+      ' — Origem da associação anterior: '+origemAnterior+' — Motivo: '+motivoCompleto+' — Nova situação: sem associação.');
+
+    markDirty('desassociação LUC/Loja: '+(base.luc||base.nome||''));
+    closeModal();
+    // Item 6: recalcula sugestões (sem reassociar sozinho a combinação recém-rejeitada, já coberto
+    // pela checagem em executarAssociacaoLuc) e mantém o registro visível — renderImportacao() já
+    // resolve isso lendo db.baseLojas/db.conflitosAssociacao de novo, sem exigir F5.
+    if(typeof renderImportacao==='function') renderImportacao();
+    alert('Associação removida com sucesso. Selecione a loja correta para refazer o vínculo.');
+  }catch(e){
+    alert('Falha ao desassociar: '+e.message);
+    if(btn){btn.disabled=false;btn.textContent='Confirmar desassociação'}
+  }finally{
+    window._desassocSaving=false;
+  }
 }
 function lucImportInterface(){
   ensureLucSchema();
@@ -10748,7 +10845,21 @@ function lucImportInterface(){
   if(tab==='conflitos')body=`<p class="msg warn"><b>Conferência manual:</b> selecione a loja cadastrada correta para cada LUC. A lista mostra somente locais ainda não alocados e o sistema bloqueia qualquer duplicidade.</p>`+table(lucConflitosRows(),[
     ['LUC','luc'],['Loja da Base LUC','lojaBaseLuc'],['Loja cadastrada sugerida','lojaCadastrada'],['Selecionar loja cadastrada disponível','selecaoLocal',r=>r.selecaoLocal],['Piso cadastro','pisoCadastro'],['Piso Base LUC','pisoBaseLuc'],['Motivo','motivo'],['Similaridade','percentualSimilaridade',x=>x.percentualSimilaridade+'%'],['Data','data']
   ],c=>`<button class="btn small" onclick="lucConfirmarConflito('${c.id}')">Salvar vínculo</button> <button class="btn small secondary" onclick="lucIgnorarConflito('${c.id}')">Ignorar</button>`);
-  if(tab==='associacao')body=`<p class="msg warn">A associação usa Nome da Loja + Piso como critério decisivo. Ex.: Oboticário, O Boticário ou O Boticário P2, estando no mesmo piso, passam a usar o nome oficial da Base LUC. Acima de 82% atualiza automaticamente Nome Oficial, LUC, Piso, Área Contrato e Origem = Base LUC. Baixa confiança vai para Conflitos de Associação.</p><div class="premiumActions"><button class="btn" onclick="executarAssociacaoLuc()">Reexecutar associação automática</button></div>${table((db.baseLojas||[]).map(b=>({...b,localVinculado:locName(b.localId)})),[['Base LUC','nome'],['LUC','luc'],['Local vinculado','localVinculado'],['Status','statusAssociacao'],['Similaridade','percentualSimilaridade',x=>x.percentualSimilaridade?x.percentualSimilaridade+'%':'—']])}`;
+  if(tab==='associacao')body=`<p class="msg warn">A associação usa Nome da Loja + Piso como critério decisivo. Ex.: Oboticário, O Boticário ou O Boticário P2, estando no mesmo piso, passam a usar o nome oficial da Base LUC. Acima de 82% atualiza automaticamente Nome Oficial, LUC, Piso, Área Contrato e Origem = Base LUC. Baixa confiança vai para Conflitos de Associação.</p><div class="premiumActions"><button class="btn" onclick="executarAssociacaoLuc()">Reexecutar associação automática</button></div>${table((db.baseLojas||[]).map(b=>{
+    const loc=(db.locais||[]).find(l=>l.id===b.localId);
+    return {...b,
+      localVinculado: loc?(lucOfficialName(loc)||loc.nome):'—',
+      lojaAtual: loc ? `${esc(lucOfficialName(loc)||loc.nome)} · LUC ${esc(loc.luc||b.luc||'—')} · ${esc(exibirPiso(loc.piso)||'Piso —')}${loc.sistema?(' · '+esc(loc.sistema)):''}` : '<span class="mutedLine">Sem loja associada</span>',
+      origemTxt: b.origemAssociacao||'—',
+      estadoTxt: lucEstadoAssociacao(b)
+    };
+  }),[
+    ['Base LUC','nome'],['LUC','luc'],
+    ['Loja atualmente associada','lojaAtual',x=>x.lojaAtual],
+    ['Origem da associação','origemTxt'],
+    ['Estado','estadoTxt',x=>`<span class="pill ${x.estadoTxt.startsWith('Associada')?'ok':x.estadoTxt==='Desassociada para correção'?'warn':x.estadoTxt==='Sugestão disponível'?'warn':''}">${esc(x.estadoTxt)}</span>`],
+    ['Similaridade','percentualSimilaridade',x=>x.percentualSimilaridade?x.percentualSimilaridade+'%':'—']
+  ],x=>x.localId?`<button class="btn small danger" onclick="lucDesassociar('${x.id}')">Desassociar</button>`:'')}`;
   return `<div class="premiumPanel"><div class="systemHeaderSlim"><div class="titleBlock"><h3>Importação LUC/Loja</h3><p>Importa LUC, Tipo de Loja, Loja e Área Contrato (m²), preservando todo o banco técnico atual.</p></div></div><div class="toolbar"><div class="field"><label>Arquivo LUC/Loja</label><input type="file" id="fileLucImp" accept=".csv,.xls,.xlsx"></div><button class="btn secondary" onclick="previewLucImport()">Pré-visualizar / validar</button><button class="btn" onclick="importLucLojas()">Importar LUC/Loja</button></div><p class="msg warn"><b>Layout obrigatório:</b> A=LUC, B=Tipo de Loja, C=Loja oficial, D=Área Contrato (m²). Colunas adicionais são ignoradas.</p><div id="lucImportMsg"></div><div id="lucPreviewBox"></div></div><div class="premiumPanel"><div class="premiumActions" style="margin-top:0">${btns}</div><div style="margin-top:14px">${body}</div></div>`;
 }
 
