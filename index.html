@@ -1677,6 +1677,7 @@ function renderSubsisStub(titulo, subtitulo){
    prioridade: última view válida daquele cliente → senão Visão Geral. Se a última
    view pertencer a um módulo agora desabilitado, cai para Visão Geral. */
 function switchCliente(cid,reload=true){
+  if(window.syncInProgress){ alert('Não é possível trocar de cliente: existe uma sincronização em andamento. Aguarde a conclusão.'); return; }
   const prevCid=clienteAtivo();
   if(prevCid)persistClienteDb(prevCid); // salva DB do cliente atual antes de trocar
   // BUGFIX (estado remoto vazando entre clientes): estadoPlanilha/diagnóstico ficavam em cache
@@ -2800,22 +2801,78 @@ async function verDetalhesDivergencia(colecao){
 // 4 passos visíveis, sem termos técnicos: Criando backup → Salvando dados → Finalizando →
 // Sincronização concluída. Sem comparação de SHA-256/checksum/campo a campo depois da resposta —
 // confia no retorno ok:true do servidor.
+// ── PROTEÇÃO CONTRA FECHAMENTO DURANTE A SINCRONIZAÇÃO (itens 14-17) ────────────────────────
+const CHAVE_RECUPERACAO_SYNC = 'SDAI_SYNC_RECOVERY';
+window.syncInProgress = false;
+function _syncBeforeUnloadHandler(e){ e.preventDefault(); e.returnValue=''; return ''; }
+function _iniciarProtecaoSync(dados){
+  window.syncInProgress = true;
+  window._adocaoEmAndamento = true; // reaproveita a mesma trava de duplo clique já existente
+  window.addEventListener('beforeunload', _syncBeforeUnloadHandler);
+  try{ localStorage.setItem(CHAVE_RECUPERACAO_SYNC, JSON.stringify(Object.assign({status:'SINCRONIZANDO', startedAt:isoNow()}, dados))); }catch(e){}
+}
+function _finalizarProtecaoSync(){
+  window.syncInProgress = false;
+  window._adocaoEmAndamento = false;
+  window.removeEventListener('beforeunload', _syncBeforeUnloadHandler);
+  try{ localStorage.removeItem(CHAVE_RECUPERACAO_SYNC); }catch(e){}
+}
+function _atualizarEtapaRecuperacaoSync(etapa){
+  try{
+    const raw = localStorage.getItem(CHAVE_RECUPERACAO_SYNC); if(!raw) return;
+    const st = JSON.parse(raw); st.etapas = st.etapas||[]; st.etapas.push({etapa, quando:isoNow()});
+    localStorage.setItem(CHAVE_RECUPERACAO_SYNC, JSON.stringify(st));
+  }catch(e){}
+}
+// Item 16: ao abrir o sistema, verifica se há uma sincronização que ficou marcada como em
+// andamento e nunca foi finalizada (aba fechada, navegador travou, etc.) — chamada uma vez no
+// carregamento inicial (ver bootstrap mais abaixo). NUNCA assume base vazia nesse caso (item 17).
+function verificarSincronizacaoInterrompida(){
+  let st=null;
+  try{ const raw=localStorage.getItem(CHAVE_RECUPERACAO_SYNC); if(raw) st=JSON.parse(raw); }catch(e){}
+  if(!st || st.status!=='SINCRONIZANDO') return false;
+  const etapas = st.etapas||[];
+  const nomesEtapas=['Backup criado','Dados enviados','Confirmação concluída'];
+  const linhasEtapas = nomesEtapas.map((n,i)=>{
+    const feita = etapas.some(e=>e.etapa===n) || i<etapas.length;
+    return (feita?'✔ ':'✖ ')+n;
+  }).join('<br>');
+  openModal(`<h2>Foi encontrada uma sincronização interrompida</h2>
+    <p class="note">Cliente: <b>${esc(st.clienteNome||st.clienteId||'—')}</b><br>Início: ${esc(formatarDataHoraAmigavel(st.startedAt))}</p>
+    <p class="compactHelp" style="margin-top:8px">Última etapa concluída:<br>${linhasEtapas}</p>
+    <p class="compactHelp" style="margin-top:8px">A base local e o backup (se já criado) foram preservados — nada foi apagado nem assumido como vazio.</p>
+    <div class="premiumActions" style="margin-top:12px">
+      <button class="btn" onclick="closeModal();sincronizarBaseSimplificada()">Continuar sincronização</button>
+      ${st.backupUrl?`<button class="btn secondary" onclick="window.open('${esc(st.backupUrl)}','_blank')">Restaurar backup</button>`:''}
+      <button class="btn secondary" onclick="localStorage.removeItem('${CHAVE_RECUPERACAO_SYNC}');closeModal();render()">Cancelar sincronização</button>
+    </div>`);
+  return true;
+}
+
 async function sincronizarBaseSimplificada(){
-  if(window._adocaoEmAndamento){ alert('Uma sincronização já está em andamento. Aguarde a conclusão.'); return; }
+  if(window._adocaoEmAndamento || window.syncInProgress){ alert('Uma sincronização já está em andamento. Aguarde a conclusão.'); return; }
   if(typeof syncMaintenanceMode==='function' && syncMaintenanceMode()){ alert('Desative o Modo Manutenção antes de sincronizar.'); return; }
   const cid=(typeof clienteAtivo==='function')?clienteAtivo():'';
   if(!cid){ alert('Nenhum cliente ativo selecionado.'); return; }
-  window._adocaoEmAndamento = true;
+  const cliObj=(typeof clienteAtivoObj==='function')?clienteAtivoObj():null;
+  const nomeCliente=(cliObj&&(cliObj.nome||cliObj.nomeFantasia))||cid;
   const btn = document.getElementById('btnSincronizarAgora');
   if(btn){ btn.disabled = true; btn.textContent = 'Sincronizando...'; }
   montarMetaAtual();
   const operationId = 'op_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,10);
   const sessionId = getClientInstanceId();
+  const inicioSync = Date.now();
+  _iniciarProtecaoSync({clienteId:cid, clienteNome:nomeCliente, sessionId, operationId});
   const etapas = ['Criando backup','Salvando dados','Finalizando'];
   let idx = 0;
   setSyncCfg({adocaoEtapaTexto: etapas[0]});
   registrarLogSync({acao:'sync_simples_iniciado', resultado:'em_andamento', operationId});
-  const timer = setInterval(function(){ idx = Math.min(idx+1, etapas.length-1); setSyncCfg({adocaoEtapaTexto: etapas[idx]}); }, 1200);
+  const timer = setInterval(function(){
+    idx = Math.min(idx+1, etapas.length-1);
+    setSyncCfg({adocaoEtapaTexto: etapas[idx]});
+    if(idx===1) _atualizarEtapaRecuperacaoSync('Backup criado');
+    if(idx===2) _atualizarEtapaRecuperacaoSync('Dados enviados');
+  }, 1200);
   try{
     const resp = await apiPost('sincronizarSimplificado', {db, operationId, sessionId});
     clearInterval(timer);
@@ -2823,20 +2880,24 @@ async function sincronizarBaseSimplificada(){
     if(!data || !data.ok){
       const erro = (data&&data.message) || 'Resposta inválida do servidor — verifique se o Code.gs foi reimplantado com esta versão.';
       registrarLogSync({acao:'sync_simples_falhou', resultado:'erro', erro, stage:data&&data.stage, operationId});
+      registrarLogBackup({sucesso:false, clienteNome:nomeCliente, quando:isoNow(), tempoMs:Date.now()-inicioSync, erro, backupId:data&&data.backupId});
       setSyncCfg({adocaoEtapaTexto:null});
       exibirResultadoSincronizacaoSimples(false, erro, data);
       return;
     }
+    _atualizarEtapaRecuperacaoSync('Confirmação concluída');
+    registrarLogBackup({sucesso:true, clienteNome:nomeCliente, quando:isoNow(), nomePlanilhaBackup:data.backupId, planilha:nomeCliente, colecoes:data.collectionsSaved, registros:data.recordsSaved, tempoMs:Date.now()-inicioSync, url:data.backupUrl, backupId:data.backupId});
     confirmarSincronizacaoConcluida({estadoPlanilha:'REMOTO_COM_META'});
     registrarLogSync({acao:'sync_simples_concluido', resultado:'ok', operationId});
     exibirResultadoSincronizacaoSimples(true, null, data);
   }catch(e){
     clearInterval(timer);
     registrarLogSync({acao:'sync_simples_falhou', resultado:'erro', erro:e.message, operationId});
+    registrarLogBackup({sucesso:false, clienteNome:nomeCliente, quando:isoNow(), tempoMs:Date.now()-inicioSync, erro:e.message});
     setSyncCfg({adocaoEtapaTexto:null});
     exibirResultadoSincronizacaoSimples(false, 'Falha de rede/inesperada: '+e.message);
   } finally {
-    window._adocaoEmAndamento = false;
+    _finalizarProtecaoSync();
     if(btn){ btn.disabled = false; btn.textContent = 'SINCRONIZAR AGORA'; }
   }
 }
@@ -3100,6 +3161,27 @@ function registrarLogSync(entrada){
     persistLocalThrottled();
   }catch(e){console.warn('registrarLogSync falhou:', e.message)}
 }
+// ── LOGS DE BACKUP (item 13) ────────────────────────────────────────────────────────────────
+// Grava em db.historico (mesma base que alimenta a tela "Logs do Cliente" — renderLogs()), com
+// categoria própria "backup", para todo backup criado com sucesso OU com falha. Fica disponível
+// para consulta futura como qualquer outro log — não depende de db._syncLog (que é interno/
+// técnico) nem se perde ao trocar de cliente.
+function registrarLogBackup(dados){
+  const sucesso = !!dados.sucesso;
+  const linhas = [
+    sucesso ? '✔ Backup criado com sucesso' : '✖ Falha ao criar backup',
+    'Cliente: '+(dados.clienteNome||'—'),
+    'Data: '+formatarDataHoraAmigavel(dados.quando||isoNow()),
+    dados.nomePlanilhaBackup?('Backup: '+dados.nomePlanilhaBackup):'',
+    dados.planilha?('Planilha: '+dados.planilha):'',
+    dados.colecoes!=null?('Coleções: '+dados.colecoes):'',
+    dados.registros!=null?('Registros: '+dados.registros):'',
+    dados.tempoMs!=null?('Tempo: '+(Math.round(dados.tempoMs/100)/10)+' segundos'):'',
+    dados.url?('Link: '+dados.url):'',
+    dados.erro?('Erro: '+dados.erro):''
+  ].filter(Boolean).join('\n');
+  logLocal('sistema', dados.backupId||'', 'backup', linhas);
+}
 function verLogsSync(){
   const logs=(db._syncLog||[]).slice().reverse();
   const linhas=logs.map(l=>`<tr><td>${esc(l.timestamp)}</td><td>${esc(l.usuario)}</td><td>${esc(l.acao)}</td><td>${esc(l.origem||'')}</td><td>${esc(l.destino||'')}</td><td>${esc(String(l.revisaoAnterior??''))}→${esc(String(l.revisaoNova??''))}</td><td>${esc(l.resultado)}</td><td>${esc(l.erro||'')}</td></tr>`).join('');
@@ -3174,13 +3256,20 @@ async function acionarBackupGoogle(){
   if(syncMaintenanceMode()){ alert('SINCRONIZAÇÃO BLOQUEADA PARA MANUTENÇÃO: não é possível criar backup Google (isso exige contato com o Apps Script) enquanto o modo manutenção estiver ativo.'); return; }
   const cid=(typeof clienteAtivo==='function')?clienteAtivo():''; if(!cid){alert('Nenhum cliente ativo.');return;}
   if(!confirm('Isso pede ao Apps Script para DUPLICAR (Spreadsheet.copy) a planilha atual do cliente como backup — não altera a planilha original. Continuar?'))return;
+  const cliObj=(typeof clienteAtivoObj==='function')?clienteAtivoObj():null;
+  const nomeCliente=(cliObj&&(cliObj.nome||cliObj.nomeFantasia))||cid;
+  const inicio=Date.now();
   try{
     updateSyncFooter('saving');
     const r=await jsonp('criarBackupGoogle',{clienteId:cid});
     registrarLogSync({acao:'criar_backup_google', resultado:(r&&r.ok)?'ok':'erro', erro:(r&&!r.ok)?r.error:undefined});
+    registrarLogBackup({sucesso:!!(r&&r.ok), clienteNome:nomeCliente, quando:isoNow(), url:r&&r.url, backupId:r&&r.backupId, tempoMs:Date.now()-inicio, erro:(r&&!r.ok)?r.error:null});
     updateSyncFooter();
     alert((r&&r.ok)?('Backup Google criado com sucesso: '+(r.url||'')):('Falha ao criar backup Google: '+((r&&r.error)||'erro desconhecido')));
-  }catch(e){updateSyncFooter('error'); alert('Falha ao criar backup Google: '+e.message); registrarLogSync({acao:'criar_backup_google',resultado:'erro',erro:e.message});}
+  }catch(e){
+    updateSyncFooter('error'); alert('Falha ao criar backup Google: '+e.message); registrarLogSync({acao:'criar_backup_google',resultado:'erro',erro:e.message});
+    registrarLogBackup({sucesso:false, clienteNome:nomeCliente, quando:isoNow(), tempoMs:Date.now()-inicio, erro:e.message});
+  }
 }
 
 // ---- FASE 6: NOVO PAINEL DE SINCRONIZAÇÃO/CONFLITO (substitui o antigo, sem botões destrutivos "cegos") ----
@@ -6037,7 +6126,7 @@ async function login(){ensureDefaultUsers(); const user=n(document.getElementByI
   // código-fonte publicado no GitHub Pages. Quem loga com ela é OBRIGADO a trocá-la na hora.
   if(pass==='1234'&&u.id==='admin-default'){setTimeout(()=>{alert('Você entrou com a senha padrão de fábrica, que é pública (visível no código do sistema). Por segurança, defina uma senha nova agora — o sistema não deve continuar acessível com a senha padrão.');openAlterarSenha()},300)}
 }
-function logout(){const u=currentUser(); localStorage.removeItem(KEY+':currentUserId'); sessionStorage.removeItem(KEY+':sessionOnly'); document.getElementById('userMenu')?.classList.remove('show'); logLocal('Sessão',u.id,'logout','Usuário saiu do sistema'); showLogin(); render()}
+function logout(){if(window.syncInProgress){alert('Não é possível sair: existe uma sincronização em andamento. Aguarde a conclusão.');return} const u=currentUser(); localStorage.removeItem(KEY+':currentUserId'); sessionStorage.removeItem(KEY+':sessionOnly'); document.getElementById('userMenu')?.classList.remove('show'); logLocal('Sessão',u.id,'logout','Usuário saiu do sistema'); showLogin(); render()}
 function toggleUserMenu(){document.getElementById('userMenu')?.classList.toggle('show')}
 function openMeuPerfil(){const u=currentUser(); openModal(`<h2>Meu Perfil</h2><div class="formGrid"><div class="field"><label>Nome</label><input id="pfNome" value="${esc(u.nome)}"></div><div class="field"><label>E-mail</label><input id="pfEmail" value="${esc(u.email)}"></div><div class="field"><label>Perfil</label><input value="${esc(u.perfil)}" disabled></div></div><br><button class="btn" onclick="saveMeuPerfil()">Salvar perfil</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`); document.getElementById('userMenu')?.classList.remove('show')}
 function saveMeuPerfil(){let u=currentUser();u.nome=n(pfNome.value);u.email=n(pfEmail.value);closeModal();markDirty('perfil');render()}
@@ -8157,9 +8246,11 @@ function renderConfiguracoes(){
 function renderBackup(){const el=document.getElementById('backup'); if(!el)return; if(!isMaster(currentUserSafe())){el.innerHTML='<div class="premiumPanel"><p style="color:var(--l3a-text-muted)">Acesso restrito ao perfil Master.</p></div>';return} el.innerHTML=`<div class="premiumPanel"><div class="systemHeaderSlim"><div class="titleBlock"><h3>Backup local</h3><p>Exportação e restauração de segurança.</p></div></div><div class="premiumGrid">${premiumStat('Painéis',db.paineis.length)}${premiumStat('Equipamentos',db.equipamentos.length)}${premiumStat('Falhas',db.falhas.length)}${premiumStat('Planos',db.planos.length)}</div><div class="premiumActions"><button class="btn" onclick="exportJson()">Exportar JSON</button><button class="btn secondary" onclick="exportAllCsv()">Exportar CSV</button><button class="btn secondary" onclick="document.getElementById('restoreJsonInput').click()">Restaurar JSON</button><input type="file" id="restoreJsonInput" accept="application/json,.json" style="display:none" onchange="restoreBackupFile(this.files[0])"></div></div>`}
 function renderLogs(){
   const el=document.getElementById('logs'); if(!el)return;
-  const rows=(db.historico||[]).slice(-200).reverse();
+  const somenteBackup=!!window._logsFiltroBackup;
+  const todos=(db.historico||[]).slice().reverse();
+  const rows=(somenteBackup?todos.filter(r=>r.acao==='backup'):todos).slice(0,200);
   const isMasterUser=isMaster(currentUserSafe());
-  el.innerHTML=`<div class="premiumPanel"><h3>Logs e auditoria</h3><p>Registro das ações operacionais e administrativas.</p>${(db.historico||[]).length>200?`<p style="color:var(--l3a-text-muted);font-size:12px">Mostrando os 200 mais recentes de ${(db.historico||[]).length} registros.</p>`:''}${rows.length?`<div class="softTable" style="margin-top:14px">${table(rows,[['Data','data',r=>dsDateHtml?dsDateHtml(r.data):esc(r.data||'')],['Usuário','usuario'],['Entidade','entidade'],['Ação','acao'],['Descrição','descricao']])}</div>`:'<div class="emptyState" style="margin-top:14px">Nenhum log registrado ainda.</div>'}</div>
+  el.innerHTML=`<div class="premiumPanel"><div class="systemHeaderSlim"><div class="titleBlock"><h3>Logs e auditoria</h3><p>Registro das ações operacionais e administrativas.</p></div><button class="btn secondary small" onclick="window._logsFiltroBackup=${!somenteBackup};renderLogs()">${somenteBackup?'← Ver todos os logs':'🗄 Ver só Backups'}</button></div>${todos.length>200?`<p style="color:var(--l3a-text-muted);font-size:12px">Mostrando os 200 mais recentes de ${todos.length} registros${somenteBackup?' (filtrados por Backup)':''}.</p>`:''}${rows.length?`<div class="softTable" style="margin-top:14px">${table(rows,[['Data','data',r=>dsDateHtml?dsDateHtml(r.data):esc(r.data||'')],['Usuário','usuario'],['Categoria','acao',r=>r.acao==='backup'?'<span class="pill ok">BACKUP</span>':esc(r.acao||'')],['Entidade','entidade'],['Descrição','descricao',r=>`<span style="white-space:pre-line">${esc(r.descricao||'')}</span>`]])}</div>`:'<div class="emptyState" style="margin-top:14px">Nenhum log registrado ainda.</div>'}</div>
   ${isMasterUser?_auditoriaExclusaoFalhasPanel():`<div class="premiumPanel" style="margin-top:16px"><p style="color:var(--l3a-text-muted)">A exclusão de falhas é restrita ao perfil Master.</p></div>`}`;
 }
 /* SEGURANÇA (2026-07): único ponto do sistema autorizado a excluir uma falha.
@@ -9700,6 +9791,11 @@ function drawReport(){renderRelatorioExecutivoSDAI()}
 
 async function verificarBaseAoAbrir(){
   if(!isLoggedIn())return;
+  // Item 16/17 do pedido: nunca assumir "banco vazio" sem antes verificar se existe uma
+  // sincronização que ficou marcada como em andamento e nunca foi finalizada (aba fechada,
+  // navegador travou, etc.). Se houver, mostra a tela de recuperação em vez de qualquer fluxo de
+  // "banco vazio" — a base local e o backup (se já criado) são preservados intactos.
+  if(typeof verificarSincronizacaoInterrompida==='function' && verificarSincronizacaoInterrompida())return;
   const c=syncCfg();
   if(!baseParecevazia())return; // banco local ok, nada a fazer
   if(!c.configured){alert('A base local está vazia e o banco Google ainda não foi configurado neste sistema. Vá em Administração \u2192 Gestão de Dados \u2192 "Inicializar/validar" e depois "Carregar base Google".');return}
