@@ -1948,7 +1948,7 @@ async function ensureClienteSheet(cid,nomeCliente){
 }
 async function setupGoogle(){
   if(syncCfg().estadoPlanilha==='REMOTO_LEGADO_SEM_META'){
-    alert('"Inicializar" está desabilitado: esta planilha já tem dados legados sem metadados de sincronização. Use "Adotar planilha existente" (Sistema → Diagnóstico) em vez de inicializar por cima.');
+    alert('"Inicializar" está desabilitado: esta planilha já tem dados legados sem metadados de sincronização. Use "Preparar planilha para sincronização" (Sistema → Diagnóstico) em vez de inicializar por cima.');
     return;
   }
   try{updateSyncFooter('saving'); const r=await jsonp('setup'); if(!r.ok)throw new Error(r.error||'Erro ao configurar banco'); setSyncCfg({configured:true,sheetUrl:r.sheetUrl||'',dirty:true}); renderSistema(); updateSyncFooter(); alert('Banco Google configurado/validado.');}catch(e){updateSyncFooter('error'); alert('Falha ao configurar banco: '+e.message)}}
@@ -1964,7 +1964,7 @@ async function loadGoogle(){
   // _META nunca deve ser puxada por cima da base local via "Carregar base" — só pelo fluxo de
   // adoção dedicado (backup + staging + validação).
   if(syncCfg().estadoPlanilha==='REMOTO_LEGADO_SEM_META'){
-    alert('"Carregar base Google" está desabilitado: esta planilha tem dados legados sem metadados de sincronização. Use "Adotar planilha existente" (Sistema → Diagnóstico) em vez de carregar por cima da base local.');
+    alert('"Carregar base Google" está desabilitado: esta planilha tem dados legados sem metadados de sincronização. Use "Preparar planilha para sincronização" (Sistema → Diagnóstico) em vez de carregar por cima da base local.');
     return;
   }
   try{updateSyncFooter('saving'); const r=await jsonpDbAtual(); if(!r.ok)throw new Error(r.error||'Erro ao carregar'); if(r.db && Object.keys(r.db).length){
@@ -2093,7 +2093,7 @@ async function syncNow(showAlert=true){
   // ou uma nova reavaliação escreve nesse estado. Sync MANUAL (showAlert=true) ainda é bloqueado
   // aqui deliberadamente também, para não arriscar tratar a planilha legada como uma base comum.
   if(c.estadoPlanilha==='REMOTO_LEGADO_SEM_META'){
-    if(showAlert) alert('SINCRONIZAÇÃO PAUSADA: a planilha Google deste cliente tem dados legados sem metadados de sincronização — ela precisa ser adotada primeiro (Sistema → Diagnóstico → "Adotar planilha existente"). Nenhum dado foi enviado ou recebido.');
+    if(showAlert) alert('SINCRONIZAÇÃO PAUSADA: a planilha Google deste cliente tem dados legados sem metadados de sincronização — ela precisa ser preparada primeiro (Sistema → Diagnóstico → "Preparar planilha para sincronização"). Nenhum dado foi enviado ou recebido.');
     updateSyncFooter();
     return;
   }
@@ -2474,7 +2474,7 @@ async function refinarEstadoPlanilhaLegada_(base, cid){
     return Object.assign({}, base, {estado:'REMOTO_INCOMPATIVEL', diagPlanilha, acaoRecomendada:'A planilha tem abas fora do padrão reconhecido pelo sistema atual e nenhum dado nas coleções conhecidas. Revise manualmente antes de decidir entre "Inicializar" e uma migração dedicada.'});
   }
   // Caso principal deste pedido: dados existem, mas nunca passou por este fluxo de sincronização.
-  return Object.assign({}, base, {estado:'REMOTO_LEGADO_SEM_META', diagPlanilha, acaoRecomendada:'Adotar planilha existente com backup e staging'});
+  return Object.assign({}, base, {estado:'REMOTO_LEGADO_SEM_META', diagPlanilha, acaoRecomendada:'Preparar planilha para sincronização (backup integral + validação)'});
 }
 
 // ---- DIAGNÓSTICO POR REGISTRO — "qual item exatamente está preso na fila e por quê" ------
@@ -2651,85 +2651,107 @@ async function verDetalhesDivergencia(colecao){
 function abrirConfirmacaoAdocaoPlanilha(){
   const diag = window._ultimoDiagSync;
   if(!diag || diag.estado!=='REMOTO_LEGADO_SEM_META'){
-    alert('Abra "Comparar bases" novamente antes de adotar — o diagnóstico em memória não está no estado REMOTO_LEGADO_SEM_META.');
+    alert('Abra o diagnóstico novamente antes de continuar — a informação em memória está desatualizada.');
     return;
   }
   const dp = diag.diagPlanilha||{};
   const cid = (typeof clienteAtivo==='function')?clienteAtivo():'';
   const ml = diag.metaLocal||{};
-  openModalWide(`<h2>Confirmar adoção da planilha existente</h2>
-    <p class="note">Revise com atenção antes de confirmar. Esta ação:</p>
-    <ul style="margin:8px 0 8px 20px;line-height:1.6">
-      <li>Usa a <b>base local atual</b> (databaseId <code>${esc(ml.databaseId||'')}</code>, revisão ${esc(String(ml.revision||0))}) como fonte autorizada.</li>
-      <li>Cria um <b>snapshot completo</b> (cópia integral) da planilha atual do Google ANTES de qualquer escrita.</li>
-      <li>Escreve por <b>staging</b> (aba por aba: grava em "&lt;nome&gt;_STAGING", relê, confere contagem, só então promove) — nenhuma aba oficial é limpa diretamente.</li>
-      <li>Só marca a sincronização como confirmada depois de comparar <b>contagens</b> e <b>SHA-256</b> entre o que foi enviado e o que foi relido.</li>
-      <li>Nenhum dado existente é apagado sem backup validado; rollback manual disponível a partir do snapshot.</li>
-    </ul>
-    <p class="note"><b>Planilha atual:</b> ${esc(String(dp.totalRegistros||0))} registro(s) em coleções reconhecidas · abas: ${(dp.abas||[]).map(a=>esc(a.nome)).join(', ')||'—'}</p>
-    <div id="adocaoStatusBody" class="compactHelp"></div>
+  const registrosValidos = dp.totalRegistrosValidos!=null ? dp.totalRegistrosValidos : dp.totalRegistros;
+  // Item 9 do pedido: etapas em linguagem simples, sem termos técnicos (staging/lock/schema ficam
+  // só nos "Detalhes técnicos" — ver <details> abaixo).
+  const etapasAmigaveis = ['Validar base local','Ler a planilha atual','Criar backup integral','Validar o backup','Preparar dados em área temporária','Validar quantidades e integridade','Atualizar a planilha oficial','Confirmar a sincronização'];
+  openModalWide(`<h2>Preparar planilha para sincronização</h2>
+    <p class="note">Esta planilha Google já contém dados, mas ainda não foi preparada para o novo sistema de sincronização. Antes da primeira sincronização, o sistema precisa criar um backup integral da planilha atual, preparar a estrutura segura e validar todos os dados. <b>A base local continuará preservada durante todo o processo.</b></p>
+    <div class="premiumGrid" style="margin-top:10px">${premiumStat('Registros válidos encontrados', registrosValidos||0)}${premiumStat('Abas na planilha',(dp.abas||[]).length)}${premiumStat('Backup anterior', dp.temSnapshot?'Existe':'Nenhum ainda')}${premiumStat('Alteração local', 'Pendente (1)')}</div>
+    <ol style="margin:12px 0 8px 20px;line-height:1.7">${etapasAmigaveis.map(e=>`<li>${esc(e)}</li>`).join('')}</ol>
+    <details style="margin-top:8px"><summary style="cursor:pointer;color:#666">Detalhes técnicos</summary>
+      <p class="compactHelp" style="margin-top:6px">Base local: databaseId <code>${esc(ml.databaseId||'')}</code>, revisão ${esc(String(ml.revision||0))}. Escrita por área temporária ("staging"): grava em abas temporárias, relê, confere contagem e SHA-256, e só então promove — nenhuma aba oficial é limpa diretamente. Trava de execução única (lock) do Apps Script evita duas gravações simultâneas.</p>
+    </details>
+    <div id="adocaoStatusBody" class="compactHelp" style="margin-top:10px"></div>
     <div class="premiumActions" style="margin-top:12px">
-      <button class="btn secondary" onclick="abrirPainelConflitoSync()">Cancelar</button>
-      <button class="btn" onclick="executarAdocaoPlanilhaExistente()">Confirmar adoção (cliente: ${esc(cid)})</button>
+      <button class="btn secondary" id="btnCancelarAdocao" onclick="abrirPainelConflitoSync()">Cancelar</button>
+      <button class="btn" id="btnConfirmarAdocao" onclick="executarAdocaoPlanilhaExistente()">Confirmar (cliente: ${esc(cid)})</button>
     </div>`);
 }
 
 async function executarAdocaoPlanilhaExistente(){
-  if(typeof syncMaintenanceMode==='function' && syncMaintenanceMode()){ alert('Desative o Modo Manutenção antes de adotar a planilha.'); return; }
-  const cid=(typeof clienteAtivo==='function')?clienteAtivo():'';
-  if(!cid){ alert('Nenhum cliente ativo selecionado.'); return; }
-  montarMetaAtual();
-  if(!db._meta || !db._meta.databaseId){ alert('Base local sem databaseId válido — recarregue a página e tente de novo.'); return; }
-  const statusEl = document.getElementById('adocaoStatusBody');
-  // Textos de etapa (item 5 do pedido): o Apps Script processa backup+staging+validação numa
-  // única chamada HTTP síncrona — não há um canal de progresso em tempo real do servidor. Os
-  // textos abaixo, até "Enviando para o servidor...", refletem o que está de fato acontecendo no
-  // navegador; a partir daí é uma narrativa aproximada enquanto se aguarda a resposta única, cuja
-  // tabela de etapas REAIS (✅/❌ por passo) aparece no modal de resultado ao final — essa tabela,
-  // não o texto do rodapé, é a fonte de verdade sobre o que realmente aconteceu.
-  const etapasNarrativa = ['Criando backup remoto','Validando backup','Gravando staging','Validando staging','Promovendo base','Confirmando gravação'];
-  setSyncCfg({adocaoEtapaTexto:'1 alteração aguardando adoção da planilha'});
-  if(statusEl) statusEl.innerHTML = 'Executando backup, staging e validação no servidor — isso pode levar alguns segundos. Não feche esta aba.';
-  registrarLogSync({acao:'adocao_iniciada', origem:'local', destino:'google', resultado:'em_andamento'});
-  let idxNarrativa=0;
-  const timerNarrativa = setInterval(function(){
-    if(idxNarrativa>=etapasNarrativa.length) return;
-    setSyncCfg({adocaoEtapaTexto: etapasNarrativa[idxNarrativa]});
-    idxNarrativa++;
-  }, 900);
+  // Item 11 do pedido — impedir duplo envio: flag global + desabilita o botão imediatamente,
+  // antes de qualquer chamada de rede. Sem isso, um segundo clique (ou clicar de novo após ver um
+  // erro) dispara uma segunda requisição enquanto a primeira ainda pode estar rodando no servidor
+  // (Apps Script continua executando mesmo depois que o jsonp do navegador desiste em 30s) — essa
+  // é a causa real do "adquirir_lock: timeout" relatado, não um lock que "vaza".
+  if(window._adocaoEmAndamento){
+    alert('Uma preparação já está em andamento. Aguarde a conclusão antes de tentar de novo.');
+    return;
+  }
+  window._adocaoEmAndamento = true;
+  const btnConfirmar = document.getElementById('btnConfirmarAdocao');
+  const btnCancelar = document.getElementById('btnCancelarAdocao');
+  if(btnConfirmar){ btnConfirmar.disabled = true; btnConfirmar.textContent = 'Preparando...'; }
+  if(btnCancelar){ btnCancelar.disabled = true; }
   try{
-    const resp = await apiPost('adotarPlanilhaExistente', {db});
-    clearInterval(timerNarrativa);
-    const data = resp && resp.data;
-    if(!data || !data.ok){
-      const erro = (data&&data.error) || 'Resposta inválida do servidor — verifique se o Code.gs foi reimplantado com esta versão.';
-      registrarLogSync({acao:'adocao_falhou', resultado:'erro', erro});
-      // Mantém fila=1/dirty=true (nunca tocado aqui) e marca o estado como ADOCAO_FALHOU, para a
-      // tela principal trocar "Adotar planilha existente" por "Tentar adoção novamente" e mostrar
-      // o motivo, sem devolver os botões antigos (Inicializar/Sincronizar/Carregar base).
-      setSyncCfg({estadoPlanilha:'ADOCAO_FALHOU', adocaoUltimoErro:erro, adocaoEtapaTexto:null});
-      exibirResultadoAdocao(false, erro, data&&data.logs, data);
-      return;
+    if(typeof syncMaintenanceMode==='function' && syncMaintenanceMode()){ alert('Desative o Modo Manutenção antes de continuar.'); return; }
+    const cid=(typeof clienteAtivo==='function')?clienteAtivo():'';
+    if(!cid){ alert('Nenhum cliente ativo selecionado.'); return; }
+    montarMetaAtual();
+    if(!db._meta || !db._meta.databaseId){ alert('Base local sem identificador válido — recarregue a página e tente de novo.'); return; }
+    // operationId/sessionId (item 12): só para rastreabilidade nos logs/erros do servidor — não
+    // implementam lock próprio nenhum; a exclusão mútua real continua sendo o LockService do
+    // Apps Script (Code.gs).
+    const operationId = 'op_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,10);
+    const sessionId = getClientInstanceId();
+    const statusEl = document.getElementById('adocaoStatusBody');
+    const etapasNarrativa = ['Lendo a planilha atual','Criando backup integral','Validando o backup','Preparando dados em área temporária','Validando quantidades e integridade','Atualizando a planilha oficial','Confirmando a sincronização'];
+    // Item 5/16: texto simples, sem termos técnicos, no indicador de pendência do rodapé. A
+    // narrativa abaixo é aproximada (o Apps Script processa tudo numa única chamada síncrona, sem
+    // canal de progresso em tempo real) — a tabela de etapas reais (✅/❌) do modal final é quem
+    // efetivamente comprova o que aconteceu.
+    setSyncCfg({adocaoEtapaTexto:'1 alteração local aguardando sincronização'});
+    if(statusEl) statusEl.innerHTML = 'Preparando a planilha — isso pode levar alguns segundos. Não feche esta aba.';
+    registrarLogSync({acao:'adocao_iniciada', origem:'local', destino:'google', resultado:'em_andamento', operationId});
+    let idxNarrativa=0;
+    const timerNarrativa = setInterval(function(){
+      if(idxNarrativa>=etapasNarrativa.length) return;
+      setSyncCfg({adocaoEtapaTexto: etapasNarrativa[idxNarrativa]});
+      idxNarrativa++;
+    }, 900);
+    try{
+      const resp = await apiPost('adotarPlanilhaExistente', {db, operationId, sessionId});
+      clearInterval(timerNarrativa);
+      const data = resp && resp.data;
+      if(!data || !data.ok){
+        const erro = (data&&data.error) || 'Resposta inválida do servidor — verifique se o Code.gs foi reimplantado com esta versão.';
+        registrarLogSync({acao:'adocao_falhou', resultado:'erro', erro, operationId, erroTecnico:data&&data.erroTecnico});
+        // Mantém fila=1/dirty=true (nunca tocado aqui) e marca o estado como ADOCAO_FALHOU, para a
+        // tela principal trocar o botão por "Tentar novamente" e mostrar o motivo, sem devolver os
+        // botões antigos (Inicializar/Sincronizar/Carregar base).
+        setSyncCfg({estadoPlanilha:'ADOCAO_FALHOU', adocaoUltimoErro:erro, adocaoEtapaTexto:null});
+        exibirResultadoAdocao(false, erro, data&&data.logs, data);
+        return;
+      }
+      // Confere localmente também o SHA-256 canônico devolvido, como segunda checagem independente
+      // do que o servidor já validou antes de gravar _META.
+      const shaLocal = await sha256Canonico(db);
+      if(data.sha256 && shaLocal !== data.sha256){
+        registrarLogSync({acao:'adocao_divergencia_sha_local', resultado:'aviso', erro:'local='+shaLocal+' servidor='+data.sha256, operationId});
+      }
+      setBaseRevisionAtual();
+      const checksumAtual = checksumColecoes(db);
+      // Só AQUI — depois de backup+staging+contagens+SHA-256 confirmados pelo servidor — dirty vira
+      // false e a fila passa de 1 para 0. setSyncCfg já dispara a atualização reativa da tela
+      // (rodapé + renderSistema, se a view "sistema" estiver aberta), sem precisar de F5.
+      setSyncCfg({dirty:false, lastSync:new Date().toLocaleTimeString('pt-BR'), lastChecksumEnviado:checksumAtual, estadoPlanilha:'REMOTO_COM_META', adocaoEtapaTexto:null, adocaoUltimoErro:null});
+      registrarLogSync({acao:'adocao_concluida', resultado:'ok', checksumNovo:checksumAtual, revisaoNova:db._revision||0, operationId});
+      exibirResultadoAdocao(true, null, data.logs, data);
+    }catch(e){
+      clearInterval(timerNarrativa);
+      registrarLogSync({acao:'adocao_falhou', resultado:'erro', erro:e.message, operationId});
+      setSyncCfg({estadoPlanilha:'ADOCAO_FALHOU', adocaoUltimoErro:e.message, adocaoEtapaTexto:null});
+      exibirResultadoAdocao(false, 'Falha de rede/inesperada: '+e.message);
     }
-    // Confere localmente também o SHA-256 canônico devolvido, como segunda checagem independente
-    // do que o servidor já validou antes de gravar _META.
-    const shaLocal = await sha256Canonico(db);
-    if(data.sha256 && shaLocal !== data.sha256){
-      registrarLogSync({acao:'adocao_divergencia_sha_local', resultado:'aviso', erro:'local='+shaLocal+' servidor='+data.sha256});
-    }
-    setBaseRevisionAtual();
-    const checksumAtual = checksumColecoes(db);
-    // Só AQUI — depois de staging+contagens+SHA-256 confirmados pelo servidor (adotarPlanilhaExistente_)
-    // — dirty vira false e a fila passa de 1 para 0. setSyncCfg já dispara a atualização reativa da
-    // tela (rodapé + renderSistema, se a view "sistema" estiver aberta), sem precisar de F5.
-    setSyncCfg({dirty:false, lastSync:new Date().toLocaleTimeString('pt-BR'), lastChecksumEnviado:checksumAtual, estadoPlanilha:'REMOTO_COM_META', adocaoEtapaTexto:null, adocaoUltimoErro:null});
-    registrarLogSync({acao:'adocao_concluida', resultado:'ok', checksumNovo:checksumAtual, revisaoNova:db._revision||0});
-    exibirResultadoAdocao(true, null, data.logs, data);
-  }catch(e){
-    clearInterval(timerNarrativa);
-    registrarLogSync({acao:'adocao_falhou', resultado:'erro', erro:e.message});
-    setSyncCfg({estadoPlanilha:'ADOCAO_FALHOU', adocaoUltimoErro:e.message, adocaoEtapaTexto:null});
-    exibirResultadoAdocao(false, 'Falha de rede/inesperada: '+e.message);
+  } finally {
+    window._adocaoEmAndamento = false;
   }
 }
 
@@ -2865,7 +2887,7 @@ async function abrirPainelConflitoSync(erroServidor){
   const diag = await avaliarEstadoSincronizacao();
   window._ultimoDiagSync = diag;
   // Cache do estado granular (REMOTO_LEGADO_SEM_META etc.) em syncCfg — é o que renderSistema()
-  // usa (síncrono, sem rede) para decidir se mostra "Adotar planilha existente" e se pausa o
+  // usa (síncrono, sem rede) para decidir se mostra "Preparar planilha para sincronização" e se pausa o
   // autosync, sem precisar refazer o diagnóstico a cada render.
   setSyncCfg({estadoPlanilha: diag.estado || null});
   renderPainelSincronizacao(diag, erroServidor);
@@ -2932,21 +2954,33 @@ function renderPainelSincronizacao(diag, erroServidor){
       bloqueio de leitura.
     </div>` : '';
   // REMOTO_LEGADO_SEM_META: a planilha existe, tem dados reais, mas nunca passou por este fluxo de
-  // sincronização (sem _META). Não é "vazia" nem "bloqueada" — precisa do fluxo de adoção com
+  // sincronização (sem _META). Não é "vazia" nem "bloqueada" — precisa do fluxo de preparação com
   // backup+staging, não do botão "Inicializar" genérico.
   const diagPlanilha = diag.diagPlanilha || {};
+  // Item 4: nomes amigáveis para as abas técnicas.
+  const NOME_AMIGAVEL_ABA = {Paineis:'Painéis', Lacos:'Laços', FLMs:'Módulos FLM', Portas:'Portas', Lojas_Areas:'Lojas e Áreas', Equipamentos:'Equipamentos', Falhas:'Falhas', Plano_Acao:'Plano de Ação', Plantas:'Plantas', Inconsistencias:'Inconsistências', Importacoes:'Importações', Historico:'Histórico', Base_LUC:'Base de LUC', Conflitos_Associacao:'Conflitos de Associação', CFTV:'CFTV', Acesso_Pontos:'Pontos de Acesso', Ambiente_Equip:'Equipamentos de Ambiente/Som', Notificacoes:'Notificações', _META:'Metadados de sincronização'};
+  const SITUACAO_AMIGAVEL = {com_dados:'Com dados', vazia:'Vazia', nao_reconhecida:'Não reconhecida', precisa_de_ajuste:'Precisa de ajuste', metadados:'Metadados', staging_temporario:'Área temporária (staging)'};
+  const COMPAT_AMIGAVEL = {com_dados:'Compatível', vazia:'Compatível', precisa_de_ajuste:'Precisa de ajuste', nao_reconhecida:'Estrutura não reconhecida', metadados:'—', staging_temporario:'—'};
+  const linhasAbas = (diagPlanilha.abas||[]).map(a=>{
+    const obs = a.cabecalhoDuplicadoComoLinha ? 'Cabeçalho duplicado gravado como linha'
+      : (a.duplicados ? a.duplicados+' ID(s) duplicado(s)' : (a.registrosInvalidos ? a.registrosInvalidos+' registro(s) sem ID' : '—'));
+    return `<tr><td>${esc(NOME_AMIGAVEL_ABA[a.nome]||a.nome)}</td><td>${esc(SITUACAO_AMIGAVEL[a.situacao]||a.situacao)}</td><td>${a.registrosValidos!=null?a.registrosValidos:'—'}</td><td>${a.linhasFisicas!=null?a.linhasFisicas:'—'}</td><td>${esc(COMPAT_AMIGAVEL[a.situacao]||'—')}</td><td>${esc(obs)}</td></tr>`;
+  }).join('');
+  const registrosValidosTotais = diagPlanilha.totalRegistrosValidos!=null ? diagPlanilha.totalRegistrosValidos : diagPlanilha.totalRegistros;
   const bannerLegadoSemMeta = (diag.estado==='REMOTO_LEGADO_SEM_META') ? `
     <div class="note" style="border:2px solid #b58900;background:#fff8e6;padding:12px 14px;border-radius:8px;margin-top:12px">
-      <b>PLANILHA LEGADA SEM METADADOS (REMOTO_LEGADO_SEM_META)</b><br>
-      A planilha do Google já existe e tem <b>${esc(String(diagPlanilha.totalRegistros||0))} registro(s)</b>
-      em coleções reconhecidas, mas nunca foi sincronizada por este fluxo (sem aba <code>_META</code>).
-      Isso NÃO é uma planilha vazia — "Inicializar"/"Carregar base" ficam desabilitados aqui para não
-      arriscar sobrescrever ou tratar esses dados como zero.<br><br>
-      <b>Abas encontradas:</b> ${(diagPlanilha.abas||[]).map(a=>esc(a.nome)+' ('+a.linhas+' linha(s))').join(', ')||'—'}<br>
-      ${(diagPlanilha.abasDesconhecidas&&diagPlanilha.abasDesconhecidas.length)?('<b>Abas fora do padrão reconhecido:</b> '+esc(diagPlanilha.abasDesconhecidas.join(', '))+'<br>'):''}
-      ${(diagPlanilha.abasVazias&&diagPlanilha.abasVazias.length)?('<b>Abas reconhecidas mas vazias:</b> '+esc(diagPlanilha.abasVazias.join(', '))+'<br>'):''}
-      <b>Snapshot(s) anterior(es):</b> ${diagPlanilha.temSnapshot?'sim':'nenhum ainda'}<br><br>
-      <button class="btn" onclick="abrirConfirmacaoAdocaoPlanilha()">Adotar planilha existente</button>
+      <b>Planilha existente aguardando configuração</b><br>
+      Esta planilha Google já contém dados, mas ainda não foi preparada para o novo sistema de sincronização.
+      Antes da primeira sincronização, o sistema precisa criar um backup integral da planilha atual, preparar a
+      estrutura segura e validar todos os dados. <b>A base local continuará preservada durante todo o processo.</b>
+      <div class="premiumGrid" style="margin-top:10px">${premiumStat('Registros válidos encontrados', registrosValidosTotais||0)}${premiumStat('Abas na planilha',(diagPlanilha.abas||[]).length)}${premiumStat('Metadados de sincronização', diagPlanilha.estadoMeta==='META_VALIDA'?'Configurados':'Ainda não configurados')}${premiumStat('Existe backup anterior', diagPlanilha.temSnapshot?'Sim':'Não')}</div>
+      <table class="tbl" style="margin-top:10px"><thead><tr><th>Aba</th><th>Situação</th><th>Registros válidos</th><th>Linhas físicas</th><th>Compatibilidade</th><th>Observação</th></tr></thead><tbody>${linhasAbas||'<tr><td colspan=6>Nenhuma aba encontrada.</td></tr>'}</tbody></table>
+      <details style="margin-top:10px"><summary style="cursor:pointer;color:#666">Detalhes técnicos</summary>
+        <p class="compactHelp" style="margin-top:6px">Estado interno: <code>REMOTO_LEGADO_SEM_META</code> · Total de linhas físicas (todas as abas reconhecidas): ${esc(String(diagPlanilha.totalRegistros||0))} ${diagPlanilha.abasDesconhecidas&&diagPlanilha.abasDesconhecidas.length?('· Abas fora do padrão: '+esc(diagPlanilha.abasDesconhecidas.map(n=>NOME_AMIGAVEL_ABA[n]||n).join(', '))):''} ${diagPlanilha.metaCamposFaltando&&diagPlanilha.metaCamposFaltando.length?('· Campos de _META ausentes: '+esc(diagPlanilha.metaCamposFaltando.join(', '))):''}</p>
+      </details>
+      <div class="premiumActions" style="margin-top:10px">
+        <button class="btn" onclick="abrirConfirmacaoAdocaoPlanilha()">Preparar planilha para sincronização</button>
+      </div>
     </div>` : '';
   const bannerLeituraDiagnostico = (leituraExecutada && diag.leituraDiagnosticoUsada) ? `
     <div class="note" style="border:1px solid #9ec7ff;background:#eef5ff;padding:10px 12px;border-radius:8px;margin-top:12px">
@@ -2960,25 +2994,36 @@ function renderPainelSincronizacao(diag, erroServidor){
     ${erroServidor?`<p class="note" style="color:#b00020">${esc(erroServidor)}</p>`:''}
     <p class="note"><b>Estado:</b> ${esc(diag.estado||'—')}<br><b>Ação recomendada:</b> ${esc(diag.acaoRecomendada||'—')}</p>
     <div class="syncGrid">
-      <div class="syncCard"><h3>BASE LOCAL</h3>
+      <div class="syncCard"><h3>Base local</h3>
         ${campo('Cliente', ml.clienteNome||ml.clienteId)}
-        ${campo('Database ID', ml.databaseId)}
+        ${campo('Identificador da base', ml.databaseId)}
         ${campo('Revisão', ml.revision)}
-        ${campo('Base Revision', ml.baseRevision)}
+        ${campo('Revisão de origem', ml.baseRevision)}
         ${campo('Atualizado em', ml.updatedAt)}
         ${campo('Atualizado por', ml.updatedBy)}
-        ${campo('Checksum', ml.checksum)}
-        ${campo('Dirty (pendente)', syncCfg().dirty?'sim':'não')}
+        ${campo('Código de integridade (armazenado)', ml.checksum)}
+        ${(function(){
+          // Item 6 do pedido: mostrar valor armazenado x recalculado agora, e se coincidem — o
+          // checksum determinístico não deveria mudar só por abrir o diagnóstico.
+          let recalculado='—', bate=null;
+          try{ recalculado = checksumColecoes(db); bate = String(recalculado)===String(ml.checksum||''); }catch(e){ recalculado='(erro ao recalcular: '+e.message+')'; }
+          return `<div class="syncField">
+            <div class="syncFieldLabel">Código de integridade (recalculado agora)</div>
+            <div class="syncFieldValor">${esc(recalculado)} ${bate===true?'✅ igual ao armazenado':(bate===false?'⚠ DIFERENTE do armazenado':'')}</div>
+          </div>`;
+        })()}
+        ${campo('SHA-256 canônico (armazenado, da última preparação/sync bem-sucedida)', ml.sha256Canonico)}
+        ${campo('Alterações locais pendentes', syncCfg().dirty?'sim':'não')}
       </div>
-      <div class="syncCard"><h3>BASE GOOGLE</h3>
+      <div class="syncCard"><h3>Planilha Google</h3>
         ${campo('Status', statusTexto, false)}
         ${campo('Cliente', mg.clienteNome||mg.clienteId, naoExecutou)}
-        ${campo('Database ID', mg.databaseId, naoExecutou)}
+        ${campo('Identificador da base', mg.databaseId, naoExecutou)}
         ${campo('Revisão', mg.revision, naoExecutou)}
-        ${campo('Base Revision', mg.baseRevision, naoExecutou)}
+        ${campo('Revisão de origem', mg.baseRevision, naoExecutou)}
         ${campo('Atualizado em', mg.updatedAt, naoExecutou)}
         ${campo('Atualizado por', mg.updatedBy, naoExecutou)}
-        ${campo('Checksum', mg.checksum, naoExecutou)}
+        ${campo('Código de integridade', mg.checksum, naoExecutou)}
       </div>
     </div>
     ${bannerGoogleNaoConsultado}
@@ -3011,16 +3056,34 @@ function renderPainelSincronizacao(diag, erroServidor){
     <p class="note" style="margin-top:14px"><i>${leituraExecutada?'O GET foi executado, mas a planilha do Google ainda não tem metadados (_meta) para comparar — sincronize ao menos uma vez para gerar uma base de comparação.':'Nenhuma diferença, divergência ou conflito é calculado enquanto o Google não foi consultado — isso evitaria uma comparação falsa contra "zero".'}</i></p>
     `}
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px">
+      ${diag.estado==='REMOTO_LEGADO_SEM_META' ? `
+      <button class="btn secondary" onclick="abrirPainelConflitoSync()">Comparar dados</button>
+      <button class="btn secondary" onclick="exportarBaseLocalJson()">Exportar base local</button>
+      <button class="btn secondary" onclick="exportarBaseGoogleJson()">Exportar planilha atual</button>
+      ${diag.diagPlanilha&&diag.diagPlanilha.sheetUrl?`<button class="btn secondary" onclick="window.open('${esc(diag.diagPlanilha.sheetUrl)}','_blank')">Abrir planilha</button>`:''}
+      <button class="btn secondary" onclick="closeModal()">Fechar</button>
+      ` : `
       <button class="btn secondary" onclick="closeModal()">Cancelar</button>
       <button class="btn secondary" onclick="abrirPainelConflitoSync()">Comparar bases</button>
       <button class="btn secondary" onclick="exportarBaseLocalJson()">Exportar base local</button>
       <button class="btn secondary" onclick="exportarBaseGoogleJson()">Exportar base Google</button>
-      <button class="btn secondary" onclick="criarSnapshotLocal('manual via painel de sincronização')">Criar snapshot</button>
-      <button class="btn secondary" onclick="acionarBackupGoogle()">Criar backup Google</button>
-      <button class="btn secondary" onclick="abrirListaBackupsLocais()">Restaurar backup</button>
       <button class="btn secondary" onclick="abrirMesclagemAssistida()">Mesclar assistido</button>
-      <button class="btn danger" onclick="abrirRestaurarJsonRecuperado()">Restaurar JSON recuperado</button>
-    </div>`;
+      `}
+    </div>
+    <details style="margin-top:14px"><summary style="cursor:pointer;color:#666">Ferramentas de recuperação (ações avançadas)</summary>
+      <p class="compactHelp" style="margin:8px 0">
+        <b>Snapshot local:</b> cópia da base atual guardada no navegador (localStorage), só volta para a memória deste navegador — não toca no Google.<br>
+        <b>Backup da planilha (Google):</b> duplica a planilha inteira no Google Drive (Spreadsheet.copy) — cópia real, independente do navegador.
+      </p>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        <button class="btn secondary" onclick="criarSnapshotLocal('manual via painel de sincronização')">Criar snapshot local (navegador)</button>
+        <button class="btn secondary" onclick="acionarBackupGoogle()">Criar backup da planilha (Google)</button>
+        <button class="btn secondary" onclick="abrirListaBackupsLocais()">Restaurar snapshot local</button>
+        ${diag.estado!=='REMOTO_LEGADO_SEM_META'?'<button class="btn secondary" onclick="abrirMesclagemAssistida()">Mesclar bases</button>':''}
+        <button class="btn danger" onclick="abrirRestaurarJsonRecuperado()">Restaurar JSON recuperado</button>
+      </div>
+      <p class="compactHelp" style="margin-top:8px"><i>Toda ação destrutiva (restaurar, mesclar, sobrescrever) já pede confirmação explícita antes de executar.</i></p>
+    </details>`;
   openModal(html);
 }
 function abrirMesclagemAssistida(){
@@ -7083,15 +7146,15 @@ function renderSistema(){
    <div id="syncSessaoInfo" class="compactHelp" style="margin-top:10px">Sessão: ${esc(getClientInstanceId().slice(0,10))}</div>
  </div>
  ${precisaAdocao?`<div class="premiumPanel" style="border:2px solid #b58900;background:#fff8e6">
-   <div class="systemHeaderSlim"><div class="titleBlock"><h3>⚠ ${adocaoFalhou?'Adoção da planilha falhou':'Planilha Google com dados legados'}</h3><p>${adocaoFalhou
-      ? ('A tentativa de adoção não foi concluída — a fila local continua pendente e nada foi descartado. '+(c.adocaoUltimoErro?('Motivo: '+esc(c.adocaoUltimoErro)):''))
-      : 'A planilha Google contém dados legados, mas ainda não possui metadados de sincronização. É necessário realizar a adoção controlada antes de sincronizar.'}</p></div></div>
-   <div class="premiumActions"><button class="btn" onclick="abrirConfirmacaoAdocaoPlanilha()">${adocaoFalhou?'Tentar adoção novamente':'Adotar planilha existente'}</button>${c.sheetUrl?`<button class="btn secondary" onclick="window.open('${esc(c.sheetUrl)}','_blank')">Abrir planilha</button>`:''}</div>
+   <div class="systemHeaderSlim"><div class="titleBlock"><h3>⚠ ${adocaoFalhou?'A preparação da planilha não foi concluída':'Planilha existente aguardando configuração'}</h3><p>${adocaoFalhou
+      ? ('A tentativa anterior não terminou — a alteração local continua pendente e nada foi descartado. '+(c.adocaoUltimoErro?('Motivo: '+esc(c.adocaoUltimoErro)):''))
+      : 'Esta planilha Google já contém dados, mas ainda não foi preparada para o novo sistema de sincronização. A base local continuará preservada durante todo o processo.'}</p></div></div>
+   <div class="premiumActions"><button class="btn" onclick="abrirConfirmacaoAdocaoPlanilha()">${adocaoFalhou?'Tentar novamente':'Preparar planilha para sincronização'}</button>${c.sheetUrl?`<button class="btn secondary" onclick="window.open('${esc(c.sheetUrl)}','_blank')">Abrir planilha</button>`:''}</div>
  </div>`:''}
  <div class="premiumPanel">
    <div class="systemHeaderSlim"><div class="titleBlock"><h3>Banco Google</h3><p>Sincronização da base SDAI com Google Sheets.</p></div>${premiumBadgeStatus()}</div>
-   <div class="premiumGrid">${premiumStat('Última sync',c.lastSync||'—')}${premiumStat('Fila local',c.dirty?(c.adocaoEtapaTexto?'1 — '+c.adocaoEtapaTexto:'1'):'0')}${premiumStat('Autosync',legado?'Pausado — planilha aguardando adoção':(manut?'Pausado — Modo Manutenção':(c.auto?'Ligado — sincronização ativa':'Desligado')))}${premiumStat('Intervalo',(c.intervalSec||30)+' s')}</div>
-   ${precisaAdocao ? `<div class="compactHelp" style="margin-top:6px">"Inicializar", "Sincronizar" e "Carregar base" ficam ocultos enquanto a planilha não for adotada — use o botão de adoção acima.</div>
+   <div class="premiumGrid">${premiumStat('Última sync',c.lastSync||'—')}<div class="stat" style="cursor:pointer" onclick="verAlteracoesPendentes()" title="Clique para ver o motivo, a coleção e o registro envolvidos">${premiumStat('Alteração local',c.dirty?(c.adocaoEtapaTexto?'1 — '+c.adocaoEtapaTexto:'1 pendente'):'0 — tudo sincronizado')}</div>${premiumStat('Autosync configurado',c.auto?'Sim':'Não')}${premiumStat('Status operacional',legado?'Pausado — aguardando preparação da planilha':(manut?'Pausado — Modo Manutenção':(c.auto?'Ligado — sincronização ativa':'Desligado')))}</div>
+   ${precisaAdocao ? `<div class="compactHelp" style="margin-top:6px">"Inicializar", "Sincronizar" e "Carregar base" ficam ocultos enquanto a planilha não for preparada — use o botão acima.</div>
    <div class="premiumActions" style="margin-top:10px">${c.sheetUrl?`<button class="btn secondary" onclick="window.open('${esc(c.sheetUrl)}','_blank')">Abrir planilha</button>`:''}</div>`
    : `<div class="premiumActions">
      <button class="btn" ${manut?'disabled title="Bloqueado pelo Modo Manutenção"':''} onclick="setupGoogle()">Inicializar</button>
