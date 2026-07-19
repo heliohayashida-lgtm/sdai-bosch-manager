@@ -10944,18 +10944,117 @@ function confirmarDesassociacaoLuc(baseLojaId){
     window._desassocSaving=false;
   }
 }
+// ── FONTE ÚNICA DE VERDADE DA ABA CONFLITOS (pedido "BELEZA NA WEB não aparece em Conflitos") ──
+// BUGFIX raiz: a aba Conflitos só lia db.conflitosAssociacao — uma lista auxiliar populada em
+// pontos específicos (executarAssociacaoLuc, desassociação). Qualquer caminho que mudasse
+// base.statusAssociacao sem também mexer nessa lista (ou um bug em algum desses pontos) fazia a
+// Base LUC "sumir" da aba mesmo continuando visível em LUC/Lojas — exatamente o relatado. Esta
+// função deriva a lista SEMPRE de db.baseLojas (fonte real), tratando db.conflitosAssociacao como
+// apoio histórico, não mais como única fonte.
+function obterConflitosAssociacaoAtuais(){
+  ensureLucSchema();
+  const rejeicoes=db.lucRejeicoes||[];
+  return (db.baseLojas||[]).filter(base=>{
+    // Item 2/7: só NÃO é conflito/pendência quando há um vínculo VÁLIDO e confirmado — qualquer
+    // outra situação (localId vazio, status Desassociada/Pendente/Conflito, ou o local vinculado
+    // ter sido excluído/sumido) conta como pendência a mostrar, nunca a esconder.
+    if(base.statusAssociacao==='Vinculada' && base.localId){
+      const loc=(db.locais||[]).find(l=>l.id===base.localId);
+      if(loc && !loc.excluido) return false;
+    }
+    return true;
+  }).map(base=>{
+    const rejeitadasDesteBase=rejeicoes.filter(r=>r.baseLojaId===base.id).map(r=>r.localId);
+    const candidatos=(db.locais||[]).filter(l=>lucLocalDisponivelParaBase(l,base));
+    const foiRejeitadaAntes=rejeitadasDesteBase.length>0;
+    const existeCadastroCorrespondente=(db.locais||[]).some(l=>
+      (base.luc && l.luc && String(l.luc)===String(base.luc)) ||
+      (base.nome && lucNormText(l.nomeOficial||l.nome||l.nomeOriginalCadastro||'')===lucNormText(base.nome))
+    );
+    let estado,motivo;
+    if(base.statusAssociacao==='Desassociada'){
+      estado='Desassociada — selecione uma loja para reassociar';
+      motivo=base.motivoDesassociacao||'Desassociada manualmente';
+    } else if(!candidatos.length && !existeCadastroCorrespondente){
+      estado='Loja cadastrada não encontrada';
+      motivo='Nenhuma loja correspondente encontrada em Lojas/Áreas';
+    } else if(base.statusAssociacao==='Conflito'){
+      estado='Sugestão disponível';
+      motivo='Baixa confiança na associação automática'+(base.percentualSimilaridade?(' ('+base.percentualSimilaridade+'%)'):'');
+    } else if(base.localId && !(db.locais||[]).some(l=>l.id===base.localId && !l.excluido)){
+      estado='Loja cadastrada excluída';
+      motivo='A loja vinculada foi excluída — restaure-a ou selecione outra.';
+    } else {
+      estado='Pendente';
+      motivo='Ainda sem vínculo confirmado';
+    }
+    return {
+      id:'conf_'+base.id, baseLojaId:base.id, luc:base.luc||'', lojaBaseLuc:base.nome||'',
+      piso:base.piso||'', estado, motivo:(foiRejeitadaAntes?'⚠ Associação anterior rejeitada. ':'')+motivo,
+      foiRejeitadaAntes, candidatos, percentualSimilaridade:base.percentualSimilaridade||0,
+      data:base.desassociadoEm||base.ultimaAtualizacao||base.dataImportacao||''
+    };
+  });
+}
+// Item 9: ponto único chamado após qualquer ação que mude o estado de associação — como os
+// conflitos agora são sempre DERIVADOS ao vivo de db.baseLojas (não mais uma lista para manter
+// sincronizada à parte), "atualizar" é simplesmente re-renderizar a tela.
+function atualizarConflitosAssociacao(){ if(typeof renderImportacao==='function') renderImportacao(); }
+// Confirma o vínculo lendo o <select> pela chave baseLojaId (não mais pelo id de um item de
+// db.conflitosAssociacao, que pode nem existir para este caso).
+function lucConfirmarVinculoPorBase(baseLojaId){
+  ensureLucSchema();
+  const base=(db.baseLojas||[]).find(b=>b.id===baseLojaId); if(!base){alert('Base LUC não encontrada.');return}
+  const sel=document.getElementById('lucLocalSel_conf_'+baseLojaId);
+  const localId=(sel&&sel.value)||'';
+  const local=(db.locais||[]).find(l=>l.id===localId);
+  if(!local){alert('Selecione uma loja cadastrada antes de salvar.');return}
+  const erro=lucValidarSemDuplicidade(base,local);
+  if(erro){alert(erro);return}
+  applyLucToLocal(local,base,base.percentualSimilaridade||100,false,'Manual');
+  db.conflitosAssociacao=(db.conflitosAssociacao||[]).filter(x=>x.baseLojaId!==base.id);
+  markDirty('confirmação manual conflito LUC');
+  atualizarConflitosAssociacao();
+}
+function lucIgnorarConflitoPorBase(baseLojaId){
+  const base=(db.baseLojas||[]).find(b=>b.id===baseLojaId); if(!base)return;
+  base.statusAssociacao='Pendente'; base.observacoes='Conflito ignorado manualmente em '+isoNow();
+  db.conflitosAssociacao=(db.conflitosAssociacao||[]).filter(x=>x.baseLojaId!==base.id);
+  markDirty('conflito LUC ignorado'); atualizarConflitosAssociacao();
+}
 function lucImportInterface(){
   ensureLucSchema();
-  const r=lucResumo(); const tab=filters.lucTab||'resumo';
+  const conflitosAtuais=obterConflitosAssociacaoAtuais(); // item 10: contador sempre recalculado, nunca em cache
+  const r=lucResumo(); r.conflitos=conflitosAtuais.length;
+  const tab=filters.lucTab||'resumo';
   const tabs=['resumo','lojas','conflitos','associacao'];
-  const labels={resumo:'Resumo',lojas:'LUC/Lojas',conflitos:'Conflitos',associacao:'Associação Automática'};
+  const labels={resumo:'Resumo',lojas:'LUC/Lojas',conflitos:`Conflitos${conflitosAtuais.length?(' ('+conflitosAtuais.length+')'):''}`,associacao:'Associação Automática'};
   const btns=tabs.map(t=>`<button class="btn small ${tab===t?'':'secondary'}" onclick="lucSetTab('${t}')">${labels[t]}</button>`).join(' ');
   let body='';
-  if(tab==='resumo')body=`<div class="premiumGrid">${premiumStat('Quantidade de lojas',r.lojas)}${premiumStat('Quantidade de pisos',r.pisos)}${premiumStat('Quantidade por tipo',r.tipos)}${premiumStat('Quantidade vinculada',r.vinculadas)}${premiumStat('Quantidade pendente',r.pendentes)}${premiumStat('Conflitos',r.conflitos)}${premiumStat('Última importação',r.ultima)}</div><div class="split2" style="margin-top:14px"><div class="premiumPanel"><h3>Quantidade por tipo</h3>${table(lucTipoRows(),[['Tipo','tipo'],['Qtd.','qtd']])}</div><div class="premiumPanel"><h3>Quantidade por piso</h3>${table(lucPisoRows(),[['Piso','piso'],['Qtd.','qtd']])}</div></div>`;
+  if(tab==='resumo')body=`<div class="premiumGrid">${premiumStat('Quantidade de lojas',r.lojas)}${premiumStat('Quantidade de pisos',r.pisos)}${premiumStat('Quantidade por tipo',r.tipos)}${premiumStat('Quantidade vinculada',r.vinculadas)}${premiumStat('Quantidade pendente',r.pendentes)}${premiumStat('Conflitos atuais',r.conflitos)}${premiumStat('Última importação',r.ultima)}</div><div class="split2" style="margin-top:14px"><div class="premiumPanel"><h3>Quantidade por tipo</h3>${table(lucTipoRows(),[['Tipo','tipo'],['Qtd.','qtd']])}</div><div class="premiumPanel"><h3>Quantidade por piso</h3>${table(lucPisoRows(),[['Piso','piso'],['Qtd.','qtd']])}</div></div>`;
   if(tab==='lojas')body=table((db.baseLojas||[]),[['LUC','luc'],['Loja oficial','nome'],['Tipo de Loja','tipo'],['Área Contrato (m²)','areaContrato'],['Piso','piso'],['Status','statusAssociacao',x=>`<span class="pill ${x.statusAssociacao==='Vinculada'?'ok':x.statusAssociacao==='Conflito'?'bad':'warn'}">${esc(x.statusAssociacao)}</span>`],['Similaridade','percentualSimilaridade',x=>x.percentualSimilaridade?x.percentualSimilaridade+'%':'—']]);
-  if(tab==='conflitos')body=`<p class="msg warn"><b>Conferência manual:</b> selecione a loja cadastrada correta para cada LUC. A lista mostra somente locais ainda não alocados e o sistema bloqueia qualquer duplicidade.</p>`+table(lucConflitosRows(),[
-    ['LUC','luc'],['Loja da Base LUC','lojaBaseLuc'],['Loja cadastrada sugerida','lojaCadastrada'],['Selecionar loja cadastrada disponível','selecaoLocal',r=>r.selecaoLocal],['Piso cadastro','pisoCadastro'],['Piso Base LUC','pisoBaseLuc'],['Motivo','motivo'],['Similaridade','percentualSimilaridade',x=>x.percentualSimilaridade+'%'],['Data','data']
-  ],c=>`<button class="btn small" onclick="lucConfirmarConflito('${c.id}')">Salvar vínculo</button> <button class="btn small secondary" onclick="lucIgnorarConflito('${c.id}')">Ignorar</button>`);
+  if(tab==='conflitos')body=`<p class="msg warn"><b>Conferência manual:</b> ${conflitosAtuais.length} conflito(s)/pendência(s) atual(is), calculados direto da Base LUC (item 2/3) — nunca ocultos por causa de uma lista auxiliar desatualizada. Selecione a loja cadastrada correta para cada LUC; o sistema bloqueia qualquer duplicidade.</p>`+
+    (conflitosAtuais.length ? table(conflitosAtuais.map(c=>{
+      const candidatosExcluidos = c.candidatos.length ? [] : lucBuscarCandidatosLocal((db.baseLojas||[]).find(b=>b.id===c.baseLojaId));
+      let selecaoLocal;
+      if(c.candidatos.length){
+        selecaoLocal=`<select id="lucLocalSel_${c.id}" style="min-width:220px;border:1px solid var(--l3a-border);border-radius:8px;padding:7px;background:#fff"><option value="">Selecione a loja cadastrada</option>${c.candidatos.map(l=>`<option value="${esc(l.id)}">${esc((l.nomeOriginalCadastro||l.nome||lucOfficialName(l))+' • '+(l.piso||'Sem piso'))}</option>`).join('')}</select>`;
+      } else if(candidatosExcluidos.length){
+        // Item 5/6: "Procurar loja existente" já encontrou algo (possivelmente excluída) — oferece
+        // restaurar em vez de assumir direto que precisa cadastrar uma nova.
+        selecaoLocal=candidatosExcluidos.map(l=>`${esc(lucOfficialName(l)||l.nome)}${l.excluido?' <span class="pill bad">excluída</span>':''} <button class="btn small secondary" onclick="lucRestaurarLocal('${l.id}','')">Restaurar loja cadastrada</button>`).join('<br>')
+          +`<br><button class="btn small" onclick="lucCadastrarLojaAPartirDaBase('${c.baseLojaId}')">Cadastrar mesmo assim</button>`;
+      } else {
+        selecaoLocal=`<button class="btn small" onclick="lucCadastrarLojaAPartirDaBase('${c.baseLojaId}')">Cadastrar a partir da Base LUC</button>`;
+      }
+      return {...c, selecaoLocal};
+    }),[
+      ['LUC','luc'],['Loja da Base LUC','lojaBaseLuc'],['Piso','piso'],
+      ['Estado','estado',x=>`<span class="pill ${x.estado.startsWith('Desassociada')?'warn':x.estado==='Loja cadastrada não encontrada'?'bad':x.estado==='Loja cadastrada excluída'?'bad':''}">${esc(x.estado)}</span>`],
+      ['Candidato / ação','selecaoLocal',x=>x.selecaoLocal],
+      ['Motivo','motivo'],['Similaridade','percentualSimilaridade',x=>x.percentualSimilaridade?x.percentualSimilaridade+'%':'—'],['Data','data',x=>x.data?formatarDataHoraAmigavel(x.data):'—']
+    ],c=>`${c.candidatos.length?`<button class="btn small" onclick="lucConfirmarVinculoPorBase('${c.baseLojaId}')">Salvar vínculo</button>`:''} <button class="btn small secondary" onclick="lucIgnorarConflitoPorBase('${c.baseLojaId}')">Ignorar</button>`)
+    : '<div class="emptyState">Nenhum conflito ou pendência de associação no momento.</div>');
   if(tab==='associacao')body=`<p class="msg warn">A associação usa Nome da Loja + Piso como critério decisivo. Ex.: Oboticário, O Boticário ou O Boticário P2, estando no mesmo piso, passam a usar o nome oficial da Base LUC. Acima de 82% atualiza automaticamente Nome Oficial, LUC, Piso, Área Contrato e Origem = Base LUC. Baixa confiança vai para Conflitos de Associação.</p><div class="premiumActions"><button class="btn" onclick="executarAssociacaoLuc()">Reexecutar associação automática</button></div>${table((db.baseLojas||[]).map(b=>{
     const loc=(db.locais||[]).find(l=>l.id===b.localId);
     return {...b,
