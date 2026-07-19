@@ -173,6 +173,8 @@ button.crumb:hover{color:var(--l3a-primary);text-decoration:underline}
   border-radius:var(--l3a-radius-pill);padding:7px 12px;font-size:11.5px;font-weight:700;color:var(--l3a-text-soft);
   box-shadow:var(--l3a-shadow-sm)}
 .syncDot{width:8px;height:8px;border-radius:50%;background:#9aa8bb;flex:0 0 8px}
+.spinnerMini{display:inline-block;width:11px;height:11px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spinMini .7s linear infinite;vertical-align:middle;margin-right:4px}
+@keyframes spinMini{to{transform:rotate(360deg)}}
 .syncDot.ok{background:var(--l3a-success)} .syncDot.warn{background:var(--l3a-warning)} .syncDot.bad{background:var(--l3a-danger)}
 
 .datetimePill{height:42px;min-width:104px;border:1px solid var(--l3a-border);background:var(--l3a-surface);
@@ -1030,7 +1032,7 @@ table{font-size:13px}
         <div class="pageTitleWrap"><h1 id="pageTitle">Plano de Ação</h1><p id="breadcrumb"><button class="crumb" onclick="breadcrumbGo(&#39;visaoGeral&#39;)">Teste 1</button><span class="crumbSep">›</span><button class="crumb" onclick="breadcrumbGo(&#39;dashboard&#39;)">SDAI</button><span class="crumbSep">›</span><button class="crumb" onclick="breadcrumbAbrirGrupo(&#39;sdai&#39;,&#39;operacao&#39;)">Operação</button><span class="crumbSep">›</span><span class="crumb current">Plano de Ação</span></p><span id="escopoBadge"><span class="scopeBadge scopeCliente" title="Esta tela mostra/altera somente dados do cliente ativo">Escopo: Teste 1</span></span></div>
       </div>
       <div class="topMeta">
-        <div class="syncFooter" id="syncFooter"><span class="syncDot warn" id="syncDot"></span><span id="syncText"><span style="cursor:pointer;text-decoration:underline;font-weight:bold" onclick="abrirPainelConflitoSync()" title="Clique para abrir o diagnóstico de sincronização">🛑 SINCRONIZAÇÃO BLOQUEADA PARA MANUTENÇÃO</span></span></div>
+        <div class="syncFooter" id="syncFooter"><span class="syncDot warn" id="syncDot"></span><span id="syncText"><span style="cursor:pointer;text-decoration:underline;font-weight:bold" onclick="abrirPainelConflitoSync()" title="Clique para abrir o diagnóstico de sincronização">🛑 SINCRONIZAÇÃO BLOQUEADA PARA MANUTENÇÃO</span></span><button class="btn small" id="btnSyncGlobal" onclick="sincronizarBaseSimplificada()" title="Sincronizar agora">⟳ Sincronizar</button></div>
         <div class="datetimePill"><span id="clockDate">17 de jul</span><b id="clockTime">09:01</b></div>
         <button class="notifBell" id="notifBell" onclick="toggleNotifPanel()" title="Notificações">
           <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9.5a6 6 0 0 1 12 0c0 5 1.7 6 1.7 6H4.3S6 14.5 6 9.5Z" fill="currentColor" fill-opacity=".12"></path><path d="M10 19a2.2 2.2 0 0 0 4 0"></path></svg>
@@ -1910,9 +1912,17 @@ function checksumColecoes(d){
   if(d.config)h=(h*31+JSON.stringify(d.config).length)>>>0;
   return h.toString(16);
 }
-function markDirty(reason='alteração'){if(isHydrating)return; bumpRevision(reason); persistLocalThrottled(); _dbVersion++; setSyncCfg({dirty:true,lastReason:reason}); scheduleAutoSync(1500)}
+function markDirty(reason='alteração'){if(isHydrating)return; bumpRevision(reason); persistLocalThrottled(); _dbVersion++; setSyncCfg({dirty:true,lastReason:reason}); scheduleAutoSync()}
 function save(){if(typeof plantaInvalidarCacheTooltip==='function')plantaInvalidarCacheTooltip(); window._mapaIndiceSujo=true; markDirty('salvamento');render()}
-function updateSyncFooter(status){const c=syncCfg(); const dot=document.getElementById('syncDot'), txt=document.getElementById('syncText'); if(!dot||!txt)return;
+function updateSyncFooter(status){const c=syncCfg(); const dot=document.getElementById('syncDot'), txt=document.getElementById('syncText'), btn=document.getElementById('btnSyncGlobal'); if(!dot||!txt)return;
+  // Item 3: botão global ⟳ Sincronizar — desabilitado + com spinner sempre que houver uma
+  // sincronização em andamento (mesma flag usada pelo restante do sistema — nunca uma segunda
+  // rotina), reabilitado em qualquer outro estado.
+  const emAndamento = !!(window.syncInProgress || window._adocaoEmAndamento);
+  if(btn){
+    btn.disabled = emAndamento || (typeof syncMaintenanceMode==='function' && syncMaintenanceMode());
+    btn.innerHTML = emAndamento ? '<span class="spinnerMini"></span> Sincronizando...' : '⟳ Sincronizar';
+  }
   // FASE 1 (Modo Manutenção): prioridade máxima no indicador — enquanto ativo, nunca mostra "saving"/
   // "ok"/etc., sempre deixa explícito que nada está sendo sincronizado de verdade.
   if(typeof syncMaintenanceMode==='function' && syncMaintenanceMode()){
@@ -1923,24 +1933,51 @@ function updateSyncFooter(status){const c=syncCfg(); const dot=document.getEleme
   // Item 9: novo estado "conflito" no indicador de sincronização do cabeçalho — clicável, abre o
   // painel não-bloqueante de resolução (abrirPainelConflitoSync); nunca abre sozinho.
   if(status==='conflict'){ dot.className='syncDot bad'; txt.innerHTML='<span style="cursor:pointer;text-decoration:underline" onclick="abrirPainelConflitoSync()" title="Clique para revisar o conflito">⚠ Conflito de sincronização</span>'; return; }
-  // ADOÇÃO DE PLANILHA EXISTENTE: enquanto a planilha estiver legada/sendo adotada, o rodapé não
-  // deve mostrar o genérico "Alterações pendentes" — mostra a etapa atual (texto aproximado do
-  // que está acontecendo no servidor; a tabela de etapas do modal de resultado é a fonte exata
-  // pós-fato, já que o Apps Script processa a adoção inteira numa única chamada síncrona e não
-  // expõe progresso em tempo real).
   if(c.estadoPlanilha==='REMOTO_LEGADO_SEM_META' || c.estadoPlanilha==='ADOCAO_FALHOU'){
     dot.className='syncDot warn';
-    const texto = c.adocaoEtapaTexto || '1 alteração aguardando adoção da planilha';
+    const texto = c.adocaoEtapaTexto || 'Base local aguardando confirmação no Google';
     txt.innerHTML=`<span style="cursor:pointer;text-decoration:underline;font-weight:bold" onclick="abrirPainelConflitoSync()" title="Clique para abrir o diagnóstico de sincronização">⚠ ${esc(texto)}</span>`;
     return;
   }
-  dot.className='syncDot '+(status==='saving'?'warn':status==='error'?'bad':(!c.configured?'warn':c.dirty?'warn':'ok')); txt.textContent=status==='saving'?'Sincronizando...':status==='error'?'Falha ao sincronizar':(!c.configured?'Banco Google não configurado':c.dirty?(c.adocaoEtapaTexto||'Base local possui alterações ainda não confirmadas no Google'):'Sincronizado '+(c.lastSync||''));}
+  // Item 3/7: estados do indicador durante a sincronização, mapeados a partir de
+  // c.adocaoEtapaTexto (mesmo mecanismo já usado por sincronizarBaseSimplificada). "sincronizadoAgora"
+  // é o estado transitório "✔ Sincronizado agora HH:MM:SS" mostrado por alguns segundos após concluir.
+  if(status==='sincronizadoAgora'){ dot.className='syncDot ok'; txt.textContent='✔ Sincronizado agora '+(c.lastSync||''); return; }
+  if(emAndamento || status==='saving'){
+    const etapa = c.adocaoEtapaTexto||'';
+    let emoji='🔵', label='Sincronizando...';
+    if(/backup/i.test(etapa)){ emoji='🟠'; label='Criando backup...'; }
+    else if(/finaliz/i.test(etapa)){ emoji='🟣'; label='Finalizando...'; }
+    else if(/salvando|dados/i.test(etapa)){ emoji='🔵'; label='Salvando dados...'; }
+    dot.className='syncDot warn'; txt.textContent=emoji+' '+label; return;
+  }
+  if(status==='error'){ dot.className='syncDot bad'; txt.textContent='🔴 Falha na sincronização'; return; }
+  if(!c.configured){ dot.className='syncDot warn'; txt.textContent='Banco Google não configurado'; return; }
+  if(c.dirty){ dot.className='syncDot warn'; txt.textContent='🟡 Alterações locais'; return; }
+  dot.className='syncDot ok'; txt.textContent='🟢 Tudo sincronizado';
+}
 let autoSyncTimer=null; let _recuperandoBaseInicial=false;
+// Item 4/5 do pedido "melhorar a usabilidade da sincronização": auditoria encontrada — o autosync
+// NUNCA chamava a mesma rotina do botão manual. markDirty() agendava scheduleAutoSync(1500) (1,5
+// segundo fixo, ignorando o intervalo configurado) e, ao disparar, chamava syncNow(false) — a
+// rotina ANTIGA e complexa (comparação de revisão, releitura completa, etc.), não
+// sincronizarBaseSimplificada(). Corrigido: debounce de 25s (nem toda tecla dispara uma
+// sincronização — só depois de ficar 25s sem nova alteração) chamando exatamente a mesma função
+// do botão "SINCRONIZAR AGORA"/"⟳ Sincronizar", em modo silencioso (sem abrir o modal de
+// resultado em caso de sucesso — só o indicador do topo muda).
+const AUTO_SYNC_DEBOUNCE_MS = 25000;
 function scheduleAutoSync(ms){
   // FASE 1 (Modo Manutenção): nenhum agendamento de sincronização automática enquanto ativo — não
   // quebra quem chama (retorna silenciosamente, como se auto estivesse desligado).
   if(typeof syncMaintenanceMode==='function' && syncMaintenanceMode())return;
-  const c=syncCfg(); if(!c.configured||!c.auto||_recuperandoBaseInicial)return; clearTimeout(autoSyncTimer); autoSyncTimer=setTimeout(()=>syncNow(false),ms||((c.intervalSec||30)*1000));}
+  const c=syncCfg(); if(!c.configured||!c.auto||_recuperandoBaseInicial)return;
+  clearTimeout(autoSyncTimer);
+  autoSyncTimer=setTimeout(function(){
+    if(window.syncInProgress||window._adocaoEmAndamento)return; // uma sincronização (manual ou automática) já em andamento — não inicia outra
+    if(!syncCfg().dirty)return; // nada mudou desde então — nada a enviar
+    if(typeof sincronizarBaseSimplificada==='function') sincronizarBaseSimplificada(true);
+  }, ms||AUTO_SYNC_DEBOUNCE_MS);
+}
 // CORREÇÃO: trava simples contra sincronizações simultâneas. Antes, se o usuário editasse de novo
 // enquanto um envio anterior ainda estava em andamento (comum quando o Apps Script/Sheets demora),
 // um SEGUNDO syncNow() podia disparar por cima do primeiro — dois envios concorrentes ao mesmo
@@ -2805,6 +2842,16 @@ async function verDetalhesDivergencia(colecao){
 const CHAVE_RECUPERACAO_SYNC = 'SDAI_SYNC_RECOVERY';
 window.syncInProgress = false;
 function _syncBeforeUnloadHandler(e){ e.preventDefault(); e.returnValue=''; return ''; }
+// Item 6 do pedido: aviso ao fechar/atualizar a aba quando existem alterações locais NÃO
+// sincronizadas (dirty=true), mesmo fora de uma sincronização em andamento. O navegador só permite
+// um texto/confirmação genérica no beforeunload (não é possível desenhar os 3 botões "Sincronizar e
+// sair / Sair sem sincronizar / Cancelar" pedidos durante o fechamento real da aba) — por isso não
+// tentamos simular esses botões aqui; o autosync com debounce de 25s (ver scheduleAutoSync) é o que
+// evita esse cenário na prática na maioria das vezes.
+window.addEventListener('beforeunload', function(e){
+  if(window.syncInProgress) return _syncBeforeUnloadHandler(e);
+  try{ if(syncCfg().dirty){ e.preventDefault(); e.returnValue=''; return ''; } }catch(err){}
+});
 function _iniciarProtecaoSync(dados){
   window.syncInProgress = true;
   window._adocaoEmAndamento = true; // reaproveita a mesma trava de duplo clique já existente
@@ -2849,11 +2896,11 @@ function verificarSincronizacaoInterrompida(){
   return true;
 }
 
-async function sincronizarBaseSimplificada(){
-  if(window._adocaoEmAndamento || window.syncInProgress){ alert('Uma sincronização já está em andamento. Aguarde a conclusão.'); return; }
-  if(typeof syncMaintenanceMode==='function' && syncMaintenanceMode()){ alert('Desative o Modo Manutenção antes de sincronizar.'); return; }
+async function sincronizarBaseSimplificada(silencioso){
+  if(window._adocaoEmAndamento || window.syncInProgress){ if(!silencioso) alert('Sincronização já está em execução.'); return; }
+  if(typeof syncMaintenanceMode==='function' && syncMaintenanceMode()){ if(!silencioso) alert('Desative o Modo Manutenção antes de sincronizar.'); return; }
   const cid=(typeof clienteAtivo==='function')?clienteAtivo():'';
-  if(!cid){ alert('Nenhum cliente ativo selecionado.'); return; }
+  if(!cid){ if(!silencioso) alert('Nenhum cliente ativo selecionado.'); return; }
   const cliObj=(typeof clienteAtivoObj==='function')?clienteAtivoObj():null;
   const nomeCliente=(cliObj&&(cliObj.nome||cliObj.nomeFantasia))||cid;
   const btn = document.getElementById('btnSincronizarAgora');
@@ -2881,25 +2928,50 @@ async function sincronizarBaseSimplificada(){
       const erro = (data&&data.message) || 'Resposta inválida do servidor — verifique se o Code.gs foi reimplantado com esta versão.';
       registrarLogSync({acao:'sync_simples_falhou', resultado:'erro', erro, stage:data&&data.stage, operationId});
       registrarLogBackup({sucesso:false, clienteNome:nomeCliente, quando:isoNow(), tempoMs:Date.now()-inicioSync, erro, backupId:data&&data.backupId});
+      registrarLogSincronizacao({sucesso:false, clienteNome:nomeCliente, quando:isoNow(), tempoMs:Date.now()-inicioSync, erro});
       setSyncCfg({adocaoEtapaTexto:null});
+      updateSyncFooter('error');
       exibirResultadoSincronizacaoSimples(false, erro, data);
       return;
     }
     _atualizarEtapaRecuperacaoSync('Confirmação concluída');
     registrarLogBackup({sucesso:true, clienteNome:nomeCliente, quando:isoNow(), nomePlanilhaBackup:data.backupId, planilha:nomeCliente, colecoes:data.collectionsSaved, registros:data.recordsSaved, tempoMs:Date.now()-inicioSync, url:data.backupUrl, backupId:data.backupId});
+    registrarLogSincronizacao({sucesso:true, clienteNome:nomeCliente, quando:isoNow(), backupId:data.backupId, registros:data.recordsSaved, tempoMs:Date.now()-inicioSync});
     confirmarSincronizacaoConcluida({estadoPlanilha:'REMOTO_COM_META'});
     registrarLogSync({acao:'sync_simples_concluido', resultado:'ok', operationId});
-    exibirResultadoSincronizacaoSimples(true, null, data);
+    // Item 7: "✔ Sincronizado agora HH:MM:SS" por alguns segundos, depois volta para "🟢 Tudo
+    // sincronizado" sozinho — em modo silencioso (autosync) não abre o modal de resultado, só o
+    // indicador do topo muda; em modo manual (clique do usuário) mostra o modal normalmente.
+    updateSyncFooter('sincronizadoAgora');
+    setTimeout(function(){ if(!syncCfg().dirty) updateSyncFooter(); }, 4000);
+    if(!silencioso) exibirResultadoSincronizacaoSimples(true, null, data);
   }catch(e){
     clearInterval(timer);
     registrarLogSync({acao:'sync_simples_falhou', resultado:'erro', erro:e.message, operationId});
     registrarLogBackup({sucesso:false, clienteNome:nomeCliente, quando:isoNow(), tempoMs:Date.now()-inicioSync, erro:e.message});
+    registrarLogSincronizacao({sucesso:false, clienteNome:nomeCliente, quando:isoNow(), tempoMs:Date.now()-inicioSync, erro:e.message});
     setSyncCfg({adocaoEtapaTexto:null});
+    updateSyncFooter('error');
     exibirResultadoSincronizacaoSimples(false, 'Falha de rede/inesperada: '+e.message);
   } finally {
     _finalizarProtecaoSync();
     if(btn){ btn.disabled = false; btn.textContent = 'SINCRONIZAR AGORA'; }
   }
+}
+// Item 10: log de cada sincronização concluída em Gestão do Cliente → Logs do Cliente, categoria
+// própria "sincronizacao" (mesmo padrão de registrarLogBackup, sobre db.historico).
+function registrarLogSincronizacao(dados){
+  const sucesso=!!dados.sucesso;
+  const linhas=[
+    sucesso?'✔ Sincronização concluída':'✖ Falha na sincronização',
+    'Cliente: '+(dados.clienteNome||'—'),
+    'Data: '+formatarDataHoraAmigavel(dados.quando||isoNow()),
+    dados.backupId?('Backup criado: '+dados.backupId):'',
+    dados.registros!=null?('Registros enviados: '+dados.registros):'',
+    dados.tempoMs!=null?('Tempo: '+(Math.round(dados.tempoMs/100)/10)+' segundos'):'',
+    dados.erro?('Erro: '+dados.erro):''
+  ].filter(Boolean).join('\n');
+  logLocal('sistema','','sincronizacao',linhas);
 }
 function exibirResultadoSincronizacaoSimples(ok, erro, data){
   const corpo = ok
@@ -6443,8 +6515,98 @@ function saveLaco(i){let o=i?db.lacos.find(x=>x.id===i):{id:id()}; o.painelId=mP
 function formFlm(i=''){if(!requireAccess('cadastro','Seu perfil não pode criar/editar FLMs.'))return; let o=db.flms.find(x=>x.id===i)||{};let pisos=unique(db.flms.map(x=>x.piso).concat(db.lacos.map(x=>x.piso),db.locais.map(x=>x.piso),db.equipamentos.map(x=>x.piso)));let modelos=unique(db.flms.map(x=>x.modelo));if(o.piso&&!pisos.includes(o.piso))pisos.push(o.piso);if(o.modelo&&!modelos.includes(o.modelo))modelos.push(o.modelo);openModal(`<h2>${i?'Editar':'Novo'} FLM físico</h2><div class="formGrid"><div class="field"><label>Painel</label><select id="mPainel">${db.paineis.map(p=>`<option value="${p.id}" ${p.id===o.painelId?'selected':''}>${esc(p.nome)}</option>`)}</select></div><div class="field"><label>Laço</label><select id="mLaco">${db.lacos.map(l=>`<option value="${l.id}" ${l.id===o.lacoId?'selected':''}>${esc(paiName(l.painelId)+' - '+l.nome)}</option>`)}</select></div><div class="field"><label>Endereço FLM</label><input id="mEnd" value="${esc(o.endereco)}"></div><div class="field"><label>Modelo</label><input id="mModelo" list="listaModelosFlm" value="${esc(o.modelo||modelos[0]||'FLM')}"><datalist id="listaModelosFlm">${modelos.map(v=>`<option value="${esc(v)}"></option>`).join('')}</datalist></div><div class="field"><label>Piso</label><select id="mPiso"><option value="">Selecione</option>${pisos.map(v=>`<option value="${esc(v)}" ${v===o.piso?'selected':''}>${esc(v)}</option>`).join('')}</select></div></div><br><button class="btn" onclick="saveFlm('${i}')">Salvar</button> <button class="btn secondary" onclick="closeModal()">Cancelar</button>`)}
 function saveFlm(i){let o=i?db.flms.find(x=>x.id===i):{id:id(),status:'Em operação'}; o.painelId=mPainel.value;o.lacoId=mLaco.value;o.endereco=n(mEnd.value);o.modelo=n(mModelo.value)||'FLM';o.piso=n(mPiso.value); if(!i){db.flms.push(o); logLocal('flm',o.id,'criar','Módulo criado manualmente: '+o.endereco+' ('+paiName(o.painelId)+')')} closeModal(); save()}
 function managePortas(flmId){let f=flmById(flmId); let ps=db.portas.filter(p=>p.flmId===flmId); openModal(`<h2>Portas do FLM ${esc(f?.endereco)}</h2><p class="msg warn">O Status de cada porta é independente — uma pode estar com falha enquanto a outra continua Em operação. O Status do Módulo (na tela de Módulos) é só um resumo: fica "Módulo aberto" se qualquer porta estiver com falha.</p>${table(ps.map(p=>({...p,loja:locName(p.localId),numeroIcon:`${isFalhaStatus(p.status)?'❌':'✅'} P${p.numero}`})),[['Porta','numeroIcon'],['Loja / Área','loja'],['Ligação','ligacao'],['Status','status',p=>`<select data-prev-status="${esc(normalizeStatus(p.status))}" onchange="handleStatusSelectChange(this,v=>quickStatusChange('flm:${flmId}:porta:${p.id}',v))">${STATUS_SISTEMA_OPTIONS.map(st=>statusSistemaOption(st,normalizeStatus(p.status))).join('')}</select>`]],p=>`<button class="btn small secondary" onclick="formPorta('${flmId}','${p.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1-4.2L15.5 5.3a1.5 1.5 0 0 1 2.1 0l1.1 1.1a1.5 1.5 0 0 1 0 2.1L8.2 19 4 20Z"/><path d="M13.8 7 17 10.2"/></svg></button> <button class="btn small danger" onclick="del('portas','${p.id}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2"/><path d="M6.5 7 7.3 19a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4L17.5 7"/><path d="M10 11v6M14 11v6"/></svg></button>`)}<br><button class="btn" onclick="formPorta('${flmId}')">+ Porta</button> <button class="btn secondary" onclick="closeModal()">Fechar</button>`)}
-function formPorta(flmId,pid=''){if(!requireAccess('cadastro','Seu perfil não pode criar/editar portas.'))return; let p=db.portas.find(x=>x.id===pid)||{flmId};openModal(`<h2>${pid?'Editar':'Nova'} Porta</h2><div class="formGrid"><div class="field"><label>Número</label><select id="mNum"><option ${p.numero==='1'?'selected':''}>1</option><option ${p.numero==='2'?'selected':''}>2</option></select></div><div class="field"><label>Loja / Área</label><select id="mLocal"><option value="">Sem vínculo</option>${db.locais.map(l=>`<option value="${l.id}" ${l.id===p.localId?'selected':''}>${esc(l.nome)}</option>`)}</select></div><div class="field"><label>Ligação</label><input id="mLig" value="${esc(p.ligacao)}"></div><div class="field"><label>Status</label><select id="mPortaStatus">${STATUS_SISTEMA_OPTIONS.map(st=>`<option value="${esc(st)}" ${normalizeStatus(p.status)===st?'selected':''}>${st}</option>`).join('')}</select></div></div><br><button class="btn" onclick="savePorta('${flmId}','${pid}')">Salvar</button>`)}
-function savePorta(flmId,pid){let p=pid?db.portas.find(x=>x.id===pid):{id:id(),flmId};p.numero=mNum.value;p.localId=mLocal.value;p.ligacao=mLig.value;const novoStatus=document.getElementById('mPortaStatus')?.value;if(!pid){db.portas.push(p); logLocal('porta',p.id,'criar','Porta criada manualmente: nº '+p.numero+' (FLM '+(flmById(flmId)?.endereco||flmId)+')')}let loc=localById(p.localId);if(loc){loc.flmId=flmId;loc.portaId=p.id} closeModal(); if(novoStatus&&novoStatus!==p.status){quickStatusChange(`flm:${flmId}:porta:${p.id}`,novoStatus)}else{save()}}
+function formPorta(flmId,pid=''){
+  if(!requireAccess('cadastro','Seu perfil não pode criar/editar portas.'))return;
+  const f=flmById(flmId);
+  let p=db.portas.find(x=>x.id===pid)||{flmId};
+  // Item 11: campos técnicos somente leitura (Painel/Laço/FLM/Endereço), Sistema exibido, e
+  // "Loja / Área" continua editável — mesma exibição usada em outras telas (lucOfficialName), não
+  // mais l.nome cru (que fica vazio em muitos cadastros importados por LUC, tornando o combo
+  // difícil de ler e favorecendo escolha errada).
+  openModal(`<h2>${pid?'Editar':'Nova'} Porta</h2>
+    <div class="compactHelp" style="margin-bottom:10px">
+      <b>Painel:</b> ${esc(paiName(f?.painelId)||'—')} · <b>Laço:</b> ${esc(lacName(f?.lacoId)||'—')} · <b>FLM:</b> ${esc(f?.endereco||f?.modelo||'—')} · <b>Endereço técnico:</b> ${esc(f?.endereco||'—')} · <b>Sistema:</b> ${esc(f?.sistema||sistemaAutoDetect?.(lacName(f?.lacoId))||'SDAI')}
+    </div>
+    <div class="formGrid">
+      <div class="field"><label>Número da porta</label><select id="mNum"><option ${p.numero==='1'?'selected':''}>1</option><option ${p.numero==='2'?'selected':''}>2</option></select></div>
+      <div class="field"><label>Loja / Área</label><select id="mLocal">
+        <option value="">Sem vínculo</option>
+        ${db.locais.filter(l=>!l.excluido).map(l=>`<option value="${l.id}" ${l.id===p.localId?'selected':''}>${esc(lucOfficialName(l)||l.nome||'(sem nome)')}</option>`).join('')}
+      </select></div>
+      <div class="field"><label>Ligação</label><input id="mLig" value="${esc(p.ligacao)}"></div>
+      <div class="field"><label>Status</label><select id="mPortaStatus">${STATUS_SISTEMA_OPTIONS.map(st=>`<option value="${esc(st)}" ${normalizeStatus(p.status)===st?'selected':''}>${st}</option>`).join('')}</select></div>
+    </div><br>
+    <button class="btn" id="btnSalvarPorta" onclick="savePorta('${flmId}','${pid}')">Salvar</button>
+    <button class="btn secondary" onclick="closeModal()">Cancelar</button>`);
+  window._portaSaving=false;
+}
+// AUDITORIA (bugs reais encontrados — ver relatório de entrega):
+// 1) o combo comparava novoStatus (string canônica de STATUS_SISTEMA_OPTIONS) contra p.status CRU
+//    — se o registro tivesse o status gravado em formato não-canônico (comum em dado legado/
+//    importado), a comparação dava "mudou" mesmo sem o usuário ter tocado no campo Status, desviando
+//    o fluxo inteiro para quickStatusChange() (que abre o modal de Falha) em vez de save() — e o
+//    usuário via a tela de Falha em vez da confirmação da porta, dando a impressão de que o vínculo
+//    da loja "não salvou". Corrigido comparando os dois lados já normalizados.
+// 2) ao trocar a loja vinculada, o código só atualizava a loja NOVA (loc.flmId/loc.portaId) e nunca
+//    limpava esses mesmos campos na loja ANTERIOR — ela ficava com uma referência técnica órfã
+//    apontando para uma porta que não é mais dela. Corrigido: localiza e limpa a loja anterior antes
+//    de vincular a nova.
+// 3) faltava validar que a loja selecionada realmente existe/não está excluída antes de gravar
+//    (item 4 do pedido) e faltava updatedAt/updatedBy no registro (item 2).
+function savePorta(flmId,pid){
+  if(window._portaSaving)return; // item 10: impede duplo clique/reenvio
+  const btn=document.getElementById('btnSalvarPorta');
+  const localIdSelecionado=document.getElementById('mLocal')?.value||'';
+  // Item 4: valida a loja selecionada ANTES de gravar qualquer coisa.
+  if(localIdSelecionado){
+    const lojaSelecionada=db.locais.find(l=>l.id===localIdSelecionado);
+    if(!lojaSelecionada||lojaSelecionada.excluido){
+      alert('Não foi possível salvar: a loja/área selecionada não existe ou não pertence ao cliente atual.');
+      return;
+    }
+  }
+  window._portaSaving=true;
+  if(btn){btn.disabled=true;btn.textContent='Salvando...'}
+  document.querySelectorAll('#modal .btn').forEach(b=>b.disabled=true);
+  try{
+    let p=pid?db.portas.find(x=>x.id===pid):{id:id(),flmId};
+    const localIdAnterior=p.localId||'';
+    p.numero=mNum.value;
+    // Item 2 do pedido: o ID da loja é a fonte do vínculo — nunca o texto exibido no select.
+    p.localId=localIdSelecionado;
+    p.ligacao=mLig.value;
+    p.atualizadoEm=isoNow();
+    p.atualizadoPor=(currentUser().nome||currentUser().email||'usuário');
+    const novoStatusBruto=document.getElementById('mPortaStatus')?.value||'';
+    // BUGFIX: compara os dois lados já normalizados — antes uma diferença só de formatação entre
+    // o valor canônico do select e o valor cru gravado em p.status desviava silenciosamente o fluxo
+    // para quickStatusChange() mesmo sem o usuário ter mexido no campo Status.
+    const statusRealmenteMudou = novoStatusBruto && normalizeStatus(novoStatusBruto)!==normalizeStatus(p.status);
+    if(!pid){db.portas.push(p); logLocal('porta',p.id,'criar','Porta criada manualmente: nº '+p.numero+' (FLM '+(flmById(flmId)?.endereco||flmId)+')')}
+    else{ logLocal('porta',p.id,'editar_vinculo','Vínculo da porta nº '+p.numero+' (FLM '+(flmById(flmId)?.endereco||flmId)+') alterado — loja/área: '+(localIdAnterior?locName(localIdAnterior):'sem vínculo')+' → '+(p.localId?locName(p.localId):'sem vínculo')+'.'); }
+    // BUGFIX (item 7/8 — evitar vínculo órfão): limpa a referência técnica (flmId/portaId) da loja
+    // ANTERIOR quando o vínculo muda para outra loja (ou para "sem vínculo") — antes só a loja NOVA
+    // era atualizada, deixando a antiga apontando para uma porta que não é mais dela.
+    if(localIdAnterior && localIdAnterior!==p.localId){
+      const locAnterior=localById(localIdAnterior);
+      if(locAnterior && locAnterior.portaId===p.id){ locAnterior.flmId=null; locAnterior.portaId=null; }
+    }
+    let loc=localById(p.localId);
+    if(loc){loc.flmId=flmId;loc.portaId=p.id}
+    closeModal();
+    // Item 9: nunca dispara sincronização automaticamente aqui — só markDirty via save() (o
+    // autosync com debounce de 25s, já corrigido em outra rodada, cuida do resto sozinho).
+    if(statusRealmenteMudou){ quickStatusChange(`flm:${flmId}:porta:${p.id}`,novoStatusBruto); }
+    else{ save(); if(typeof mostrarToastSync==='function') mostrarToastSync('Vínculo da porta atualizado com sucesso.','ok'); else alert('Vínculo da porta atualizado com sucesso.'); }
+  }catch(e){
+    // Item 10: em caso de erro, mantém o modal aberto (não fechamos antes de garantir sucesso) e
+    // mostra a mensagem real — aqui reabrimos o formulário para não perder o contexto.
+    alert('Falha ao salvar a porta: '+e.message);
+    document.querySelectorAll('#modal .btn').forEach(b=>b.disabled=false);
+  }finally{
+    window._portaSaving=false;
+  }
+}
 /* [removido na limpeza 2026-07: versão antiga substituída pela declaração final desta função] */
 /* [removido na limpeza 2026-07: versão antiga substituída pela declaração final desta função] */
 function formEquip(i=''){if(!requireAccess('cadastro','Seu perfil não pode criar/editar equipamentos.'))return; let o=db.equipamentos.find(x=>x.id===i)||{};openModal(`<h2>${i?'Editar':'Novo'} Equipamento</h2><div class="formGrid"><div class="field"><label>Painel</label><select id="mPainel">${db.paineis.map(p=>`<option value="${p.id}" ${p.id===o.painelId?'selected':''}>${esc(p.nome)}</option>`)}</select></div><div class="field"><label>Laço</label><select id="mLaco">${db.lacos.map(l=>`<option value="${l.id}" ${l.id===o.lacoId?'selected':''}>${esc(paiName(l.painelId)+' - '+l.nome)}</option>`)}</select></div><div class="field"><label>Tipo</label><input id="mTipo" value="${esc(o.tipo)}" placeholder="Detector de Fumaça, Acionador Manual..."></div><div class="field"><label>Endereço</label><input id="mEnd" value="${esc(o.endereco)}"></div><div class="field"><label>Modelo</label><input id="mModelo" value="${esc(o.modelo)}"></div><div class="field"><label>Piso</label><input id="mPiso" value="${esc(o.piso)}"></div><div class="field"><label>Loja / Área</label><select id="mLocal"><option value="">Sem vínculo</option>${db.locais.map(l=>`<option value="${l.id}" ${l.id===o.localId?'selected':''}>${esc(l.nome)}</option>`)}</select></div><div class="field"><label>Status</label><select id="mStatus">${STATUS_SISTEMA_OPTIONS.map(st=>`<option ${normalizeStatus(o.status)===st?'selected':''}>${st}</option>`).join('')}</select></div></div><br><button class="btn" onclick="saveEquip('${i}')">Salvar</button>`)}
