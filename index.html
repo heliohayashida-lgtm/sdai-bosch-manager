@@ -1911,7 +1911,7 @@ function checksumColecoes(d){
   return h.toString(16);
 }
 function markDirty(reason='alteração'){if(isHydrating)return; bumpRevision(reason); persistLocalThrottled(); _dbVersion++; setSyncCfg({dirty:true,lastReason:reason}); scheduleAutoSync(1500)}
-function save(){if(typeof plantaInvalidarCacheTooltip==='function')plantaInvalidarCacheTooltip();markDirty('salvamento');render()}
+function save(){if(typeof plantaInvalidarCacheTooltip==='function')plantaInvalidarCacheTooltip(); window._mapaIndiceSujo=true; markDirty('salvamento');render()}
 function updateSyncFooter(status){const c=syncCfg(); const dot=document.getElementById('syncDot'), txt=document.getElementById('syncText'); if(!dot||!txt)return;
   // FASE 1 (Modo Manutenção): prioridade máxima no indicador — enquanto ativo, nunca mostra "saving"/
   // "ok"/etc., sempre deixa explícito que nada está sendo sincronizado de verdade.
@@ -3879,7 +3879,7 @@ function resultCountLabel(qtdFiltrada,qtdTotal,semResultado){
 /* Limpar filtros (seção 13) — usado por Lojas/Áreas, Falhas e Plano. Zera busca + selects/datas
    daquela aba e re-renderiza; não mexe no banco, não recarrega a página. */
 function limparFiltrosTela(aba){
-  if(aba==='locais'){filters.locaisQ='';filters.locaisSistema='';filters.locaisDataIni='';filters.locaisDataFim='';filters.locaisResultado='';filters.locaisStatusFiltro='';filters.locaisPiso='';filters.locaisPainel='';filters.locaisLaco='';filters.locaisLoja='';filters.locaisResp=''}
+  if(aba==='locais'){filters.locaisQ='';filters.locaisSistema='';filters.locaisDataIni='';filters.locaisDataFim='';filters.locaisResultado='';filters.locaisStatusFiltro='';filters.locaisPiso='';filters.locaisPainel='';filters.locaisLaco='';filters.locaisLoja='';filters.locaisResp='';filters.locaisMapa=''}
   else if(aba==='falhas')filters.falhas={situacao:'Em aberto'};
   else if(aba==='testes')filters.testes={};
   else if(aba==='plano')filters.plano={};
@@ -4580,6 +4580,56 @@ function _plantaVinculosTecnicos(localId){
 function membrosConsolidados(localId){
   return [localId,...(db.locais||[]).filter(l=>l.marcadorPrincipalId===localId&&!l.excluido).map(l=>l.id)];
 }
+// ── VÍNCULO DA LOJA COM O MAPA/PLANTAS (item 1 do pedido) ───────────────────────────────────
+// Função central única — NÃO checa por nome, sempre por localId/marcador. Considera "adicionada"
+// quando existe um registro do grupo consolidado (membrosConsolidados) com plantaId + plantaX/Y
+// válidos, cuja planta não está excluída e o próprio registro também não. "Duplicado" = mais de
+// um marcador válido no mesmo grupo (o modelo é 1 marcador por loja, mesmo com múltiplos
+// subsistemas — ver membrosConsolidados/chaveConsolidacaoLocal).
+function obterStatusMapaDaLoja(localId){
+  const membros = membrosConsolidados(localId);
+  const marcadores = membros
+    .map(mid => (db.locais||[]).find(l=>l.id===mid))
+    .filter(l => l && !l.excluido && l.plantaId && l.plantaX!=null && l.plantaX!=='');
+  const marcadoresValidos = marcadores.filter(l=>{
+    const pl = (db.plantas||[]).find(p=>p.id===l.plantaId);
+    return pl && !pl.excluida;
+  });
+  if(!marcadoresValidos.length){
+    return {adicionado:false, plantaId:null, plantaNome:null, piso:null, marcadorId:null, quantidadeMarcadores:0, duplicado:false};
+  }
+  const principal = marcadoresValidos[0];
+  const pl = (db.plantas||[]).find(p=>p.id===principal.plantaId);
+  return {
+    adicionado:true,
+    plantaId: principal.plantaId,
+    plantaNome: pl ? pl.nome : '—',
+    piso: pl ? pl.piso : (principal.piso||''),
+    marcadorId: principal.id,
+    quantidadeMarcadores: marcadoresValidos.length,
+    duplicado: marcadoresValidos.length > 1
+  };
+}
+// Índice em memória (item 9) — evita percorrer plantas/locais para cada linha da tabela. Só é
+// reconstruído quando window._mapaIndiceSujo estiver true (marcado em save(), que já roda após
+// qualquer criação/remoção/reposicionamento de marcador e após trocar de cliente).
+window.mapaPorLocalId = window.mapaPorLocalId || {};
+window._mapaIndiceSujo = true;
+function reconstruirIndiceMapaPorLocalId(){
+  const idx = {};
+  (db.locais||[]).forEach(l=>{ if(l && !l.excluido) idx[l.id] = obterStatusMapaDaLoja(l.id); });
+  window.mapaPorLocalId = idx;
+  window._mapaIndiceSujo = false;
+}
+function garantirIndiceMapaAtualizado(){ if(window._mapaIndiceSujo || !window.mapaPorLocalId) reconstruirIndiceMapaPorLocalId(); }
+// Item 8: chamada central para atualizar tudo que depende do índice, sem exigir F5. Chamada pelos
+// pontos que criam/removem/reposicionam marcador (ver plantaConfirmarInsercao/removerMarcador*)
+// além de já acontecer implicitamente via save() -> render() -> renderLocais().
+function atualizarIndicadoresMapa(){
+  reconstruirIndiceMapaPorLocalId();
+  if(typeof currentView!=='undefined' && currentView==='locais' && typeof renderLocais==='function') renderLocais();
+  if(document.getElementById('mapaTesteBloco') && typeof atualizarBlocoMapaModalTeste==='function') atualizarBlocoMapaModalTeste();
+}
 // CORREÇÃO (bug relatado 2026-07-16): a aba Lojas/Áreas exibia o badge de status, o filtro "Com
 // falha"/"Em operação" e os KPIs (Em operação/Com falha) direto do campo bruto `l.status` (o próprio
 // cadastro da loja), enquanto o pino na aba Plantas usa statusAgregadoLoja() — que soma o status de
@@ -4774,6 +4824,7 @@ function renderLocais(){
   let fStatus=filters.locaisStatusFiltro||''; // '', 'Em operação', 'Com falha'
   let fPiso=filters.locaisPiso||'', fPainel=filters.locaisPainel||'', fLaco=filters.locaisLaco||'';
   let fLoja=filters.locaisLoja||'', fResp=filters.locaisResp||'';
+  let fMapa=filters.locaisMapa||''; // '', 'adicionadas', 'nao_adicionadas', 'duplicadas' — item 4
   // Resolve os campos derivados (nome do painel/laço, endereço do módulo, nº da porta) ANTES de
   // filtrar, para que a busca única (filtrarRegistrosPorBusca) possa considerar nome técnico, nome
   // oficial, LUC, tipo, painel, laço, piso, endereço do módulo, porta, sistema, status e observação
@@ -4793,6 +4844,9 @@ function renderLocais(){
     sistema:l.sistema||'SDAI',
     statusEfetivo:statusEfetivoLoja(l.id)
   }));
+  // Item 3/9 do pedido "vínculo com Plantas/Mapa": garante o índice em memória atualizado (só
+  // reconstrói se estiver marcado como sujo — ver garantirIndiceMapaAtualizado/save()).
+  if(typeof garantirIndiceMapaAtualizado==='function') garantirIndiceMapaAtualizado();
   let comFiltroSistema=todos.filter(r=>!fSistema||r.sistema===fSistema);
   let rows=filtrarRegistrosPorBusca(comFiltroSistema,q,r=>[r.nome,r.nomeOficial,r.luc,r.tipo,r.painel,r.laco,r.piso,r.flmEndereco,r.portaNum?'Porta '+r.portaNum:'',r.sistema,r.statusEfetivo,r.obs].filter(Boolean).join(' '));
 
@@ -4825,6 +4879,15 @@ function renderLocais(){
     const d=String(t.data||'').slice(0,10);
     return (!fDataIni||d>=fDataIni)&&(!fDataFim||d<=fDataFim);
   });
+  if(fMapa){
+    rows=rows.filter(r=>{
+      const st=window.mapaPorLocalId&&window.mapaPorLocalId[r.id]||obterStatusMapaDaLoja(r.id);
+      if(fMapa==='duplicadas')return st.duplicado;
+      if(fMapa==='adicionadas')return st.adicionado&&!st.duplicado;
+      if(fMapa==='nao_adicionadas')return !st.adicionado;
+      return true;
+    });
+  }
 
   // Seção 19: "lojas comerciais" (dedup por Nome Oficial/LUC — a mesma loja física com vários
   // pontos técnicos conta 1 vez) É DIFERENTE de "pontos técnicos" (uma linha por registro de
@@ -4866,15 +4929,33 @@ function renderLocais(){
     const luc=lucValorLocal(r);
     const lucHtml=luc?esc(luc):'—';
     const classe=r.tipo||localClass(r.nome)||'';
+    // Item 3/5 do pedido "vínculo com Plantas/Mapa": badge + ícone de ação, sempre por localId (nunca
+    // por nome), reaproveitando o índice em memória mapaPorLocalId (item 9).
+    const stMapa=(window.mapaPorLocalId&&window.mapaPorLocalId[r.id])||obterStatusMapaDaLoja(r.id);
+    const tooltipMapa=stMapa.adicionado
+      ? `Planta: ${stMapa.plantaNome||'—'} · Piso: ${exibirPiso(stMapa.piso)||'—'} · Sistema: ${esc(r.sistema)} · Marcadores: ${stMapa.quantidadeMarcadores}`
+      : 'Nenhum marcador encontrado para esta loja';
+    const mapaBadgeHtml = stMapa.duplicado
+      ? `<span class="pill warn" title="${esc(tooltipMapa)}">⚠ Duplicada</span>`
+      : (stMapa.adicionado
+          ? `<span class="pill ok" title="${esc(tooltipMapa)}">✅ Adicionada</span>`
+          : `<span class="pill" title="${esc(tooltipMapa)}">⚪ Não adicionada</span>`);
+    const acaoMapaHtml = stMapa.duplicado
+      ? `<button class="dsIco" style="color:#b58900" onclick="closeModal();navigate('plantas')" title="Revisar marcadores duplicados">⚠️</button>`
+      : (stMapa.adicionado
+          ? `<button class="dsIco" onclick="verLojaNoMapa('${r.id}')" title="Ver localização na planta">🗺️</button>`
+          : `<button class="dsIco" onclick="adicionarLojaAoMapa('${r.id}')" title="Adicionar loja à planta">📍</button>`);
     return `<tr>
       <td><div style="font-weight:700;font-size:13.5px">${esc(nomeExibido)}</div><div style="font-size:11px;color:var(--l3a-text-muted)">${classe?esc(classe)+' · ':''}${sisBadge}</div></td>
       <td>${lucHtml}</td>
       <td>${pisoHtml}</td>
       <td>${enderecoHtml}</td>
       <td>${dsBadgeHtml(r.statusEfetivo)}</td>
+      <td>${mapaBadgeHtml}</td>
       <td>${ultimoTesteHtml(r.id)}</td>
       <td><div class="dsIcoGroup">
         <button class="dsIco" onclick="formTeste('${r.id}')" title="Executar teste">📋</button>
+        ${acaoMapaHtml}
         <button class="dsIco" onclick="openLocal('${r.id}')" title="Histórico">🕒</button>
         <button class="dsIco" onclick="formLocal('${r.id}')" title="Editar">✏️</button>
         <button class="dsIco del" onclick="del('locais','${r.id}')" title="Excluir">🗑</button>
@@ -4906,13 +4987,14 @@ function renderLocais(){
       <div class="field"><label>Laço</label><select onchange="filters.locaisLaco=this.value;render()">${selectOpts(lacos,fLaco)}</select></div>
       <div class="field"><label>Loja</label><select onchange="filters.locaisLoja=this.value;render()">${selectOpts(lojas,fLoja)}</select></div>
       <div class="field"><label>Responsável</label><select onchange="filters.locaisResp=this.value;render()">${selectOpts(responsaveis,fResp)}</select></div>
+      <div class="field"><label>Situação no mapa</label><select onchange="filters.locaisMapa=this.value;render()"><option value="">Todas</option><option value="adicionadas" ${fMapa==='adicionadas'?'selected':''}>Adicionadas</option><option value="nao_adicionadas" ${fMapa==='nao_adicionadas'?'selected':''}>Não adicionadas</option><option value="duplicadas" ${fMapa==='duplicadas'?'selected':''}>Com marcador duplicado</option></select></div>
       <div class="dsFilterActions"><button class="btn secondary small" onclick="limparFiltrosTela('locais')">Limpar filtros</button><button class="dsIco prim" onclick="formLocal()">+ Nova loja/área</button></div>
     </div>
     <div class="searchResultCount">${resultCountLabel(total,todos.length,semResultado)}</div>
     <div class="dsTableWrap">
       <table class="dsTable">
-        <thead><tr><th>Loja / Área</th><th>LUC</th><th>Localização</th><th>Endereço</th><th>Status</th><th>Último teste</th><th>Ações</th></tr></thead>
-        <tbody>${trs||`<tr><td colspan="7"><div class="emptyState">${todos.length?'Nenhum registro corresponde aos filtros aplicados.':'Nenhuma loja/área cadastrada.'}</div></td></tr>`}</tbody>
+        <thead><tr><th>Loja / Área</th><th>LUC</th><th>Localização</th><th>Endereço</th><th>Status</th><th>Mapa</th><th>Último teste</th><th>Ações</th></tr></thead>
+        <tbody>${trs||`<tr><td colspan="8"><div class="emptyState">${todos.length?'Nenhum registro corresponde aos filtros aplicados.':'Nenhuma loja/área cadastrada.'}</div></td></tr>`}</tbody>
       </table>
     </div>`;
 }
@@ -5582,6 +5664,7 @@ function formTeste(localId){
   <input type="hidden" id="mTesteLocalId" value="${esc(localId)}">
   <div class="msg warn" style="margin-bottom:12px">Cliente, sistema, painel, laço, piso e loja já identificados automaticamente — este é UM ponto técnico específico (a mesma loja comercial pode ter outros pontos, em SDAI e/ou CO2, cada um com seu próprio teste). Um teste aprovado NÃO gera falha — só fica registrado no histórico.</div>
   <div class="compactHelp" style="margin-bottom:10px"><span class="pill ${(loc.sistema||'SDAI')==='CO2'?'warn':'info'}">${esc(loc.sistema||'SDAI')}</span> <b>${esc(paiName(loc.painelId)||'—')}</b> • Laço ${esc(lacName(loc.lacoId)||'—')} • ${esc(exibirPiso(loc.piso)||'Piso —')} • ${esc(loc.nomeOficial||loc.nome)}</div>
+  <div id="mapaTesteBloco" data-local-id="${esc(localId)}" style="margin-bottom:10px"></div>
   <div class="formGrid">
     <div class="field"><label>Responsável / origem do teste</label><select id="mTesteTipo">${TESTE_TIPOS.map(t=>`<option>${esc(t)}</option>`).join('')}</select></div>
     <div class="field"><label>Responsável</label><input id="mTesteResp" value="${esc((currentUser().nome)||'')}"></div>
@@ -5596,12 +5679,73 @@ function formTeste(localId){
   <button class="btn" onclick="saveTeste()">Salvar teste</button>
   <button class="btn secondary" onclick="closeModal()">Cancelar</button>`);
   window._testeFotosTemp=[];
+  atualizarBlocoMapaModalTeste();
   // Guarda de troca de cliente (item 10 da validação, 2026-07): o formulário fica travado ao
   // clienteId ativo no momento da abertura. Se o usuário trocar de cliente com o modal aberto,
   // saveTeste() detecta a divergência e bloqueia o salvamento — nunca grava silenciosamente no
   // cliente novo (switchCliente() também fecha o modal automaticamente, ver switchCliente()).
   window._testeClienteId=clienteAtivo();
   window._testeSaving=false;
+}
+// Item 2/7 do pedido "vínculo com Plantas/Mapa": preenche o bloco "MAPA / PLANTA" do modal
+// "Executar teste" — chamada na abertura e de novo por atualizarIndicadoresMapa() (item 8), sem
+// exigir F5 caso um marcador seja criado/removido enquanto o modal estiver aberto.
+function atualizarBlocoMapaModalTeste(){
+  const holder=document.getElementById('mapaTesteBloco'); if(!holder)return;
+  const localId=holder.getAttribute('data-local-id'); if(!localId)return;
+  const loc=localById(localId);
+  const st=obterStatusMapaDaLoja(localId);
+  let html='<div class="compactHelp"><b>CADASTRO</b><br>✅ Loja cadastrada</div>';
+  html+='<div class="compactHelp" style="margin-top:6px"><b>MAPA / PLANTA</b><br>';
+  if(st.duplicado){
+    html+=`⚠ Marcador duplicado<br>Foram encontrados ${st.quantidadeMarcadores} marcadores para esta loja`;
+  } else if(st.adicionado){
+    html+=`✅ Adicionada ao mapa<br>Planta: ${esc(exibirPiso(st.piso)||st.plantaNome||'—')}<br>Marcador localizado`;
+  } else {
+    html+='⚪ Não adicionada ao mapa<br>Nenhum marcador encontrado para esta loja';
+  }
+  html+='</div><div class="premiumActions" style="margin-top:8px">';
+  if(st.adicionado){
+    html+=`<button type="button" class="btn secondary small" onclick="verLojaNoMapa('${esc(localId)}')">Ver no mapa</button>`;
+    if(st.duplicado) html+=`<button type="button" class="btn small" style="background:#b58900" onclick="closeModal();navigate('plantas')">Revisar marcadores duplicados</button>`;
+  } else {
+    html+=`<button type="button" class="btn secondary small" onclick="adicionarLojaAoMapa('${esc(localId)}')">Adicionar ao mapa</button>`;
+  }
+  html+='</div>';
+  holder.innerHTML=html;
+}
+// Navega até a planta/marcador de uma loja, sem alterar posição nem salvar nada (item 2).
+function irParaPlantaDaLoja(localId){
+  const st=obterStatusMapaDaLoja(localId);
+  navigate('plantas');
+  if(st.plantaId){
+    try{ plantasUI.blocoColapsado[st.plantaId]=false; }catch(e){}
+    if(st.marcadorId){ try{ plantasUI.selecionado={kind:'local', id:st.marcadorId}; }catch(e){} }
+  }
+  if(typeof renderPlantas==='function') renderPlantas();
+  setTimeout(function(){
+    try{
+      const el=document.querySelector('[data-planta-id="'+st.plantaId+'"]');
+      if(el) el.scrollIntoView({behavior:'smooth', block:'start'});
+    }catch(e){}
+  },80);
+}
+function verLojaNoMapa(localId){
+  const st=obterStatusMapaDaLoja(localId);
+  if(!st.adicionado){ alert('Esta loja ainda não possui marcador no mapa.'); return; }
+  if(typeof closeModal==='function') closeModal();
+  irParaPlantaDaLoja(localId);
+}
+// "Adicionar ao mapa": NUNCA cria o marcador sozinho — só leva até a planta certa, com a loja
+// pré-identificada, exigindo o clique manual de posicionamento que já existe no módulo Plantas.
+function adicionarLojaAoMapa(localId){
+  const loc=localById(localId); if(!loc){alert('Loja não encontrada.');return}
+  if(typeof closeModal==='function') closeModal();
+  navigate('plantas');
+  const piso=(typeof pisoEfetivo==='function')?pisoEfetivo(loc):(loc.piso||'');
+  try{ if(piso) plantasUI.filtro.piso=piso; plantasUI.modalInsercao.q=loc.nomeOficial||loc.nome||''; }catch(e){}
+  if(typeof renderPlantas==='function') renderPlantas();
+  alert('Selecione a planta do piso correspondente e use "Adicionar marcador" para posicionar "'+(loc.nomeOficial||loc.nome)+'" manualmente — nenhum marcador é criado automaticamente.');
 }
 // saveTeste() (v6.58 — itens 2/6 do pedido de 20 itens): reescrita para a regra nova de 2
 // resultados. "Funcionou" NUNCA cria falha — só registra o teste; se já existir falha ATIVA para
