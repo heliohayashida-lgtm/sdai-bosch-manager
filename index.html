@@ -1966,10 +1966,6 @@ async function ensureClienteSheet(cid,nomeCliente){
   }catch(e){console.warn('setupClienteDb falhou:',e.message)}
 }
 async function setupGoogle(){
-  if(syncCfg().estadoPlanilha==='REMOTO_LEGADO_SEM_META'){
-    alert('"Inicializar" está desabilitado: esta planilha já tem dados legados sem metadados de sincronização. Use "Preparar planilha para sincronização" (Sistema → Diagnóstico) em vez de inicializar por cima.');
-    return;
-  }
   try{updateSyncFooter('saving'); const r=await jsonp('setup'); if(!r.ok)throw new Error(r.error||'Erro ao configurar banco'); setSyncCfg({configured:true,sheetUrl:r.sheetUrl||'',dirty:true}); renderSistema(); updateSyncFooter(); alert('Banco Google configurado/validado.');}catch(e){updateSyncFooter('error'); alert('Falha ao configurar banco: '+e.message)}}
 async function loadGoogle(){
   // FASE 1 (Modo Manutenção): bloqueio total — retorna imediatamente sem tocar em nada, sem quebrar
@@ -1977,13 +1973,6 @@ async function loadGoogle(){
   if(typeof syncMaintenanceMode==='function' && syncMaintenanceMode()){
     updateSyncFooter();
     alert('SINCRONIZAÇÃO BLOQUEADA PARA MANUTENÇÃO: "Carregar base Google" não faz nada enquanto o Modo Manutenção estiver ativo (Sistema → Modo Manutenção de Sincronização). Nenhum dado foi lido ou alterado.');
-    return;
-  }
-  // Defesa em profundidade (além do botão desabilitado em renderSistema): planilha legada sem
-  // _META nunca deve ser puxada por cima da base local via "Carregar base" — só pelo fluxo de
-  // adoção dedicado (backup + staging + validação).
-  if(syncCfg().estadoPlanilha==='REMOTO_LEGADO_SEM_META'){
-    alert('"Carregar base Google" está desabilitado: esta planilha tem dados legados sem metadados de sincronização. Use "Preparar planilha para sincronização" (Sistema → Diagnóstico) em vez de carregar por cima da base local.');
     return;
   }
   try{updateSyncFooter('saving'); const r=await jsonpDbAtual(); if(!r.ok)throw new Error(r.error||'Erro ao carregar'); if(r.db && Object.keys(r.db).length){
@@ -2765,9 +2754,69 @@ async function verDetalhesDivergencia(colecao){
 
 // Abre o resumo de confirmação — nunca executa a adoção sozinha, sempre espera um clique
 // explícito em "Confirmar adoção" dentro deste modal.
-// ── REPARO EMERGENCIAL: SOMENTE FALHAS ------------------------------------------------------
+// ── SINCRONIZAÇÃO SIMPLIFICADA (substitui a cerimônia de validação como fluxo principal) ────
+// 4 passos visíveis, sem termos técnicos: Criando backup → Salvando dados → Finalizando →
+// Sincronização concluída. Sem comparação de SHA-256/checksum/campo a campo depois da resposta —
+// confia no retorno ok:true do servidor.
+async function sincronizarBaseSimplificada(){
+  if(window._adocaoEmAndamento){ alert('Uma sincronização já está em andamento. Aguarde a conclusão.'); return; }
+  if(typeof syncMaintenanceMode==='function' && syncMaintenanceMode()){ alert('Desative o Modo Manutenção antes de sincronizar.'); return; }
+  const cid=(typeof clienteAtivo==='function')?clienteAtivo():'';
+  if(!cid){ alert('Nenhum cliente ativo selecionado.'); return; }
+  window._adocaoEmAndamento = true;
+  const btn = document.getElementById('btnSincronizarAgora');
+  if(btn){ btn.disabled = true; btn.textContent = 'Sincronizando...'; }
+  montarMetaAtual();
+  const operationId = 'op_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,10);
+  const sessionId = getClientInstanceId();
+  const etapas = ['Criando backup','Salvando dados','Finalizando'];
+  let idx = 0;
+  setSyncCfg({adocaoEtapaTexto: etapas[0]});
+  registrarLogSync({acao:'sync_simples_iniciado', resultado:'em_andamento', operationId});
+  const timer = setInterval(function(){ idx = Math.min(idx+1, etapas.length-1); setSyncCfg({adocaoEtapaTexto: etapas[idx]}); }, 1200);
+  try{
+    const resp = await apiPost('sincronizarSimplificado', {db, operationId, sessionId});
+    clearInterval(timer);
+    const data = resp && resp.data;
+    if(!data || !data.ok){
+      const erro = (data&&data.message) || 'Resposta inválida do servidor — verifique se o Code.gs foi reimplantado com esta versão.';
+      registrarLogSync({acao:'sync_simples_falhou', resultado:'erro', erro, stage:data&&data.stage, operationId});
+      setSyncCfg({adocaoEtapaTexto:null});
+      exibirResultadoSincronizacaoSimples(false, erro, data);
+      return;
+    }
+    confirmarSincronizacaoConcluida({estadoPlanilha:'REMOTO_COM_META'});
+    registrarLogSync({acao:'sync_simples_concluido', resultado:'ok', operationId});
+    exibirResultadoSincronizacaoSimples(true, null, data);
+  }catch(e){
+    clearInterval(timer);
+    registrarLogSync({acao:'sync_simples_falhou', resultado:'erro', erro:e.message, operationId});
+    setSyncCfg({adocaoEtapaTexto:null});
+    exibirResultadoSincronizacaoSimples(false, 'Falha de rede/inesperada: '+e.message);
+  } finally {
+    window._adocaoEmAndamento = false;
+    if(btn){ btn.disabled = false; btn.textContent = 'SINCRONIZAR AGORA'; }
+  }
+}
+function exibirResultadoSincronizacaoSimples(ok, erro, data){
+  const corpo = ok
+    ? `<div class="msg ok">Sincronização concluída com sucesso.</div>
+       <p class="compactHelp">${data&&data.recordsSaved!=null?(data.recordsSaved+' registro(s) em '+data.collectionsSaved+' coleção(ões).'):''}</p>`
+    : `<div class="msg err">Sincronização não concluída: ${esc(erro||'')}</div>
+       <p class="compactHelp">A base local não foi alterada.${data&&data.backupId?' O backup já tinha sido criado — nada foi perdido.':''}</p>`;
+  const linhasLog = (data&&data.logs||[]).map(l=>`<tr><td>${esc(l.passo)}</td><td>${l.ok?'✅':'❌'}</td><td>${esc(l.detalhe||'')}</td></tr>`).join('');
+  openModal(`<h2>${ok?'Tudo sincronizado':'Sincronização não concluída'}</h2>${corpo}
+    <details style="margin-top:10px"><summary style="cursor:pointer;color:#666">Detalhes técnicos</summary>
+      <p class="compactHelp" style="margin-top:6px">${data&&data.backupUrl?('Backup: <a href="'+esc(data.backupUrl)+'" target="_blank">abrir</a> · '):''}${data&&data.updatedAt?('Atualizado em: '+esc(data.updatedAt)):''}</p>
+      <table class="tbl" style="margin-top:6px"><thead><tr><th>Etapa</th><th>OK</th><th>Detalhe</th></tr></thead><tbody>${linhasLog||'<tr><td colspan=3>Sem logs.</td></tr>'}</tbody></table>
+    </details>
+    <div class="premiumActions" style="margin-top:10px"><button class="btn secondary" onclick="closeModal()">Fechar</button></div>`);
+}
+
+
 // Não repete a adoção completa — grava e valida só a aba Falhas, e reaproveita as demais
 // coleções já gravadas em tentativas anteriores para fechar a sincronização.
+// ── REPARO EMERGENCIAL: SOMENTE FALHAS ------------------------------------------------------
 async function repararSincronizacaoFalhasEConcluir(){
   if(window._adocaoEmAndamento){ alert('Uma operação já está em andamento. Aguarde a conclusão.'); return; }
   window._adocaoEmAndamento = true;
@@ -4128,6 +4177,56 @@ function findOrCreate(arr,match,obj){let x=arr.find(match); if(x)return {obj:x,c
 function painelById(v){return db.paineis.find(x=>x.id===v)||db.paineis.find(x=>x.nome===v)}
 function lacoById(v){return db.lacos.find(x=>x.id===v)||db.lacos.find(x=>x.nome===v)}
 function localById(v){return db.locais.find(x=>x.id===v)}
+// ── REGRA ÚNICA DE STATUS OPERACIONAL (item 11 do pedido) ───────────────────────────────────
+// Todas as telas deveriam usar ESTA função em vez de ler loc.status/item.status diretamente — o
+// campo status em cache pode ficar desatualizado se algum caminho não o tiver recalculado. A
+// regra é simples e centralizada: existe falha ATIVA (não excluída, não resolvida) vinculada a
+// este local (e, se `sistema` for informado, deste sistema específico)? Se sim, "Com falha". Se
+// não, "Em funcionamento" — independentemente do que exista no histórico (uma falha RESOLVIDA
+// nunca derruba o status, mesmo que tenha sido a mais recente cronologicamente).
+function calcularStatusOperacionalLocal(localId, sistema){
+  if(!localId) return 'Em funcionamento';
+  const falhaAtiva = (db.falhas||[]).some(f=>
+    f.localId===localId &&
+    !f.excluida &&
+    !f.resolvidaEm &&
+    (!sistema || f.sistema===sistema || !f.sistema) // se a falha não tiver sistema gravado, conta para qualquer sistema (dado legado)
+  );
+  return falhaAtiva ? 'Com falha' : 'Em funcionamento';
+}
+// Item 14: por subsistema — retorna {sdai, co2, outros...} = true/false (tem falha ativa).
+function calcularStatusPorSubsistema(localId){
+  const sistemas = Array.from(new Set((db.falhas||[]).filter(f=>f.localId===localId && f.sistema).map(f=>f.sistema)));
+  const out={};
+  sistemas.forEach(s=>{ out[s] = calcularStatusOperacionalLocal(localId, s)==='Com falha'; });
+  out.geral = calcularStatusOperacionalLocal(localId)==='Com falha';
+  return out;
+}
+// ── SANEAMENTO ADMINISTRATIVO (item 13) — botão "Recalcular status de todas as lojas" ───────
+// Não apaga nada, não cria falha nova, não remove histórico. Só recalcula loc.status/item.status
+// a partir da regra central acima, para os casos em que o cache ficou desatualizado (ex.: um
+// plano concluído cuja falha vinculada não teve o local corretamente atualizado na hora).
+function recalcularStatusDeTodasAsLojas(){
+  if(!requireAccess('cadastro','Seu perfil não pode executar o saneamento de status.'))return;
+  if(!confirm('Isso recalcula o status ("Em funcionamento"/"Com falha") de todas as lojas/áreas a partir das falhas ativas — não apaga nem cria nenhum registro. Continuar?'))return;
+  let alterados=0;
+  (db.locais||[]).forEach(loc=>{
+    const novo = calcularStatusOperacionalLocal(loc.id);
+    if(loc.status!==novo){ loc.status=novo; loc.ultimaAlteracao=isoNow(); alterados++; }
+  });
+  // Também recalcula o status dos equipamentos/FLMs vinculados a cada falha ativa/resolvida, pelo
+  // mesmo motivo (cache pode ter ficado desatualizado independentemente do local).
+  (db.falhas||[]).forEach(f=>{
+    if(f.excluida) return;
+    const emFuncionamento = !!f.resolvidaEm;
+    if(!emFuncionamento) return; // só corrige o lado "voltou a funcionar" — nunca marca algo como falha aqui
+    let itemId=f.itemId||''; let isFlm=String(itemId).startsWith('flm:');
+    let item = isFlm?flmById(String(itemId).slice(4)):db.equipamentos.find(e=>e.id===itemId);
+    if(item && item.status!=='Em operação' && !calcularStatusPorSubsistema(f.localId).geral){ item.status='Em operação'; item.ultimaAlteracao=isoNow(); alterados++; }
+  });
+  if(alterados){ logLocal('sistema','','recalcular_status','Saneamento: '+alterados+' registro(s) de status recalculado(s).'); markDirty('recalcular status de lojas'); render(); }
+  alert(alterados ? (alterados+' registro(s) de status corrigido(s).') : 'Nenhuma divergência encontrada — todos os status já estavam corretos.');
+}
 function sistemaDaFalha(x){const loc=localById(x.localId); if(loc&&loc.sistema)return loc.sistema; const laco=(db.lacos||[]).find(l=>l.id===x.lacoId); return (laco&&laco.sistema)||sistemaAutoDetect(laco?.nome||'')||'SDAI'}
 function flmById(v){return db.flms.find(x=>x.id===v)}
 function locName(v){return localById(v)?.nome||''}
@@ -4372,8 +4471,26 @@ function statusEfetivoLoja(localId){
   const flmsDaLoja=(db.portas||[]).filter(p=>membros.includes(p.localId)).map(p=>p.flmId);
   const stats=[...eqs.map(e=>normalizeStatus(e.status)),...flmsDaLoja.map(fid=>flmStatusAgregado(fid))];
   membros.forEach(mid=>{const loja=(db.locais||[]).find(x=>x.id===mid); if(loja&&loja.status)stats.push(normalizeStatus(loja.status))});
-  for(const p of STATUS_PRIORIDADE_FALHA){if(stats.includes(p))return p}
-  const outraFalha=stats.find(isFalhaStatus); if(outraFalha)return outraFalha;
+  for(const p of STATUS_PRIORIDADE_FALHA){
+    if(stats.includes(p)){
+      // BUGFIX (SOLUÇÃO COSMÉTICOS e casos semelhantes — item 10/11/15 do pedido): os valores acima
+      // vêm de campos .status em CACHE (equipamento/FLM/loja) — se um Plano de Ação foi concluído
+      // mas, por qualquer motivo (item não encontrado no momento da conclusão, múltiplos
+      // equipamentos vinculados à mesma loja, etc.), esse cache não foi atualizado, esta função
+      // continuaria dizendo "Com falha" mesmo com a falha real já resolvida. A fonte de verdade
+      // real é a existência de uma falha ATIVA (não excluída, não resolvida) vinculada a algum dos
+      // locais consolidados desta loja — se não existir nenhuma, uma falha antiga resolvida NUNCA
+      // prevalece sobre a conclusão/teste posterior, e o resultado é corrigido para operacional.
+      const falhaAtivaReal = membros.some(mid=>calcularStatusOperacionalLocal(mid)==='Com falha');
+      if(!falhaAtivaReal) break; // sai do loop de prioridades sem retornar falha — cai no restante da função
+      return p;
+    }
+  }
+  const outraFalha=stats.find(isFalhaStatus);
+  if(outraFalha){
+    const falhaAtivaReal = membros.some(mid=>calcularStatusOperacionalLocal(mid)==='Com falha');
+    if(falhaAtivaReal) return outraFalha;
+  }
   if(stats.length&&stats.every(isDesativadoStatus))return 'Desativação';
   return 'Em operação';
 }
@@ -7393,70 +7510,43 @@ async function revogarApiToken(){
 function renderSistema(){
  const el=document.getElementById('sistema'); if(!el)return; const c=syncCfg();
  const manut = (typeof syncMaintenanceMode==='function') && syncMaintenanceMode();
- // Cache síncrono do último diagnóstico (setado em abrirPainelConflitoSync ou pelo auto-
- // diagnóstico abaixo) — usado para gatear os botões sem exigir reabrir o modal.
- const legado = c.estadoPlanilha==='REMOTO_LEGADO_SEM_META';
- const adocaoFalhou = c.estadoPlanilha==='ADOCAO_FALHOU';
- const precisaAdocao = legado || adocaoFalhou;
- const bloqInic = manut || precisaAdocao;
  el.innerHTML=`
  <div class="premiumPanel" style="${manut?'border:2px solid #b58900':''}">
-   <div class="systemHeaderSlim"><div class="titleBlock"><h3>Modo Manutenção de Sincronização</h3><p>${manut?'🛑 ATIVO — nenhuma sincronização (push ou pull) com o Google é executada, automática ou manual. Botões de sincronizar/carregar abaixo estão desabilitados.':'Desativado — a sincronização volta a funcionar normalmente conforme configurado abaixo.'}</p></div></div>
-   <div class="premiumActions"><button class="btn ${manut?'danger':'secondary'}" onclick="toggleSyncMaintenanceMode()">${manut?'Desativar Modo Manutenção':'Ativar Modo Manutenção'}</button><button class="btn secondary" onclick="abrirPainelConflitoSync()">Verificar sincronização</button></div>
-   <div id="syncSessaoInfo" class="compactHelp" style="margin-top:10px">Sessão: ${esc(getClientInstanceId().slice(0,10))}</div>
+   <div class="systemHeaderSlim"><div class="titleBlock"><h3>Modo Manutenção de Sincronização</h3><p>${manut?'🛑 ATIVO — nenhuma sincronização (push ou pull) com o Google é executada, automática ou manual.':'Desativado — a sincronização volta a funcionar normalmente conforme configurado abaixo.'}</p></div></div>
+   <div class="premiumActions"><button class="btn ${manut?'danger':'secondary'}" onclick="toggleSyncMaintenanceMode()">${manut?'Desativar Modo Manutenção':'Ativar Modo Manutenção'}</button></div>
  </div>
- ${precisaAdocao?`<div class="premiumPanel" style="border:2px solid #b58900;background:#fff8e6">
-   <div class="systemHeaderSlim"><div class="titleBlock"><h3>⚠ ${adocaoFalhou?'A preparação da planilha não foi concluída':'Planilha existente aguardando configuração'}</h3><p>${adocaoFalhou
-      ? ('A tentativa anterior não terminou — a alteração local continua pendente e nada foi descartado. '+(c.adocaoUltimoErro?('Motivo: '+esc(c.adocaoUltimoErro)):''))
-      : 'Esta planilha Google já contém dados, mas ainda não foi preparada para o novo sistema de sincronização. A base local continuará preservada durante todo o processo.'}</p></div></div>
-   <div class="premiumActions"><button class="btn" onclick="abrirConfirmacaoAdocaoPlanilha()">${adocaoFalhou?'Tentar novamente (todas as coleções)':'Preparar planilha para sincronização'}</button>${adocaoFalhou?'<button class="btn" style="background:#1a7a3a" onclick="repararSincronizacaoFalhasEConcluir()">Reparar sincronização de Falhas e concluir</button>':''}${c.sheetUrl?`<button class="btn secondary" onclick="window.open('${esc(c.sheetUrl)}','_blank')">Abrir planilha</button>`:''}</div>
- </div>`:''}
  <div class="premiumPanel">
    <div class="systemHeaderSlim"><div class="titleBlock"><h3>Banco Google</h3><p>Sincronização da base SDAI com Google Sheets.</p></div>${premiumBadgeStatus()}</div>
-   <div class="premiumGrid">${premiumStat('Última sync',c.lastSync||'—')}<div class="stat" style="cursor:pointer" onclick="verAlteracoesPendentes()" title="Clique para ver o motivo, a coleção e o registro envolvidos">${premiumStat('Base local',c.dirty?(c.adocaoEtapaTexto||'Alterações ainda não confirmadas no Google'):'Sincronizada com o Google')}</div>${premiumStat('Autosync configurado',c.auto?'Sim':'Não')}${premiumStat('Status operacional',legado?'Pausado — aguardando preparação da planilha':(manut?'Pausado — Modo Manutenção':(c.auto?'Ligado — sincronização ativa':'Desligado')))}</div>
-   ${precisaAdocao ? `<div class="compactHelp" style="margin-top:6px">"Inicializar", "Sincronizar" e "Carregar base" ficam ocultos enquanto a planilha não for preparada — use o botão acima.</div>
-   <div class="premiumActions" style="margin-top:10px">${c.sheetUrl?`<button class="btn secondary" onclick="window.open('${esc(c.sheetUrl)}','_blank')">Abrir planilha</button>`:''}</div>`
-   : `<div class="premiumActions">
-     <button class="btn" ${manut?'disabled title="Bloqueado pelo Modo Manutenção"':''} onclick="setupGoogle()">Inicializar</button>
-     <button class="btn secondary" ${manut?'disabled title="Bloqueado pelo Modo Manutenção"':''} onclick="syncNow(true)">Sincronizar</button>
-     <button class="btn secondary" ${manut?'disabled title="Bloqueado pelo Modo Manutenção"':''} onclick="loadGoogle()">Carregar base</button>
+   <div class="premiumGrid">${premiumStat('Última sync',c.lastSync||'—')}<div class="stat" style="cursor:pointer" onclick="verAlteracoesPendentes()" title="Clique para ver detalhes">${premiumStat('Base local',c.dirty?(c.adocaoEtapaTexto||'Aguardando salvamento no Google'):'Sincronizada com o Google')}</div>${premiumStat('Autosync',c.auto?'Ligado':'Desligado')}</div>
+   <div class="premiumActions" style="margin-top:10px">
+     <button class="btn" id="btnSincronizarAgora" ${manut?'disabled title="Bloqueado pelo Modo Manutenção"':''} onclick="sincronizarBaseSimplificada()" style="font-weight:700">SINCRONIZAR AGORA</button>
+     <button class="btn secondary" ${manut?'disabled title="Bloqueado pelo Modo Manutenção"':''} onclick="acionarBackupGoogle()">Criar backup</button>
+     <button class="btn secondary" ${manut?'disabled title="Bloqueado pelo Modo Manutenção"':''} onclick="loadGoogle()">Carregar base do Google</button>
      ${c.sheetUrl?`<button class="btn secondary" onclick="window.open('${esc(c.sheetUrl)}','_blank')">Abrir planilha</button>`:''}
-   </div>`}
+   </div>
  </div>
  <div class="split2"><div class="premiumPanel"><h3>Autosync</h3><p>Define a gravação automática em segundo plano.</p><div class="formGrid" style="margin-top:14px"><div class="field"><label>Status</label><select onchange="setAutoEnabled(this.value==='Sim')"><option ${c.auto?'selected':''}>Sim</option><option ${!c.auto?'selected':''}>Não</option></select></div><div class="field"><label>Intervalo</label><select onchange="setAutoInterval(this.value)">${[15,30,60,120,300].map(s=>`<option value="${s}" ${Number(c.intervalSec||30)===s?'selected':''}>${s<60?s+' segundos':(s/60)+' minuto(s)'}</option>`).join('')}</select></div></div></div><div class="premiumPanel"><h3>Estrutura</h3><p>Banco separado por abas técnicas.</p><div class="compactHelp" style="margin-top:14px">Painéis, Laços, FLMs, Portas, Lojas/Áreas, Equipamentos, Falhas, Plano de Ação, Histórico, Importações e Usuários.</div></div></div>
  <div class="premiumPanel"><h3>Resumo da base</h3><div class="premiumGrid" style="margin-top:14px">${premiumStat('Painéis',db.paineis.length)}${premiumStat('Laços',db.lacos.length)}${premiumStat('FLMs',db.flms.length)}${premiumStat('Equipamentos',db.equipamentos.length)}${premiumStat('Falhas',db.falhas.length)}${premiumStat('Planos',db.planos.length)}${premiumStat('Usuários',(db.usuarios||[]).length)}${premiumStat('Banco',c.configured?'Google':'Local')}</div></div>
- <div class="premiumPanel"><h3>Diagnóstico de Sincronização (Fase 13)</h3><p class="compactHelp">Local / Google / Sessão / Conflito, num só painel.</p>
+ <details class="premiumPanel"><summary style="cursor:pointer"><h3 style="display:inline">Detalhes técnicos</h3></summary>
+   <p class="compactHelp" style="margin-top:10px">Ferramentas avançadas — normalmente não são necessárias para o uso diário.</p>
    <div class="premiumActions" style="margin-top:10px">
      <button class="btn secondary" onclick="exportarBaseLocalJson()">Exportar Local</button>
      <button class="btn secondary" ${manut?'disabled title="Bloqueado pelo Modo Manutenção"':''} onclick="exportarBaseGoogleJson()">Exportar Google</button>
-     <button class="btn secondary" onclick="abrirPainelConflitoSync()">Comparar</button>
-     <button class="btn secondary" ${manut?'disabled title="Bloqueado pelo Modo Manutenção"':''} onclick="acionarBackupGoogle()">Criar Backup</button>
+     <button class="btn secondary" onclick="abrirPainelConflitoSync()">Verificar sincronização</button>
+     <button class="btn secondary" onclick="executarDiagnosticoCompleto()">Diagnóstico completo</button>
      <button class="btn secondary" onclick="abrirRestaurarJsonRecuperado()">Restaurar JSON</button>
      <button class="btn secondary" onclick="verLogsSync()">Ver Logs</button>
      <button class="btn secondary" ${manut?'disabled title="Bloqueado pelo Modo Manutenção"':''} onclick="testarConexaoSomenteLeitura()">Testar Conexão (somente leitura)</button>
-     <button class="btn secondary" ${manut?'disabled title="Bloqueado pelo Modo Manutenção"':''} onclick="verAlteracoesPendentes()">Ver alterações pendentes</button>
      <button class="btn secondary" ${manut?'disabled title="Bloqueado pelo Modo Manutenção"':''} onclick="reconciliarFilaPendente()">Reconciliar fila</button>
+     <button class="btn secondary" onclick="recalcularStatusDeTodasAsLojas()">Recalcular status das lojas</button>
    </div>
- </div>
+ </details>
  <div class="premiumPanel">${renderPainelMigracaoLegado()}</div>`;
- // AUTO-DIAGNÓSTICO EM SEGUNDO PLANO (item 3 do pedido: "não depender de reabrir o diagnóstico").
- // render() chama renderSistema() a cada interação do app inteiro — por isso este disparo é
- // throttled (no máximo 1x/60s) e só roda quando o estado remoto ainda não é conhecido ou está
- // velho, para não transformar cada clique em um GET ao Google. Ao resolver, grava o estado em
- // syncCfg via setSyncCfg(), que já dispara atualizarEstadoVisualSincronizacao() sozinho — a tela
- // se atualiza sem precisar de F5 nem de o usuário reabrir o modal de diagnóstico.
- if(!manut && (typeof clienteAtivo==='function') && clienteAtivo() && !window._diagnosticoSyncEmAndamento && c.estadoPlanilha!=='ADOCAO_FALHOU'){
-   const agora = Date.now();
-   if(!c.estadoPlanilha || (window._ultimaChecagemEstadoPlanilha||0) < agora-60000){
-     window._diagnosticoSyncEmAndamento = true;
-     window._ultimaChecagemEstadoPlanilha = agora;
-     avaliarEstadoSincronizacao().then(function(diag){
-       window._ultimoDiagSync = diag;
-       if(diag && diag.estado) setSyncCfg({estadoPlanilha: diag.estado});
-     }).catch(function(e){ console.warn('auto-diagnóstico de sincronização falhou:', e && e.message); })
-       .finally(function(){ window._diagnosticoSyncEmAndamento = false; });
-   }
- }
+ // BUGFIX (pedido "simplifique definitivamente"): removido o auto-diagnóstico em segundo plano
+ // que rodava a cada abertura da tela Sistema — era exatamente o tipo de verificação automática
+ // que o pedido rejeitou explicitamente ("diagnóstico completo antes de cada gravação"). O
+ // diagnóstico agora só roda quando o usuário pede (botão "Verificar sincronização" ou
+ // "Diagnóstico completo", dentro de "Detalhes técnicos").
 }
 
 /* =========================================================================
@@ -10479,8 +10569,14 @@ function statusAgregadoLoja(localId){
   const flmsDaLoja=(db.portas||[]).filter(p=>membros.includes(p.localId)).map(p=>p.flmId);
   const stats=[...eqs.map(e=>normalizeStatus(e.status)),...flmsDaLoja.map(fid=>flmStatusAgregado(fid))];
   membros.forEach(mid=>{const loja=(db.locais||[]).find(x=>x.id===mid); if(loja&&loja.status)stats.push(normalizeStatus(loja.status))});
-  const falhas=stats.filter(s=>isFalhaStatus(s)).length;
-  if(falhas)return {estado:'falha',falhas};
+  // BUGFIX (mesmo motivo de statusEfetivoLoja acima — item 14/17 do pedido: "Plantas: marcador sem
+  // indicação de falha"): os campos de status em cache podem não ter sido atualizados quando um
+  // Plano de Ação foi concluído. plantaFalhasAbertasLoja() já calcula a contagem REAL de falhas
+  // ativas (não excluídas, não resolvidas) direto de db.falhas — usada aqui como trava: só reporta
+  // "falha" no marcador se realmente existir falha ativa, nunca só por causa de cache desatualizado.
+  const falhasReais = plantaFalhasAbertasLoja(localId);
+  const cacheIndicaFalha = stats.some(s=>isFalhaStatus(s));
+  if(falhasReais>0 && cacheIndicaFalha) return {estado:'falha',falhas:falhasReais};
   if(stats.length&&stats.every(s=>isDesativadoStatus(s)))return {estado:'desativado',falhas:0};
   return {estado:'ok',falhas:0};
 }
