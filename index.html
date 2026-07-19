@@ -2592,26 +2592,99 @@ async function diagnosticarFilaPendente(){
   return {ok:true, achados, revisionLocal:db._revision||0, revisionGoogle:(dbGoogle._meta&&dbGoogle._meta.revision)||dbGoogle._revision||0, checksumLocal:checksumColecoes(db), checksumGoogle:checksumColecoes(dbGoogle)};
 }
 
-// Botão "Ver alterações pendentes": mostra coleção, ID, operação, quando e o motivo exato pelo
-// qual cada registro não saiu da fila — nunca some nada por conta própria.
+// Mapeia nome técnico de coleção/operação para o que o usuário deve ver (item 7 do pedido).
+const NOME_AMIGAVEL_COLECAO = {falhas:'Falhas', planos:'Planos de Ação', testes:'Testes', equipamentos:'Equipamentos', flms:'Módulos FLM', locais:'Lojas/Áreas', paineis:'Painéis', lacos:'Laços', portas:'Portas', plantas:'Plantas', cftv:'CFTV', acessoPontos:'Pontos de Acesso', ambienteEquip:'Equipamentos de Ambiente/Som'};
+const NOME_AMIGAVEL_OPERACAO = {insert:'Inclusão', update:'Atualização', delete:'Exclusão'};
+
+// Botão "Ver o que está pendente" (renomeado de "Ver alterações pendentes"): tela SOMENTE LEITURA
+// — não altera updatedAt/revision/dirty/lastSyncAt, não grava nada. Distingue os estados pedidos:
+// BASE_NAO_CONFIRMADA (dirty=true mas nenhuma diferença individual encontrada — é só a base
+// inteira aguardando confirmação, não um registro específico), REGISTROS_PENDENTES (diferenças
+// reais encontradas), SINCRONIZADO_COM_PENDENCIAS e SINCRONIZADO.
 function verAlteracoesPendentes(){
-  openModalWide(`<h2>Ver alterações pendentes</h2><p class="compactHelp">Comparando a base local com a base atual do Google Sheets, registro a registro…</p><div id="filaPendenteBody">Carregando…</div><div class="premiumActions" style="margin-top:10px"><button class="btn secondary" onclick="closeModal()">Fechar</button></div>`);
+  const cliObj = (typeof clienteAtivoObj==='function')?clienteAtivoObj():null;
+  const nomeCliente = (cliObj && (cliObj.nome||cliObj.nomeFantasia)) || 'este cliente';
+  openModalWide(`<h2>Alterações aguardando sincronização</h2>
+    <div id="resumoPendenteTopo" class="premiumGrid" style="margin-top:6px">${premiumStat('Cliente', nomeCliente)}${premiumStat('Base local','preservada')}${premiumStat('Google','conectado')}${premiumStat('Status','verificando...')}</div>
+    <p class="compactHelp" style="margin-top:8px">Comparando a base local com a base atual do Google Sheets — isto é somente leitura, nada é alterado ao abrir esta tela.</p>
+    <div id="filaPendenteBody" style="margin-top:10px">Carregando…</div>
+    <div class="premiumActions" style="margin-top:10px"><button class="btn secondary" onclick="closeModal()">Fechar</button></div>`);
   diagnosticarFilaPendente().then(res=>{
     const body=document.getElementById('filaPendenteBody'); if(!body)return;
-    if(!res.ok){ body.innerHTML=`<div class="msg err">${esc(res.motivo)}</div>`; return; }
-    if(!res.achados.length){
-      body.innerHTML=`<div class="msg ok">Nenhuma diferença encontrada registro a registro entre local e Google (checksum local: ${esc(res.checksumLocal)} · checksum Google: ${esc(res.checksumGoogle)} · revisão local: ${esc(String(res.revisionLocal))} · revisão Google: ${esc(String(res.revisionGoogle))}).</div>
-        <p class="compactHelp" style="margin-top:8px">O indicador mostra "Alterações pendentes" mas o conteúdo já bate — use "Reconciliar fila" para confirmar e zerar o indicador.</p>
-        <button class="btn" style="margin-top:6px" onclick="reconciliarFilaPendente()">Reconciliar fila</button>`;
+    const resumoEl=document.getElementById('resumoPendenteTopo');
+    if(!res.ok){
+      if(resumoEl) resumoEl.innerHTML = premiumStat('Cliente', nomeCliente)+premiumStat('Base local','preservada')+premiumStat('Google','erro')+premiumStat('Status','não verificado');
+      body.innerHTML=`<div class="msg err">${esc(res.motivo)}</div>`;
       return;
     }
-    const linhas = res.achados.map(a=>`<tr>
-        <td>${esc(a.colecao)}</td><td>${esc(String(a.id))}</td><td>${esc(a.operacao)}</td><td>${esc(a.timestamp||'—')}</td>
+    const dirty = !!syncCfg().dirty;
+    const achados = res.achados||[];
+    // Item 4: estados distintos — nunca o mesmo aviso para situações diferentes.
+    let estado, mensagemEstado;
+    if(achados.length===0 && dirty){ estado='BASE_NAO_CONFIRMADA'; mensagemEstado='Base local aguardando confirmação no Google'; }
+    else if(achados.length>0 && dirty){ estado='REGISTROS_PENDENTES'; mensagemEstado=achados.length+' registro(s) aguardando sincronização'; }
+    else if(achados.length>0 && !dirty){ estado='SINCRONIZADO_COM_PENDENCIAS'; mensagemEstado='Sincronização concluída com '+achados.length+' registro(s) para revisar'; }
+    else { estado='SINCRONIZADO'; mensagemEstado='Tudo sincronizado'; }
+
+    if(resumoEl) resumoEl.innerHTML = premiumStat('Cliente', nomeCliente)+premiumStat('Base local','preservada')+premiumStat('Google','conectado')+premiumStat('Status', mensagemEstado)+premiumStat('Registros pendentes', achados.length ? String(achados.length) : 'nenhum registro individual identificado');
+
+    if(estado==='SINCRONIZADO'){
+      body.innerHTML=`<div class="msg ok">Tudo sincronizado — nenhuma diferença encontrada entre a base local e o Google.</div>
+        <details style="margin-top:8px"><summary style="cursor:pointer;color:#666">Detalhes técnicos</summary><p class="compactHelp" style="margin-top:6px">checksum local: ${esc(res.checksumLocal)} · checksum Google: ${esc(res.checksumGoogle)} · revisão local: ${esc(String(res.revisionLocal))} · revisão Google: ${esc(String(res.revisionGoogle))}</p></details>`;
+      return;
+    }
+
+    if(estado==='BASE_NAO_CONFIRMADA'){
+      body.innerHTML=`<div class="msg warn">Não existe uma alteração individual pendente. A base local completa ainda aguarda confirmação no Google.</div>
+        <p class="compactHelp" style="margin-top:8px">Motivo: a base local completa ainda não foi confirmada no Google — não é um registro específico, é a base inteira (comparação registro a registro não encontrou diferença alguma).</p>
+        <div class="premiumActions" style="margin-top:10px"><button class="btn" onclick="reconciliarFilaPendente()">Confirmar preparação de ${esc(nomeCliente)}</button></div>
+        <details style="margin-top:10px"><summary style="cursor:pointer;color:#666">Detalhes técnicos</summary><p class="compactHelp" style="margin-top:6px">checksum local: ${esc(res.checksumLocal)} · checksum Google: ${esc(res.checksumGoogle)} · revisão local: ${esc(String(res.revisionLocal))} · revisão Google: ${esc(String(res.revisionGoogle))}</p></details>`;
+      return;
+    }
+
+    // REGISTROS_PENDENTES ou SINCRONIZADO_COM_PENDENCIAS: mostra a lista real, agrupada por tipo
+    // (item 6), com nomes amigáveis (item 7) — o ID técnico só aparece em "Detalhes técnicos".
+    const porColecao = {};
+    achados.forEach(a=>{ (porColecao[a.colecao]=porColecao[a.colecao]||[]).push(a); });
+    const resumoGrupos = Object.keys(porColecao).map(c=>`${esc(NOME_AMIGAVEL_COLECAO[c]||c)}: ${porColecao[c].length}`).join(' · ');
+
+    const linhaAmigavel = a=>{
+      const amigavel = (typeof descricaoAmigavelRegistro==='function') ? descricaoAmigavelRegistro(a.colecao, a.id) : null;
+      const registro = (db[a.colecao]||[]).find(x=>String(x.id)===String(a.id));
+      const quando = a.timestamp ? formatarDataHoraAmigavel(a.timestamp) : '—';
+      const usuario = (registro&&(registro.responsavel||registro.usuario)) || '—';
+      const status = (registro&&registro.status) || '—';
+      return `<tr>
+        <td>${esc(amigavel || (NOME_AMIGAVEL_COLECAO[a.colecao]||a.colecao))}</td>
+        <td>${esc(NOME_AMIGAVEL_COLECAO[a.colecao]||a.colecao)}</td>
+        <td>${esc(NOME_AMIGAVEL_OPERACAO[a.operacao]||a.operacao)}</td>
+        <td>${esc(quando)}</td>
+        <td>${esc(usuario)}</td>
+        <td>${esc(status)}</td>
         <td>${esc(a.motivo)}</td>
-      </tr>`+(a.camposDivergentes||[]).map(c=>`<tr><td colspan="4" style="padding-left:24px;color:#666">↳ <b>${esc(c.campo)}</b>: local="${esc(c.local)}" · google="${esc(c.google)}"</td></tr>`).join('')).join('');
-    body.innerHTML=`<table class="tbl"><thead><tr><th>Coleção</th><th>ID</th><th>Operação</th><th>Quando</th><th>Motivo</th></tr></thead><tbody>${linhas}</tbody></table>
-      <p class="compactHelp" style="margin-top:10px"><b>${res.achados.length}</b> registro(s) realmente divergente(s) — cliente: ${esc(res.achados[0].clienteId)}. Não remova manualmente: corrija a causa (ex.: "Sincronizar agora") e confira de novo. Se o motivo indicar coerção de data pelo Sheets, reimplante o Code.gs corrigido e sincronize novamente.</p>`;
+        <td><button class="btn secondary small" onclick="verDetalhesTecnicosRegistro('${esc(a.colecao)}','${esc(String(a.id))}')">Detalhes técnicos</button></td>
+      </tr>`;
+    };
+    const linhas = achados.map(linhaAmigavel).join('');
+    body.innerHTML=`
+      <p class="compactHelp"><b>Por tipo:</b> ${resumoGrupos}</p>
+      <table class="tbl"><thead><tr><th>Registro</th><th>Tipo</th><th>Alteração</th><th>Data</th><th>Usuário</th><th>Status</th><th>Motivo da pendência</th><th></th></tr></thead><tbody>${linhas}</tbody></table>
+      <p class="compactHelp" style="margin-top:10px">Ação recomendada: corrija a causa indicada e use "Sincronizar" (ou "Preparar planilha para sincronização", se aplicável) de novo — não remova nada manualmente.</p>
+      ${estado==='SINCRONIZADO_COM_PENDENCIAS'?'':`<div class="premiumActions" style="margin-top:10px"><button class="btn secondary" onclick="abrirPainelConflitoSync()">Corrigir e sincronizar</button></div>`}`;
   });
+}
+// Modal auxiliar só com os IDs técnicos de um registro específico (item 7: "IDs ficam somente em
+// Detalhes técnicos").
+function verDetalhesTecnicosRegistro(colecao, id){
+  const a = (window._ultimoDiagSync||{}); // não depende disso, só evita erro se chamado cedo
+  openModal(`<h2>Detalhes técnicos</h2><p class="compactHelp">Coleção (nome interno): <code>${esc(colecao)}</code><br>ID: <code>${esc(id)}</code></p><button class="btn secondary" onclick="closeModal()">Fechar</button>`);
+}
+function formatarDataHoraAmigavel(iso){
+  try{
+    const d = new Date(iso);
+    if(isNaN(d.getTime())) return String(iso);
+    return d.toLocaleDateString('pt-BR')+' às '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  }catch(e){ return String(iso); }
 }
 
 // Botão "Reconciliar fila": só zera "Alterações pendentes" depois de confirmar, registro a
@@ -2738,22 +2811,24 @@ function abrirConfirmacaoAdocaoPlanilha(){
   }
   const dp = diag.diagPlanilha||{};
   const cid = (typeof clienteAtivo==='function')?clienteAtivo():'';
+  const cliObj = (typeof clienteAtivoObj==='function')?clienteAtivoObj():null;
+  const nomeCliente = (cliObj && (cliObj.nome||cliObj.nomeFantasia)) || 'este cliente';
   const ml = diag.metaLocal||{};
   const registrosValidos = dp.totalRegistrosValidos!=null ? dp.totalRegistrosValidos : dp.totalRegistros;
   // Item 9 do pedido: etapas em linguagem simples, sem termos técnicos (staging/lock/schema ficam
   // só nos "Detalhes técnicos" — ver <details> abaixo).
   const etapasAmigaveis = ['Validar base local','Ler a planilha atual','Criar backup integral','Validar o backup','Preparar dados em área temporária','Validar quantidades e integridade','Atualizar a planilha oficial','Confirmar a sincronização'];
-  openModalWide(`<h2>Preparar planilha para sincronização</h2>
+  openModalWide(`<h2>Preparar planilha para sincronização — ${esc(nomeCliente)}</h2>
     <p class="note">Esta planilha Google já contém dados, mas ainda não foi preparada para o novo sistema de sincronização. Antes da primeira sincronização, o sistema precisa criar um backup integral da planilha atual, preparar a estrutura segura e validar todos os dados. <b>A base local continuará preservada durante todo o processo.</b></p>
-    <div class="premiumGrid" style="margin-top:10px">${premiumStat('Registros válidos encontrados', registrosValidos||0)}${premiumStat('Abas na planilha',(dp.abas||[]).length)}${premiumStat('Backup anterior', dp.temSnapshot?'Existe':'Nenhum ainda')}${premiumStat('Alteração local', 'Pendente (1)')}</div>
+    <div class="premiumGrid" style="margin-top:10px">${premiumStat('Registros válidos encontrados', registrosValidos||0)}${premiumStat('Abas na planilha',(dp.abas||[]).length)}${premiumStat('Backup anterior', dp.temSnapshot?'Existe':'Nenhum ainda')}${premiumStat('Situação atual', 'Base local aguardando confirmação no Google')}</div>
     <ol style="margin:12px 0 8px 20px;line-height:1.7">${etapasAmigaveis.map(e=>`<li>${esc(e)}</li>`).join('')}</ol>
     <details style="margin-top:8px"><summary style="cursor:pointer;color:#666">Detalhes técnicos</summary>
-      <p class="compactHelp" style="margin-top:6px">Base local: databaseId <code>${esc(ml.databaseId||'')}</code>, revisão ${esc(String(ml.revision||0))}. Escrita por área temporária ("staging"): grava em abas temporárias, relê, confere contagem e SHA-256, e só então promove — nenhuma aba oficial é limpa diretamente. Trava de execução única (lock) do Apps Script evita duas gravações simultâneas.</p>
+      <p class="compactHelp" style="margin-top:6px">clienteId: <code>${esc(cid)}</code> · databaseId: <code>${esc(ml.databaseId||'')}</code>, revisão ${esc(String(ml.revision||0))}. Escrita por área temporária ("staging"): grava em abas temporárias, relê, confere contagem e SHA-256, e só então promove — nenhuma aba oficial é limpa diretamente. Trava de execução única (lock) do Apps Script evita duas gravações simultâneas.</p>
     </details>
     <div id="adocaoStatusBody" class="compactHelp" style="margin-top:10px"></div>
     <div class="premiumActions" style="margin-top:12px">
       <button class="btn secondary" id="btnCancelarAdocao" onclick="abrirPainelConflitoSync()">Cancelar</button>
-      <button class="btn" id="btnConfirmarAdocao" onclick="executarAdocaoPlanilhaExistente()">Confirmar (cliente: ${esc(cid)})</button>
+      <button class="btn" id="btnConfirmarAdocao" onclick="executarAdocaoPlanilhaExistente()">Confirmar preparação de ${esc(nomeCliente)}</button>
     </div>`);
 }
 
