@@ -1744,6 +1744,25 @@ function atualizarEstadoVisualSincronizacao(){
   if(currentView==='sistema' && document.getElementById('sistema')) renderSistema();
 }
 function setSyncCfg(o){localStorage.setItem(SYNC_KEY,JSON.stringify(Object.assign(syncCfg(),o))); atualizarEstadoVisualSincronizacao()}
+
+// ── ITEM 6 do pedido: ponto ÚNICO que pode zerar a pendência local após sucesso real ──────────
+// Só deve ser chamado DEPOIS que o servidor já confirmou databaseId + revision + contagens +
+// hash(es) — nunca antes. Não aceita nenhum campo que reative dirty por engano: os únicos campos
+// que este função escreve são os listados explicitamente abaixo (mais o que o chamador passar em
+// `extra`, restrito a chaves de metadados de exibição — nunca `dirty`, que é sempre forçado para
+// false aqui).
+function confirmarSincronizacaoConcluida(extra){
+  setBaseRevisionAtual();
+  const checksumAtual = checksumColecoes(db);
+  const payload = Object.assign({}, extra||{}, {
+    dirty:false,
+    lastSync: new Date().toLocaleTimeString('pt-BR'),
+    lastChecksumEnviado: checksumAtual,
+    adocaoEtapaTexto: null,
+    adocaoUltimoErro: null
+  });
+  setSyncCfg(payload);
+}
 let _persistLocalFalhouAvisado=false;
 function persistLocal(){
   try{
@@ -1872,7 +1891,7 @@ function updateSyncFooter(status){const c=syncCfg(); const dot=document.getEleme
     txt.innerHTML=`<span style="cursor:pointer;text-decoration:underline;font-weight:bold" onclick="abrirPainelConflitoSync()" title="Clique para abrir o diagnóstico de sincronização">⚠ ${esc(texto)}</span>`;
     return;
   }
-  dot.className='syncDot '+(status==='saving'?'warn':status==='error'?'bad':(!c.configured?'warn':c.dirty?'warn':'ok')); txt.textContent=status==='saving'?'Sincronizando...':status==='error'?'Falha ao sincronizar':(!c.configured?'Banco Google não configurado':c.dirty?(c.adocaoEtapaTexto||'Alterações pendentes'):'Sincronizado '+(c.lastSync||''));}
+  dot.className='syncDot '+(status==='saving'?'warn':status==='error'?'bad':(!c.configured?'warn':c.dirty?'warn':'ok')); txt.textContent=status==='saving'?'Sincronizando...':status==='error'?'Falha ao sincronizar':(!c.configured?'Banco Google não configurado':c.dirty?(c.adocaoEtapaTexto||'Base local possui alterações ainda não confirmadas no Google'):'Sincronizado '+(c.lastSync||''));}
 let autoSyncTimer=null; let _recuperandoBaseInicial=false;
 function scheduleAutoSync(ms){
   // FASE 1 (Modo Manutenção): nenhum agendamento de sincronização automática enquanto ativo — não
@@ -2409,7 +2428,19 @@ async function diagnosticarPlanilhaRemota(cid){
   catch(e){ return {ok:false, error:'Falha ao consultar inventário da planilha: '+e.message}; }
 }
 
-async function avaliarEstadoSincronizacao(){
+// GET rápido (item 8) — lê SOMENTE a aba _META (não a base inteira). É este caminho que a
+// checagem de rotina usa agora (avaliarEstadoSincronizacao, modo 'rapido', o padrão) — antes,
+// toda checagem (inclusive a automática em segundo plano) chamava jsonpDbAtual(), que relê e
+// desserializa TODAS as ~17 coleções só para mostrar 4-5 campos de metadados. Essa era a causa
+// real da lentidão relatada na rotina diária.
+async function jsonpMetaRemota(cid){
+  if(!cid) return {ok:false, error:'clienteId obrigatório'};
+  try{ return await jsonp('metaRemota',{clienteId:cid}); }
+  catch(e){ return {ok:false, error:'Falha ao consultar metadados do Google: '+e.message}; }
+}
+
+async function avaliarEstadoSincronizacao(modo){
+  modo = modo || 'rapido';
   montarMetaAtual();
   const metaLocal = db._meta;
   if(syncMaintenanceMode()){
@@ -2418,18 +2449,17 @@ async function avaliarEstadoSincronizacao(){
       // diagnóstico não liberada. leituraExecutada:false é reservado exclusivamente para este caso.
       return {estado:'modo_manutencao', acaoRecomendada:'Sincronização bloqueada para manutenção — nenhuma leitura ou gravação no Google foi feita para montar este diagnóstico. A comparação completa depende da liberação temporária da leitura remota (somente-diagnóstico) ou de desativar o Modo Manutenção (Sistema).', metaLocal, metaGoogle:null, bloqueadoPorManutencao:true, googleNaoConsultado:true, leituraExecutada:false, googleReadStatus:'bloqueado_manutencao'};
     }
-    // Leitura somente-diagnóstico liberada: faz APENAS um GET (jsonpDbAtual não grava nada),
-    // e continua reportando bloqueadoPorManutencao:true (push/pull normal seguem bloqueados).
+    // Leitura somente-diagnóstico liberada: faz APENAS um GET rápido (metaRemota lê 1 aba, não
+    // grava nada), e continua reportando bloqueadoPorManutencao:true (push/pull normal seguem
+    // bloqueados).
     const cid=(typeof clienteAtivo==='function')?clienteAtivo():'';
     if(!cid) return {estado:'sem_cliente', acaoRecomendada:'Nenhum cliente ativo selecionado — selecione um cliente antes de avaliar a sincronização.', metaLocal, metaGoogle:null, bloqueadoPorManutencao:true, leituraExecutada:false, googleReadStatus:'sem_cliente'};
     try{
-      const r = await jsonpDbAtual();
+      const r = await jsonpMetaRemota(cid);
       if(!r.ok) return {estado:'erro', acaoRecomendada:'Falha ao ler metadados do Google (leitura somente-diagnóstico): '+(r.error||''), metaLocal, metaGoogle:null, bloqueadoPorManutencao:true, leituraExecutada:false, googleReadStatus:'erro_leitura', erroLeitura:r.error||''};
-      // O GET aconteceu e respondeu ok:true a partir daqui — leituraExecutada é SEMPRE true,
-      // mesmo que a planilha ainda não tenha _meta gravado (primeira vez / nunca sincronizada).
-      const metaGoogle = (r.db && r.db._meta) ? r.db._meta : null;
+      const metaGoogle = r.meta || null;
       const classificacao = classificarEstadoSincronizacao(metaLocal, metaGoogle);
-      const base = Object.assign({metaLocal, metaGoogle, dbGoogle:r.db, bloqueadoPorManutencao:true, leituraDiagnosticoUsada:true, leituraExecutada:true, googleReadStatus: metaGoogle?'ok':'sem_meta'}, classificacao);
+      const base = Object.assign({metaLocal, metaGoogle, bloqueadoPorManutencao:true, leituraDiagnosticoUsada:true, leituraExecutada:true, googleReadStatus: metaGoogle?'ok':'sem_meta', modoRapido:true, sheetUrl:r.sheetUrl}, classificacao);
       return metaGoogle ? base : await refinarEstadoPlanilhaLegada_(base, cid);
     }catch(e){
       return {estado:'erro', acaoRecomendada:'Falha ao avaliar estado de sincronização (leitura somente-diagnóstico): '+e.message, metaLocal, metaGoogle:null, bloqueadoPorManutencao:true, leituraExecutada:false, googleReadStatus:'erro_leitura', erroLeitura:e.message};
@@ -2438,15 +2468,30 @@ async function avaliarEstadoSincronizacao(){
   const cid=(typeof clienteAtivo==='function')?clienteAtivo():'';
   if(!cid) return {estado:'sem_cliente', acaoRecomendada:'Nenhum cliente ativo selecionado — selecione um cliente antes de avaliar a sincronização.', metaLocal, metaGoogle:null, leituraExecutada:false, googleReadStatus:'sem_cliente'};
   try{
-    const r = await jsonpDbAtual();
+    // ITEM 8 do pedido — "diagnóstico rápido": lê só _META (1 aba), não a base inteira. É este o
+    // caminho usado na rotina diária (inclusive a checagem automática em segundo plano em
+    // renderSistema). O diagnóstico completo (todas as coleções + comparação por registro/campo)
+    // só roda quando explicitamente pedido (modo='completo', botão "Executar diagnóstico completo"),
+    // ou quando o hash global já diverge e o usuário aciona a comparação de conteúdo.
+    const r = await jsonpMetaRemota(cid);
     if(!r.ok) return {estado:'erro', acaoRecomendada:'Falha ao ler metadados do Google: '+(r.error||''), metaLocal, metaGoogle:null, leituraExecutada:false, googleReadStatus:'erro_leitura', erroLeitura:r.error||''};
-    // GET concluído com sucesso — leituraExecutada:true SEMPRE, independentemente de a planilha já
-    // ter ou não metadados _meta gravados (base nova/nunca sincronizada é um resultado válido do
-    // GET, não um bloqueio de leitura).
-    const metaGoogle = (r.db && r.db._meta) ? r.db._meta : null;
+    const metaGoogle = r.meta || null;
     const classificacao = classificarEstadoSincronizacao(metaLocal, metaGoogle);
-    const base = Object.assign({metaLocal, metaGoogle, dbGoogle:r.db, leituraExecutada:true, googleReadStatus: metaGoogle?'ok':'sem_meta'}, classificacao);
-    return metaGoogle ? base : await refinarEstadoPlanilhaLegada_(base, cid);
+    const base = Object.assign({metaLocal, metaGoogle, leituraExecutada:true, googleReadStatus: metaGoogle?'ok':'sem_meta', modoRapido:true, sheetUrl:r.sheetUrl}, classificacao);
+    if(!metaGoogle) return await refinarEstadoPlanilhaLegada_(base, cid);
+    if(modo==='completo'){
+      // Diagnóstico completo sob demanda: agora sim lê a base inteira e, se o hash global
+      // divergir, localiza a divergência exata (coleção/registro/campo) via
+      // compararConteudoSincronizacao_ no servidor.
+      try{
+        const resp = await apiPost('compararConteudoSincronizacao', {db});
+        const comparacao = resp && resp.data;
+        base.modoRapido = false;
+        base.comparacaoCompleta = comparacao && comparacao.ok ? comparacao : null;
+        base.comparacaoErro = comparacao && !comparacao.ok ? comparacao.error : null;
+      }catch(e){ base.comparacaoErro = e.message; }
+    }
+    return base;
   }catch(e){
     return {estado:'erro', acaoRecomendada:'Falha ao avaliar estado de sincronização: '+e.message, metaLocal, metaGoogle:null, leituraExecutada:false, googleReadStatus:'erro_leitura', erroLeitura:e.message};
   }
@@ -2639,7 +2684,7 @@ async function verDetalhesDivergencia(colecao){
       <tr><td>IDs só no oficial (${idsSoOficial.length})</td><td style="max-width:320px;word-break:break-all">${idsSoOficial.slice(0,20).map(esc).join(', ')||'—'}${idsSoOficial.length>20?' …':''}</td></tr>
     </tbody></table>
     <p class="note" style="margin-top:10px">${remoto.appendOnly
-      ? '<b>Coleção append-only</b> — nunca passa por staging/sobrescrita completa; cada sincronização/adoção bem-sucedida só acrescenta 1 linha nova no servidor (registro do próprio evento de sync), preservando todo o histórico anterior já gravado direto na planilha (inclusive linhas legadas que nunca estiveram no array local). Por isso a contagem local e a oficial não deveriam mesmo bater.'
+      ? '<b>Coleção de auditoria (SHA_AUDITORIA), não SHA_FUNCIONAL</b> — por design, o servidor NUNCA sobrescreve esta aba: cada sincronização/adoção bem-sucedida acrescenta exatamente 1 linha (um registro do próprio evento de sync), preservando linhas anteriores gravadas direto na planilha. O array local, por outro lado, acumula um log de ações da interface (edições, logins etc.) na sessão do navegador. São dois propósitos DIFERENTES por construção — local = log de ações da UI, remoto = trilha de eventos de sincronização — por isso os números não deveriam mesmo ser iguais. <b>Se a intenção for preservar TODAS as entradas locais no Google (não só 1 marcador por sync), isso exige uma estratégia diferente (histórico incremental, enviando as entradas novas a cada sync) — não está implementado hoje; é uma decisão de produto, não um bug.</b>'
       : 'Coleção normal — depois de uma promoção bem-sucedida, local e oficial deveriam ter exatamente os mesmos IDs e a mesma contagem.'}</p>
     <p class="note" style="margin-top:10px;font-weight:bold;font-size:15px">${esc(veredito)}</p>`;
 }
@@ -2707,7 +2752,7 @@ async function executarAdocaoPlanilhaExistente(){
     // narrativa abaixo é aproximada (o Apps Script processa tudo numa única chamada síncrona, sem
     // canal de progresso em tempo real) — a tabela de etapas reais (✅/❌) do modal final é quem
     // efetivamente comprova o que aconteceu.
-    setSyncCfg({adocaoEtapaTexto:'1 alteração local aguardando sincronização'});
+    setSyncCfg({adocaoEtapaTexto:'Base local aguardando confirmação no Google'});
     if(statusEl) statusEl.innerHTML = 'Preparando a planilha — isso pode levar alguns segundos. Não feche esta aba.';
     registrarLogSync({acao:'adocao_iniciada', origem:'local', destino:'google', resultado:'em_andamento', operationId});
     let idxNarrativa=0;
@@ -2736,13 +2781,8 @@ async function executarAdocaoPlanilhaExistente(){
       if(data.sha256 && shaLocal !== data.sha256){
         registrarLogSync({acao:'adocao_divergencia_sha_local', resultado:'aviso', erro:'local='+shaLocal+' servidor='+data.sha256, operationId});
       }
-      setBaseRevisionAtual();
-      const checksumAtual = checksumColecoes(db);
-      // Só AQUI — depois de backup+staging+contagens+SHA-256 confirmados pelo servidor — dirty vira
-      // false e a fila passa de 1 para 0. setSyncCfg já dispara a atualização reativa da tela
-      // (rodapé + renderSistema, se a view "sistema" estiver aberta), sem precisar de F5.
-      setSyncCfg({dirty:false, lastSync:new Date().toLocaleTimeString('pt-BR'), lastChecksumEnviado:checksumAtual, estadoPlanilha:'REMOTO_COM_META', adocaoEtapaTexto:null, adocaoUltimoErro:null});
-      registrarLogSync({acao:'adocao_concluida', resultado:'ok', checksumNovo:checksumAtual, revisaoNova:db._revision||0, operationId});
+      confirmarSincronizacaoConcluida({estadoPlanilha:'REMOTO_COM_META'});
+      registrarLogSync({acao:'adocao_concluida', resultado:'ok', checksumNovo:checksumColecoes(db), revisaoNova:db._revision||0, operationId});
       exibirResultadoAdocao(true, null, data.logs, data);
     }catch(e){
       clearInterval(timerNarrativa);
@@ -2881,10 +2921,10 @@ async function acionarBackupGoogle(){
 }
 
 // ---- FASE 6: NOVO PAINEL DE SINCRONIZAÇÃO/CONFLITO (substitui o antigo, sem botões destrutivos "cegos") ----
-async function abrirPainelConflitoSync(erroServidor){
+async function abrirPainelConflitoSync(erroServidor, modo){
   syncConflictNoticeVisible=false;
-  openModal('<h2>Diagnóstico de Sincronização</h2><p class="note">Avaliando bases local e Google, sem alterar nada...</p>');
-  const diag = await avaliarEstadoSincronizacao();
+  openModal('<h2>Diagnóstico de Sincronização</h2><p class="note">'+(modo==='completo'?'Executando diagnóstico completo (lendo todas as coleções e comparando registro a registro se necessário — pode levar mais tempo)...':'Verificando sincronização (rápido — só metadados)...')+'</p>');
+  const diag = await avaliarEstadoSincronizacao(modo);
   window._ultimoDiagSync = diag;
   // Cache do estado granular (REMOTO_LEGADO_SEM_META etc.) em syncCfg — é o que renderSistema()
   // usa (síncrono, sem rede) para decidir se mostra "Preparar planilha para sincronização" e se pausa o
@@ -2892,6 +2932,9 @@ async function abrirPainelConflitoSync(erroServidor){
   setSyncCfg({estadoPlanilha: diag.estado || null});
   renderPainelSincronizacao(diag, erroServidor);
 }
+// Item 8 do pedido: "Executar diagnóstico completo" — só roda quando pedido explicitamente. Lê
+// todas as coleções e, se o hash global divergir, localiza a divergência exata (item 4).
+function executarDiagnosticoCompleto(){ abrirPainelConflitoSync(undefined, 'completo'); }
 function renderPainelSincronizacao(diag, erroServidor){
   const ml=diag.metaLocal||{};
   // BUGFIX: antes, "googleConsultado" era inferido só de `!!diag.metaGoogle` — o que confundia dois
@@ -3064,12 +3107,30 @@ function renderPainelSincronizacao(diag, erroServidor){
       <button class="btn secondary" onclick="closeModal()">Fechar</button>
       ` : `
       <button class="btn secondary" onclick="closeModal()">Cancelar</button>
-      <button class="btn secondary" onclick="abrirPainelConflitoSync()">Comparar bases</button>
+      <button class="btn secondary" onclick="abrirPainelConflitoSync()">Verificar sincronização</button>
+      <button class="btn secondary" onclick="executarDiagnosticoCompleto()">Executar diagnóstico completo</button>
       <button class="btn secondary" onclick="exportarBaseLocalJson()">Exportar base local</button>
       <button class="btn secondary" onclick="exportarBaseGoogleJson()">Exportar base Google</button>
       <button class="btn secondary" onclick="abrirMesclagemAssistida()">Mesclar assistido</button>
       `}
     </div>
+    ${(function(){
+      // Item 1/4/8: resultado do diagnóstico completo, quando pedido — DIVERGENCAS_CONTEUDO_
+      // SINCRONIZACAO por coleção/ID/campo/valor/tipo, não só "hash diferente".
+      if(diag.modoRapido !== false) return '';
+      if(diag.comparacaoErro) return `<p class="note" style="margin-top:10px;color:#b00020">Diagnóstico completo falhou: ${esc(diag.comparacaoErro)}</p>`;
+      const comp = diag.comparacaoCompleta;
+      if(!comp) return '';
+      if(comp.identicos) return `<div class="msg ok" style="margin-top:10px">Diagnóstico completo: bases idênticas (hash global local e oficial coincidem, ${esc(String(comp.duracaoMs))} ms).</div>`;
+      const divs = comp.divergencias || [];
+      const linhasDiv = divs.slice(0,50).map(d=>`<tr><td>${esc(d.colecao)}</td><td>${esc(String(d.id))}</td><td>${esc(d.campo)}</td><td>${esc(JSON.stringify(d.valorLocal))} <span class="compactHelp">(${esc(d.tipoLocal)})</span></td><td>${esc(JSON.stringify(d.valorGravado))} <span class="compactHelp">(${esc(d.tipoGravado)})</span></td></tr>`).join('');
+      return `<div style="margin-top:10px">
+        <h3>Divergências de conteúdo encontradas (DIVERGENCAS_CONTEUDO_SINCRONIZACAO)</h3>
+        <p class="compactHelp">Coleções comparadas: ${comp.colecoesComparadas} · Coleções divergentes: ${esc((comp.colecoesDivergentes||[]).join(', ')||'nenhuma')} · ${divs.length} divergência(s) de campo · ${comp.duracaoMs} ms</p>
+        <table class="tbl"><thead><tr><th>Coleção</th><th>ID</th><th>Campo</th><th>Valor local</th><th>Valor gravado</th></tr></thead><tbody>${linhasDiv||'<tr><td colspan=5>Nenhuma.</td></tr>'}</tbody></table>
+        ${divs.length>50?`<p class="compactHelp">Mostrando as primeiras 50 de ${divs.length}.</p>`:''}
+      </div>`;
+    })()}
     <details style="margin-top:14px"><summary style="cursor:pointer;color:#666">Ferramentas de recuperação (ações avançadas)</summary>
       <p class="compactHelp" style="margin:8px 0">
         <b>Snapshot local:</b> cópia da base atual guardada no navegador (localStorage), só volta para a memória deste navegador — não toca no Google.<br>
@@ -3284,22 +3345,49 @@ function abrirDiagnosticoSincronizacao(){ abrirPainelConflitoSync(); }
 // ---- fim do bloco de rearquitetura de sincronização ---------------------------------------
 
 async function sha256Hex(text){const enc=new TextEncoder().encode(String(text||'')); const buf=await crypto.subtle.digest('SHA-256',enc); return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('')}
-// Serialização canônica (chaves ordenadas, recursiva) — espelha canonicalizeForHash_ no Code.gs,
-// para que o SHA-256 calculado no navegador e no Apps Script sejam comparáveis bit-a-bit.
-function canonicalizarParaHash(obj){
-  if(Array.isArray(obj)) return '['+obj.map(canonicalizarParaHash).join(',')+']';
-  if(obj && typeof obj==='object'){
-    const chaves=Object.keys(obj).sort();
-    return '{'+chaves.map(k=>JSON.stringify(k)+':'+canonicalizarParaHash(obj[k])).join(',')+'}';
+// ── SERIALIZAÇÃO CANÔNICA ÚNICA (item 3) — porta idêntica de canonicalizeForSync_ no Code.gs.
+// Qualquer mudança aqui precisa ser replicada lá também, ou o SHA-256 deixa de ser comparável.
+// Ver comentário completo (o que normaliza e o que deliberadamente NÃO normaliza) em Code.gs.
+function canonicalizeForSync(value){
+  if(value===undefined||value===null) return null;
+  if(typeof value==='boolean') return value;
+  if(typeof value==='number') return value;
+  if(Object.prototype.toString.call(value)==='[object Date]'){
+    try{ return value.toISOString(); }catch(e){ return String(value); }
   }
-  return JSON.stringify(obj===undefined?null:obj);
+  if(typeof value==='string'){
+    if(value==='TRUE') return true;
+    if(value==='FALSE') return false;
+    if(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z?$/.test(value)){
+      const d=new Date(value);
+      if(!isNaN(d.getTime())) return d.toISOString();
+    }
+    return value;
+  }
+  if(Array.isArray(value)) return value.map(canonicalizeForSync);
+  if(typeof value==='object'){
+    const chaves=Object.keys(value).sort();
+    const out={};
+    chaves.forEach(k=>{ out[k]=canonicalizeForSync(value[k]); });
+    return out;
+  }
+  return value;
+}
+// Alias mantido por compatibilidade — código antigo que ainda chame canonicalizarParaHash continua
+// funcionando, agora usando a MESMA normalização type-aware (não só ordenação de chaves).
+function canonicalizarParaHash(obj){ return JSON.stringify(canonicalizeForSync(obj)); }
+function prepararColecaoOrdenada(arr){
+  const lista=(Array.isArray(arr)?arr.slice():[]);
+  const todasComId=lista.every(o=>o&&o.id!=null);
+  if(todasComId) lista.sort((a,b)=> String(a.id)<String(b.id)?-1:(String(a.id)>String(b.id)?1:0));
+  return lista;
 }
 async function sha256Canonico(dbObj){
-  // BUGFIX: mesma lista (sem 'historico') usada em sha256Canonico_ no Code.gs — precisa ser
-  // idêntica dos dois lados para o hash ser comparável.
+  // Mesma lista COLECOES_SHA_FUNCIONAL do Code.gs (sem 'historico'/append-only) e mesma ordenação
+  // por ID antes de serializar — precisa ser idêntica dos dois lados para o hash ser comparável.
   const colecoes=['falhas','planos','testes','equipamentos','flms','locais','paineis','lacos','portas','plantas','cftv','acessoPontos','ambienteEquip'];
-  const alvo={}; colecoes.forEach(k=>{ alvo[k]=Array.isArray(dbObj&&dbObj[k])?dbObj[k]:[]; });
-  return await sha256Hex(canonicalizarParaHash(alvo));
+  const alvo={}; colecoes.forEach(k=>{ alvo[k]=prepararColecaoOrdenada(dbObj&&dbObj[k]); });
+  return await sha256Hex(JSON.stringify(canonicalizeForSync(alvo)));
 }
 function looksHashed(s){return /^[a-f0-9]{64}$/i.test(String(s||''))}
 async function senhaConfere(senhaDigitada,senhaArmazenada){
@@ -7142,7 +7230,7 @@ function renderSistema(){
  el.innerHTML=`
  <div class="premiumPanel" style="${manut?'border:2px solid #b58900':''}">
    <div class="systemHeaderSlim"><div class="titleBlock"><h3>Modo Manutenção de Sincronização</h3><p>${manut?'🛑 ATIVO — nenhuma sincronização (push ou pull) com o Google é executada, automática ou manual. Botões de sincronizar/carregar abaixo estão desabilitados.':'Desativado — a sincronização volta a funcionar normalmente conforme configurado abaixo.'}</p></div></div>
-   <div class="premiumActions"><button class="btn ${manut?'danger':'secondary'}" onclick="toggleSyncMaintenanceMode()">${manut?'Desativar Modo Manutenção':'Ativar Modo Manutenção'}</button><button class="btn secondary" onclick="abrirPainelConflitoSync()">Abrir Diagnóstico de Sincronização</button></div>
+   <div class="premiumActions"><button class="btn ${manut?'danger':'secondary'}" onclick="toggleSyncMaintenanceMode()">${manut?'Desativar Modo Manutenção':'Ativar Modo Manutenção'}</button><button class="btn secondary" onclick="abrirPainelConflitoSync()">Verificar sincronização</button></div>
    <div id="syncSessaoInfo" class="compactHelp" style="margin-top:10px">Sessão: ${esc(getClientInstanceId().slice(0,10))}</div>
  </div>
  ${precisaAdocao?`<div class="premiumPanel" style="border:2px solid #b58900;background:#fff8e6">
@@ -7153,7 +7241,7 @@ function renderSistema(){
  </div>`:''}
  <div class="premiumPanel">
    <div class="systemHeaderSlim"><div class="titleBlock"><h3>Banco Google</h3><p>Sincronização da base SDAI com Google Sheets.</p></div>${premiumBadgeStatus()}</div>
-   <div class="premiumGrid">${premiumStat('Última sync',c.lastSync||'—')}<div class="stat" style="cursor:pointer" onclick="verAlteracoesPendentes()" title="Clique para ver o motivo, a coleção e o registro envolvidos">${premiumStat('Alteração local',c.dirty?(c.adocaoEtapaTexto?'1 — '+c.adocaoEtapaTexto:'1 pendente'):'0 — tudo sincronizado')}</div>${premiumStat('Autosync configurado',c.auto?'Sim':'Não')}${premiumStat('Status operacional',legado?'Pausado — aguardando preparação da planilha':(manut?'Pausado — Modo Manutenção':(c.auto?'Ligado — sincronização ativa':'Desligado')))}</div>
+   <div class="premiumGrid">${premiumStat('Última sync',c.lastSync||'—')}<div class="stat" style="cursor:pointer" onclick="verAlteracoesPendentes()" title="Clique para ver o motivo, a coleção e o registro envolvidos">${premiumStat('Base local',c.dirty?(c.adocaoEtapaTexto||'Alterações ainda não confirmadas no Google'):'Sincronizada com o Google')}</div>${premiumStat('Autosync configurado',c.auto?'Sim':'Não')}${premiumStat('Status operacional',legado?'Pausado — aguardando preparação da planilha':(manut?'Pausado — Modo Manutenção':(c.auto?'Ligado — sincronização ativa':'Desligado')))}</div>
    ${precisaAdocao ? `<div class="compactHelp" style="margin-top:6px">"Inicializar", "Sincronizar" e "Carregar base" ficam ocultos enquanto a planilha não for preparada — use o botão acima.</div>
    <div class="premiumActions" style="margin-top:10px">${c.sheetUrl?`<button class="btn secondary" onclick="window.open('${esc(c.sheetUrl)}','_blank')">Abrir planilha</button>`:''}</div>`
    : `<div class="premiumActions">
