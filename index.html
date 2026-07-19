@@ -2859,6 +2859,34 @@ async function executarAdocaoPlanilhaExistente(){
     const operationId = 'op_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,10);
     const sessionId = getClientInstanceId();
     const statusEl = document.getElementById('adocaoStatusBody');
+
+    // ROTEAMENTO INTELIGENTE (pedido mais recente, itens 1/2/3): antes de reprocessar as ~20 abas
+    // do zero, verifica o que JÁ está gravado e validado na planilha (de uma tentativa anterior).
+    // Se a ÚNICA coleção funcional ainda divergente for "falhas", delega para o reparo dedicado
+    // (repararSincronizacaoFalhas_) — que só grava/relê Falhas e reaproveita o snapshot recente —
+    // em vez de reprocessar tudo de novo. Essa checagem em si é só LEITURA (compararConteudoSincronizacao
+    // não grava nada), então é seguro rodar sempre antes de decidir.
+    if(statusEl) statusEl.innerHTML = 'Verificando o que já está gravado e validado, para não reprocessar sem necessidade...';
+    let apenasFalhasDivergem = false;
+    try{
+      const respCheck = await apiPost('compararConteudoSincronizacao', {db});
+      const chk = respCheck && respCheck.data;
+      if(chk && chk.ok && !chk.identicos){
+        const outras = (chk.colecoesDivergentes||[]).filter(c=>c!=='falhas');
+        if((chk.colecoesDivergentes||[]).indexOf('falhas')>-1 && outras.length===0) apenasFalhasDivergem = true;
+      }
+      registrarLogSync({acao:'roteamento_adocao', resultado:'ok', erro: apenasFalhasDivergem ? 'somente Falhas diverge — delegando para reparo dedicado' : 'divergência mais ampla ou planilha nova — fluxo completo necessário', operationId});
+    }catch(e){
+      // Falha na checagem de roteamento não impede a adoção — só significa que não conseguimos
+      // decidir com segurança, então segue pelo fluxo completo (comportamento anterior).
+      registrarLogSync({acao:'roteamento_adocao', resultado:'aviso', erro:'checagem de roteamento falhou: '+e.message, operationId});
+    }
+    if(apenasFalhasDivergem){
+      if(statusEl) statusEl.innerHTML = 'Somente a coleção Falhas precisa ser regravada — as demais já estão validadas. Reparando só Falhas...';
+      window._adocaoEmAndamento = false; // repararSincronizacaoFalhasEConcluir() controla sua própria flag
+      return await repararSincronizacaoFalhasEConcluir();
+    }
+
     const etapasNarrativa = ['Lendo a planilha atual','Criando backup integral','Validando o backup','Preparando dados em área temporária','Validando quantidades e integridade','Atualizando a planilha oficial','Confirmando a sincronização'];
     // Item 5/16: texto simples, sem termos técnicos, no indicador de pendência do rodapé. A
     // narrativa abaixo é aproximada (o Apps Script processa tudo numa única chamada síncrona, sem
@@ -3491,9 +3519,9 @@ function abrirDiagnosticoSincronizacao(){ abrirPainelConflitoSync(); }
 async function sha256Hex(text){const enc=new TextEncoder().encode(String(text||'')); const buf=await crypto.subtle.digest('SHA-256',enc); return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('')}
 // ── SERIALIZAÇÃO CANÔNICA ÚNICA (item 3) — porta idêntica de canonicalizeForSync_ no Code.gs.
 // Qualquer mudança aqui precisa ser replicada lá também, ou o SHA-256 deixa de ser comparável.
-// Ver comentário completo (o que normaliza e o que deliberadamente NÃO normaliza) em Code.gs.
+// Ver comentário completo em Code.gs — inclui a política de null/undefined/'' equivalentes.
 function canonicalizeForSync(value){
-  if(value===undefined||value===null) return null;
+  if(value===undefined||value===null||value==='') return null;
   if(typeof value==='boolean') return value;
   if(typeof value==='number') return value;
   if(Object.prototype.toString.call(value)==='[object Date]'){
