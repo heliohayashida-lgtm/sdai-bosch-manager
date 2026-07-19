@@ -1825,7 +1825,16 @@ function checksumColecoes(d){
   // coleções em array que hoje ficam fora da conferência pós-sync (antes só falhas/planos/testes/
   // equipamentos/flms/locais eram cobertos — uma sobrescrita silenciosa em, por exemplo, painéis ou
   // histórico não era detectada). O algoritmo de hash em si não foi alterado, só a lista de chaves.
-  const colecoes=['falhas','planos','testes','equipamentos','flms','locais','paineis','lacos','portas','historico','plantas','cftv','acessoPontos','ambienteEquip'];
+  // BUGFIX (falso-positivo estrutural em "Alterações pendentes"/checksum divergente): 'historico'
+  // foi removido desta lista. Ele é append-only por design (cada sync/adoção bem-sucedida só
+  // ACRESCENTA 1 linha no servidor, preservando linhas legadas/de outras sessões que nunca
+  // existiram no array local db.historico) — comparar seu conteúdo local contra o que volta do
+  // Google NUNCA deveria bater, mesmo com tudo funcionando perfeitamente. Incluí-lo aqui fazia o
+  // checksum pós-sync (verificarSyncSalvou) e o guard de no-op divergirem sistematicamente sempre
+  // que db.historico local tivesse qualquer entrada que o servidor não tivesse ecoado de volta —
+  // uma causa estrutural adicional (além da coerção de datas já corrigida em Code.gs) para a fila
+  // ficar presa em "1" indefinidamente.
+  const colecoes=['falhas','planos','testes','equipamentos','flms','locais','paineis','lacos','portas','plantas','cftv','acessoPontos','ambienteEquip'];
   let h=0;
   colecoes.forEach(k=>{
     const arr=d[k]||[];
@@ -2484,9 +2493,10 @@ async function diagnosticarFilaPendente(){
   try{ r = await jsonpDbAtual(); }catch(e){ return {ok:false, motivo:'Falha ao consultar o Google Sheets: '+e.message}; }
   if(!r || !r.ok || !r.db) return {ok:false, motivo:'Resposta inválida do Google ao consultar a base ('+(r&&r.error?r.error:'sem detalhe')+').'};
   const dbGoogle = r.db;
-  // Mesmas coleções cobertas por checksumColecoes() — mantém os dois diagnósticos (agregado e por
-  // registro) consistentes entre si.
-  const colecoes=['falhas','planos','testes','equipamentos','flms','locais','paineis','lacos','portas','historico','plantas','cftv','acessoPontos','ambienteEquip'];
+  // BUGFIX: 'historico' removido — é append-only (ver checksumColecoes/COLECOES_APPEND_ONLY em
+  // Code.gs), então comparar registro a registro contra o Google sempre mostraria uma enxurrada de
+  // falsos "insert"/"delete" sem relação com problema real de sincronização.
+  const colecoes=['falhas','planos','testes','equipamentos','flms','locais','paineis','lacos','portas','plantas','cftv','acessoPontos','ambienteEquip'];
   const achados=[];
   colecoes.forEach(col=>{
     const locais = Array.isArray(db[col]) ? db[col] : [];
@@ -2579,9 +2589,65 @@ async function reconciliarFilaPendente(){
   alert('Fila reconciliada: local e Google conferem registro a registro. "Alterações pendentes" foi zerado.');
 }
 
-// ---- ADOÇÃO DE PLANILHA EXISTENTE (frontend) --------------------------------------------
+// ---- DIAGNÓSTICO DETALHADO DE UMA COLEÇÃO (divergência de contagem pós-adoção/sync) --------
+async function diagnosticarColecaoRemota(cid, colecao){
+  if(!cid) return {ok:false, error:'clienteId obrigatório'};
+  try{ return await jsonp('diagnosticarColecao',{clienteId:cid, colecao:colecao}); }
+  catch(e){ return {ok:false, error:'Falha ao consultar a coleção (somente leitura): '+e.message}; }
+}
+function inspecionarColecaoLocal(colecao){
+  const arr = Array.isArray(db[colecao]) ? db[colecao] : [];
+  const ids=[]; let idsVazios=0;
+  arr.forEach(function(o){ const idVal=String((o&&o.id)||'').trim(); if(!idVal) idsVazios++; else ids.push(idVal); });
+  const contagemPorId={}; ids.forEach(function(i){contagemPorId[i]=(contagemPorId[i]||0)+1;});
+  const idsDuplicados=Object.keys(contagemPorId).filter(function(i){return contagemPorId[i]>1;});
+  return {total:arr.length, ids:ids, idsVazios:idsVazios, idsDuplicados:idsDuplicados};
+}
+// Botão "Ver detalhes da divergência" — mostra os números exatos (esperado/staging/oficial/
+// snapshot/diferença), IDs só-local/só-oficial/duplicados/vazios, e emite o veredito literal
+// pedido. Não escreve nada; não repete a adoção; não restaura snapshot sozinho.
+async function verDetalhesDivergencia(colecao){
+  const cid=(typeof clienteAtivo==='function')?clienteAtivo():'';
+  openModalWide(`<h2>Detalhes da divergência — ${esc(colecao)}</h2><div id="divergenciaBody">Consultando a planilha (somente leitura)…</div><div class="premiumActions" style="margin-top:10px"><button class="btn secondary" onclick="closeModal()">Fechar</button></div>`);
+  const local = inspecionarColecaoLocal(colecao);
+  const remoto = await diagnosticarColecaoRemota(cid, colecao);
+  const body = document.getElementById('divergenciaBody'); if(!body) return;
+  if(!remoto.ok){ body.innerHTML=`<div class="msg err">${esc(remoto.error)}</div>`; return; }
+  const of = remoto.oficial||{};
+  const idsOficial = of.ids||[];
+  const idsSoLocal = local.ids.filter(function(i){ return idsOficial.indexOf(i)===-1; });
+  const idsSoOficial = idsOficial.filter(function(i){ return local.ids.indexOf(i)===-1; });
+  const diferenca = (of.registrosValidos||0) - local.total;
+  const semAnomaliaEstrutural = !of.idsDuplicados || !of.idsDuplicados.length ? true : false;
+  const veredito = remoto.appendOnly
+    ? 'ADOÇÃO PODE SER REPETIDA COM SEGURANÇA — esta coleção é append-only por design (auditoria/histórico): a diferença de contagem é esperada e NÃO indica perda de dados.'
+    : (idsSoLocal.length===0 && idsSoOficial.length===0 && semAnomaliaEstrutural && !of.cabecalhoDuplicadoComoLinha
+        ? 'ADOÇÃO PODE SER REPETIDA COM SEGURANÇA'
+        : 'ADOÇÃO BLOQUEADA — ROLLBACK NECESSÁRIO');
+  body.innerHTML = `
+    <table class="tbl"><tbody>
+      <tr><td>Esperado (base local)</td><td>${local.total}</td></tr>
+      <tr><td>Staging${remoto.stagingExiste?'':' (não aplicável — esta coleção não passa por staging)'}</td><td>${remoto.staging?remoto.staging.registrosValidos:'—'}</td></tr>
+      <tr><td>Oficial — linhas físicas (getLastRow()-1)</td><td>${of.linhasFisicas!=null?of.linhasFisicas:'—'}</td></tr>
+      <tr><td>Oficial — registros válidos (sem vazias/cabeçalho duplicado)</td><td>${of.registrosValidos!=null?of.registrosValidos:'—'}</td></tr>
+      <tr><td><b>Diferença (oficial válido − local)</b></td><td><b>${diferenca}</b></td></tr>
+      <tr><td>Snapshot — registros válidos</td><td>${remoto.snapshot&&remoto.snapshot.registrosValidos!=null?remoto.snapshot.registrosValidos:(remoto.snapshotErro?('erro: '+esc(remoto.snapshotErro)):'—')}</td></tr>
+      <tr><td>IDs vazios (oficial)</td><td>${of.idsVazios!=null?of.idsVazios:'—'}</td></tr>
+      <tr><td>IDs duplicados (oficial)</td><td>${of.idsDuplicados&&of.idsDuplicados.length?esc(of.idsDuplicados.join(', ')):'nenhum'}</td></tr>
+      <tr><td>Cabeçalho duplicado gravado como linha (oficial)</td><td>${of.cabecalhoDuplicadoComoLinha?'⚠ SIM':'não'}</td></tr>
+      <tr><td>IDs só no local (${idsSoLocal.length})</td><td style="max-width:320px;word-break:break-all">${idsSoLocal.slice(0,20).map(esc).join(', ')||'—'}${idsSoLocal.length>20?' …':''}</td></tr>
+      <tr><td>IDs só no oficial (${idsSoOficial.length})</td><td style="max-width:320px;word-break:break-all">${idsSoOficial.slice(0,20).map(esc).join(', ')||'—'}${idsSoOficial.length>20?' …':''}</td></tr>
+    </tbody></table>
+    <p class="note" style="margin-top:10px">${remoto.appendOnly
+      ? '<b>Coleção append-only</b> — nunca passa por staging/sobrescrita completa; cada sincronização/adoção bem-sucedida só acrescenta 1 linha nova no servidor (registro do próprio evento de sync), preservando todo o histórico anterior já gravado direto na planilha (inclusive linhas legadas que nunca estiveram no array local). Por isso a contagem local e a oficial não deveriam mesmo bater.'
+      : 'Coleção normal — depois de uma promoção bem-sucedida, local e oficial deveriam ter exatamente os mesmos IDs e a mesma contagem.'}</p>
+    <p class="note" style="margin-top:10px;font-weight:bold;font-size:15px">${esc(veredito)}</p>`;
+}
+
+
 // Abre o resumo de confirmação — nunca executa a adoção sozinha, sempre espera um clique
 // explícito em "Confirmar adoção" dentro deste modal.
+// ---- ADOÇÃO DE PLANILHA EXISTENTE (frontend) --------------------------------------------
 function abrirConfirmacaoAdocaoPlanilha(){
   const diag = window._ultimoDiagSync;
   if(!diag || diag.estado!=='REMOTO_LEGADO_SEM_META'){
@@ -2669,13 +2735,22 @@ async function executarAdocaoPlanilhaExistente(){
 
 function exibirResultadoAdocao(ok, erro, logsServidor, data){
   const linhasLog = (logsServidor||[]).map(l=>`<tr><td>${esc(l.passo)}</td><td>${l.ok?'✅':'❌'}</td><td>${esc(l.detalhe||'')}</td></tr>`).join('');
+  // Erro estruturado de divergência de contagem (item 10 do pedido): mostra por coleção
+  // esperado/gravado/diferença, com um botão "Ver detalhes da divergência" por coleção — em vez
+  // de só o nome da coleção dentro de uma frase genérica.
+  const divergencias = (data && data.divergenciasDetalhe) || [];
+  const blocoDivergencias = divergencias.length ? `
+    <table class="tbl" style="margin-top:10px"><thead><tr><th>Coleção</th><th>Esperado</th><th>Gravado</th><th>Diferença</th><th></th></tr></thead><tbody>
+      ${divergencias.map(d=>`<tr><td>${esc(d.colecao)}</td><td>${d.esperado}</td><td>${d.gravado}</td><td>${d.diferenca}</td><td><button class="btn secondary" onclick="verDetalhesDivergencia('${esc(d.colecao)}')">Ver detalhes da divergência</button></td></tr>`).join('')}
+    </tbody></table>` : '';
   const corpo = ok
     ? `<div class="msg ok">Adoção concluída com sucesso — fila local reconciliada (dirty=false).</div>
        <p class="compactHelp">SHA-256: ${esc((data&&data.sha256)||'')} · Backup do estado anterior: ${data&&data.backupUrl?`<a href="${esc(data.backupUrl)}" target="_blank">abrir planilha de backup</a>`:'—'}</p>`
     : `<div class="msg err">Adoção NÃO concluída: ${esc(erro||'')}</div>
-       <p class="compactHelp">A fila local permanece pendente e nada na base local foi alterado. Veja abaixo exatamente em qual etapa parou.${data&&data.backupUrl?(' Snapshot de segurança já criado: <a href="'+esc(data.backupUrl)+'" target="_blank">abrir</a>.'):''}</p>`;
+       <p class="compactHelp">A fila local permanece pendente e nada na base local foi alterado. Veja abaixo exatamente em qual etapa parou.${data&&data.backupUrl?(' Snapshot de segurança já criado: <a href="'+esc(data.backupUrl)+'" target="_blank">abrir</a>.'):''}</p>
+       ${blocoDivergencias}`;
   openModal(`<h2>${ok?'Planilha adotada':'Falha na adoção'}</h2>${corpo}
-    <table class="tbl"><thead><tr><th>Etapa</th><th>OK</th><th>Detalhe</th></tr></thead><tbody>${linhasLog||'<tr><td colspan=3>Sem logs retornados pelo servidor.</td></tr>'}</tbody></table>
+    <table class="tbl" style="margin-top:10px"><thead><tr><th>Etapa</th><th>OK</th><th>Detalhe</th></tr></thead><tbody>${linhasLog||'<tr><td colspan=3>Sem logs retornados pelo servidor.</td></tr>'}</tbody></table>
     <div class="premiumActions" style="margin-top:10px">
       ${ok?'':'<button class="btn secondary" onclick="abrirPainelConflitoSync()">Ver diagnóstico</button>'}
       <button class="btn secondary" onclick="closeModal()">Fechar</button>
@@ -3157,7 +3232,9 @@ function canonicalizarParaHash(obj){
   return JSON.stringify(obj===undefined?null:obj);
 }
 async function sha256Canonico(dbObj){
-  const colecoes=['falhas','planos','testes','equipamentos','flms','locais','paineis','lacos','portas','historico','plantas','cftv','acessoPontos','ambienteEquip'];
+  // BUGFIX: mesma lista (sem 'historico') usada em sha256Canonico_ no Code.gs — precisa ser
+  // idêntica dos dois lados para o hash ser comparável.
+  const colecoes=['falhas','planos','testes','equipamentos','flms','locais','paineis','lacos','portas','plantas','cftv','acessoPontos','ambienteEquip'];
   const alvo={}; colecoes.forEach(k=>{ alvo[k]=Array.isArray(dbObj&&dbObj[k])?dbObj[k]:[]; });
   return await sha256Hex(canonicalizarParaHash(alvo));
 }
