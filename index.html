@@ -2692,6 +2692,43 @@ async function verDetalhesDivergencia(colecao){
 
 // Abre o resumo de confirmação — nunca executa a adoção sozinha, sempre espera um clique
 // explícito em "Confirmar adoção" dentro deste modal.
+// ── REPARO EMERGENCIAL: SOMENTE FALHAS ------------------------------------------------------
+// Não repete a adoção completa — grava e valida só a aba Falhas, e reaproveita as demais
+// coleções já gravadas em tentativas anteriores para fechar a sincronização.
+async function repararSincronizacaoFalhasEConcluir(){
+  if(window._adocaoEmAndamento){ alert('Uma operação já está em andamento. Aguarde a conclusão.'); return; }
+  window._adocaoEmAndamento = true;
+  try{
+    if(typeof syncMaintenanceMode==='function' && syncMaintenanceMode()){ alert('Desative o Modo Manutenção antes de continuar.'); return; }
+    const cid=(typeof clienteAtivo==='function')?clienteAtivo():'';
+    if(!cid){ alert('Nenhum cliente ativo selecionado.'); return; }
+    montarMetaAtual();
+    if(!db._meta || !db._meta.databaseId){ alert('Base local sem identificador válido — recarregue a página e tente de novo.'); return; }
+    setSyncCfg({adocaoEtapaTexto:'Reparando a coleção Falhas ('+(db.falhas||[]).length+' registro(s))...'});
+    registrarLogSync({acao:'reparo_falhas_iniciado', resultado:'em_andamento'});
+    try{
+      const resp = await apiPost('repararSincronizacaoFalhas', {db});
+      const data = resp && resp.data;
+      if(!data || !data.ok){
+        const erro = (data&&data.error) || 'Resposta inválida do servidor — verifique se o Code.gs foi reimplantado com esta versão.';
+        registrarLogSync({acao:'reparo_falhas_falhou', resultado:'erro', erro});
+        setSyncCfg({estadoPlanilha:'ADOCAO_FALHOU', adocaoUltimoErro:erro, adocaoEtapaTexto:null});
+        exibirResultadoAdocao(false, erro, data&&data.logs, data);
+        return;
+      }
+      confirmarSincronizacaoConcluida({estadoPlanilha:'REMOTO_COM_META'});
+      registrarLogSync({acao:'reparo_falhas_concluido', resultado:'ok', revisaoNova:db._revision||0});
+      exibirResultadoAdocao(true, null, data.logs, data);
+    }catch(e){
+      registrarLogSync({acao:'reparo_falhas_falhou', resultado:'erro', erro:e.message});
+      setSyncCfg({estadoPlanilha:'ADOCAO_FALHOU', adocaoUltimoErro:e.message, adocaoEtapaTexto:null});
+      exibirResultadoAdocao(false, 'Falha de rede/inesperada: '+e.message);
+    }
+  } finally {
+    window._adocaoEmAndamento = false;
+  }
+}
+
 // ---- ADOÇÃO DE PLANILHA EXISTENTE (frontend) --------------------------------------------
 function abrirConfirmacaoAdocaoPlanilha(){
   const diag = window._ultimoDiagSync;
@@ -2795,6 +2832,19 @@ async function executarAdocaoPlanilhaExistente(){
   }
 }
 
+// Item 10 do pedido: nomes amigáveis em vez de IDs crus na interface (IDs só em Detalhes técnicos).
+function descricaoAmigavelRegistro(colecao, idRegistro){
+  try{
+    if(colecao==='falhas'){
+      const f=(db.falhas||[]).find(x=>String(x.id)===String(idRegistro));
+      if(f) return 'Falha da loja '+(f.lojaNome||locName(f.localId)||'—')+' — sistema '+(f.sistema||'—')+' — '+(f.status||'—');
+    }
+    if(colecao==='locais'){ const l=(db.locais||[]).find(x=>String(x.id)===String(idRegistro)); if(l) return l.nome||l.nomeOficial||'—'; }
+    if(colecao==='equipamentos'){ const e=(db.equipamentos||[]).find(x=>String(x.id)===String(idRegistro)); if(e) return (e.tipo||'Equipamento')+' — endereço '+(e.endereco||'—'); }
+    if(colecao==='planos'){ const p=(db.planos||[]).find(x=>String(x.id)===String(idRegistro)); if(p) return 'Plano de Ação — '+(p.local||p.item||'—'); }
+  }catch(e){}
+  return null;
+}
 function exibirResultadoAdocao(ok, erro, logsServidor, data){
   const linhasLog = (logsServidor||[]).map(l=>`<tr><td>${esc(l.passo)}</td><td>${l.ok?'✅':'❌'}</td><td>${esc(l.detalhe||'')}</td></tr>`).join('');
   // Erro estruturado de divergência de contagem (item 10 do pedido): mostra por coleção
@@ -2805,14 +2855,33 @@ function exibirResultadoAdocao(ok, erro, logsServidor, data){
     <table class="tbl" style="margin-top:10px"><thead><tr><th>Coleção</th><th>Esperado</th><th>Gravado</th><th>Diferença</th><th></th></tr></thead><tbody>
       ${divergencias.map(d=>`<tr><td>${esc(d.colecao)}</td><td>${d.esperado}</td><td>${d.gravado}</td><td>${d.diferenca}</td><td><button class="btn secondary" onclick="verDetalhesDivergencia('${esc(d.colecao)}')">Ver detalhes da divergência</button></td></tr>`).join('')}
     </tbody></table>` : '';
+  // Item 1/10: DIVERGENCAS_CONTEUDO_SINCRONIZACAO — campo a campo, com nome amigável (não o ID cru)
+  // sempre que possível, e o ID disponível só em "Detalhes técnicos".
+  const divConteudo = (data && data.divergenciasConteudo) || [];
+  const blocoConteudo = divConteudo.length ? `
+    <h3 style="margin-top:12px">O que exatamente está diferente</h3>
+    <table class="tbl"><thead><tr><th>Registro</th><th>Campo</th><th>Valor local</th><th>Valor gravado</th></tr></thead><tbody>
+      ${divConteudo.slice(0,50).map(d=>{
+        const amigavel = descricaoAmigavelRegistro(d.colecao, d.id);
+        return `<tr><td>${esc(amigavel||(d.colecao+' — ID '+d.id))}</td><td>${esc(d.campo)}</td><td>${esc(JSON.stringify(d.valorLocal))} <span class="compactHelp">(${esc(d.tipoLocal)})</span></td><td>${esc(JSON.stringify(d.valorGravado))} <span class="compactHelp">(${esc(d.tipoGravado)})</span></td></tr>`;
+      }).join('')}
+    </tbody></table>
+    <details style="margin-top:6px"><summary style="cursor:pointer;color:#666">Detalhes técnicos (IDs)</summary>
+      <p class="compactHelp" style="margin-top:6px">${divConteudo.slice(0,50).map(d=>esc(d.colecao+':'+d.id)).join(', ')}</p>
+    </details>
+    ${divConteudo.length>50?`<p class="compactHelp">Mostrando as primeiras 50 de ${divConteudo.length}.</p>`:''}
+  ` : '';
   const corpo = ok
-    ? `<div class="msg ok">Adoção concluída com sucesso — fila local reconciliada (dirty=false).</div>
-       <p class="compactHelp">SHA-256: ${esc((data&&data.sha256)||'')} · Backup do estado anterior: ${data&&data.backupUrl?`<a href="${esc(data.backupUrl)}" target="_blank">abrir planilha de backup</a>`:'—'}</p>`
-    : `<div class="msg err">Adoção NÃO concluída: ${esc(erro||'')}</div>
+    ? `<div class="msg ok">Sincronização concluída com sucesso — fila local reconciliada (dirty=false).</div>
+       <p class="compactHelp">Código de integridade: ${esc((data&&data.sha256)||'')} · Backup do estado anterior: ${data&&data.backupUrl?`<a href="${esc(data.backupUrl)}" target="_blank">abrir planilha de backup</a>`:'—'}${data&&data.registrosFalhasGravados!=null?(' · Falhas gravadas: '+data.registrosFalhasGravados):''}</p>`
+    : `<div class="msg err">Sincronização não concluída — ver motivo: ${esc(erro||'')}</div>
        <p class="compactHelp">A fila local permanece pendente e nada na base local foi alterado. Veja abaixo exatamente em qual etapa parou.${data&&data.backupUrl?(' Snapshot de segurança já criado: <a href="'+esc(data.backupUrl)+'" target="_blank">abrir</a>.'):''}</p>
-       ${blocoDivergencias}`;
-  openModal(`<h2>${ok?'Planilha adotada':'Falha na adoção'}</h2>${corpo}
-    <table class="tbl" style="margin-top:10px"><thead><tr><th>Etapa</th><th>OK</th><th>Detalhe</th></tr></thead><tbody>${linhasLog||'<tr><td colspan=3>Sem logs retornados pelo servidor.</td></tr>'}</tbody></table>
+       ${blocoDivergencias}
+       ${blocoConteudo}`;
+  openModal(`<h2>${ok?'Tudo sincronizado':'Sincronização não concluída'}</h2>${corpo}
+    <details style="margin-top:10px"><summary style="cursor:pointer;color:#666">Detalhes técnicos (etapas)</summary>
+      <table class="tbl" style="margin-top:6px"><thead><tr><th>Etapa</th><th>OK</th><th>Detalhe</th></tr></thead><tbody>${linhasLog||'<tr><td colspan=3>Sem logs retornados pelo servidor.</td></tr>'}</tbody></table>
+    </details>
     <div class="premiumActions" style="margin-top:10px">
       ${ok?'':'<button class="btn secondary" onclick="abrirPainelConflitoSync()">Ver diagnóstico</button>'}
       <button class="btn secondary" onclick="closeModal()">Fechar</button>
@@ -7237,7 +7306,7 @@ function renderSistema(){
    <div class="systemHeaderSlim"><div class="titleBlock"><h3>⚠ ${adocaoFalhou?'A preparação da planilha não foi concluída':'Planilha existente aguardando configuração'}</h3><p>${adocaoFalhou
       ? ('A tentativa anterior não terminou — a alteração local continua pendente e nada foi descartado. '+(c.adocaoUltimoErro?('Motivo: '+esc(c.adocaoUltimoErro)):''))
       : 'Esta planilha Google já contém dados, mas ainda não foi preparada para o novo sistema de sincronização. A base local continuará preservada durante todo o processo.'}</p></div></div>
-   <div class="premiumActions"><button class="btn" onclick="abrirConfirmacaoAdocaoPlanilha()">${adocaoFalhou?'Tentar novamente':'Preparar planilha para sincronização'}</button>${c.sheetUrl?`<button class="btn secondary" onclick="window.open('${esc(c.sheetUrl)}','_blank')">Abrir planilha</button>`:''}</div>
+   <div class="premiumActions"><button class="btn" onclick="abrirConfirmacaoAdocaoPlanilha()">${adocaoFalhou?'Tentar novamente (todas as coleções)':'Preparar planilha para sincronização'}</button>${adocaoFalhou?'<button class="btn" style="background:#1a7a3a" onclick="repararSincronizacaoFalhasEConcluir()">Reparar sincronização de Falhas e concluir</button>':''}${c.sheetUrl?`<button class="btn secondary" onclick="window.open('${esc(c.sheetUrl)}','_blank')">Abrir planilha</button>`:''}</div>
  </div>`:''}
  <div class="premiumPanel">
    <div class="systemHeaderSlim"><div class="titleBlock"><h3>Banco Google</h3><p>Sincronização da base SDAI com Google Sheets.</p></div>${premiumBadgeStatus()}</div>
