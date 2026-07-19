@@ -4908,13 +4908,14 @@ function renderLocais(){
   // statusEfetivoLoja), então uma loja com falha em qualquer equipamento/módulo vinculado aparece
   // como falha aqui também, e não só no mapa. `status` (bruto, do cadastro) continua disponível em
   // r.status para quem precisar do valor original, sem quebrar nada que já lia esse campo.
-  let todos=db.locais.map(l=>({
+  const verExcluidas=!!filters.locaisVerExcluidas;
+  let todos=db.locais.filter(l=>verExcluidas?!!l.excluido:!l.excluido).map(l=>({
     ...l,
     painel:paiName(l.painelId),laco:lacName(l.lacoId),
     flmEndereco:flmById(l.flmId)?.endereco||'',
     portaNum:db.portas.find(p=>p.id===l.portaId)?.numero||'',
     sistema:l.sistema||'SDAI',
-    statusEfetivo:statusEfetivoLoja(l.id)
+    statusEfetivo:verExcluidas?'—':statusEfetivoLoja(l.id)
   }));
   // Item 3/9 do pedido "vínculo com Plantas/Mapa": garante o índice em memória atualizado (só
   // reconstrói se estiver marcado como sujo — ver garantirIndiceMapaAtualizado/save()).
@@ -5025,13 +5026,15 @@ function renderLocais(){
       <td>${dsBadgeHtml(r.statusEfetivo)}</td>
       <td>${mapaBadgeHtml}</td>
       <td>${ultimoTesteHtml(r.id)}</td>
-      <td><div class="dsIcoGroup">
+      <td>${verExcluidas
+        ? `<button class="dsIco" onclick="lucRestaurarLocal('${r.id}','')" title="Restaurar loja cadastrada">↩️ Restaurar</button>`
+        : `<div class="dsIcoGroup">
         <button class="dsIco" onclick="formTeste('${r.id}')" title="Executar teste">📋</button>
         ${acaoMapaHtml}
         <button class="dsIco" onclick="openLocal('${r.id}')" title="Histórico">🕒</button>
         <button class="dsIco" onclick="formLocal('${r.id}')" title="Editar">✏️</button>
         <button class="dsIco del" onclick="del('locais','${r.id}')" title="Excluir">🗑</button>
-      </div></td>
+      </div>`}</td>
     </tr>`;
   }).join('');
 
@@ -5060,7 +5063,7 @@ function renderLocais(){
       <div class="field"><label>Loja</label><select onchange="filters.locaisLoja=this.value;render()">${selectOpts(lojas,fLoja)}</select></div>
       <div class="field"><label>Responsável</label><select onchange="filters.locaisResp=this.value;render()">${selectOpts(responsaveis,fResp)}</select></div>
       <div class="field"><label>Situação no mapa</label><select onchange="filters.locaisMapa=this.value;render()"><option value="">Todas</option><option value="adicionadas" ${fMapa==='adicionadas'?'selected':''}>Adicionadas</option><option value="nao_adicionadas" ${fMapa==='nao_adicionadas'?'selected':''}>Não adicionadas</option><option value="duplicadas" ${fMapa==='duplicadas'?'selected':''}>Com marcador duplicado</option></select></div>
-      <div class="dsFilterActions"><button class="btn secondary small" onclick="limparFiltrosTela('locais')">Limpar filtros</button><button class="dsIco prim" onclick="formLocal()">+ Nova loja/área</button></div>
+      <div class="dsFilterActions"><button class="btn secondary small" onclick="limparFiltrosTela('locais')">Limpar filtros</button><button class="btn secondary small" onclick="filters.locaisVerExcluidas=!filters.locaisVerExcluidas;render()">${verExcluidas?'← Ver ativas':'🗑 Ver excluídas'}</button><button class="dsIco prim" onclick="formLocal()">+ Nova loja/área</button></div>
     </div>
     <div class="searchResultCount">${resultCountLabel(total,todos.length,semResultado)}</div>
     <div class="dsTableWrap">
@@ -7683,14 +7686,30 @@ function del(ent,i){
   // PERFIS v2: excluir plano/falha = Gestor+; excluir cadastro técnico = só Master.
   if(ent==='planos'){if(!requireAccess('excluirFalhaPlano','Somente Gestor ou Master podem excluir planos de ação.'))return}
   else if(['paineis','lacos','flms','portas','locais','equipamentos'].includes(ent)&&!requireAccess('cadastro','Somente o Master pode excluir cadastros técnicos.'))return; if(!confirm('Excluir registro?'))return;
+  const rec=(db[ent]||[]).find(x=>x.id===i);
+  // BUGFIX EMERGENCIAL (loja "desaparecendo" definitivamente — ver caso BELEZA NA WEB): 'locais'
+  // é EXCLUSÃO LÓGICA (soft delete) em todo o resto do sistema — dezenas de pontos já filtram por
+  // "!l.excluido" (mapa, plantas, selects, índices) esperando esse campo. Mas esta função fazia
+  // exclusão FÍSICA (remove do array) para TODAS as entidades, inclusive 'locais' — com uma janela
+  // de "Desfazer" de só 10 segundos em memória (nem persistida). Passado esse tempo, ou se a página
+  // fosse fechada/recarregada antes, o registro sumia PARA SEMPRE do array, deixando porta/FLM/
+  // equipamento/falha ainda apontando (localId órfão) para um ID que não existe mais em lugar
+  // nenhum — exatamente o cenário relatado. Agora 'locais' usa exclusão lógica de verdade
+  // (rec.excluido=true, com data/usuário), reversível a qualquer momento via "Restaurar loja
+  // cadastrada" (ver lucRestaurarLocal), não só nos primeiros 10 segundos.
+  if(ent==='locais'){
+    if(rec){ rec.excluido=true; rec.excluidoEm=isoNow(); rec.excluidoPor=(currentUser().nome||currentUser().email||'usuário'); }
+    closeModal(); save();
+    if(rec)mostrarUndoExclusao(ent,rec,true);
+    return;
+  }
+  db[ent]=db[ent].filter(x=>x.id!==i);closeModal();save();
   // SEGURANÇA OPERACIONAL (2026-07): janela de desfazer. O registro excluído fica guardado em
   // memória por 10s com um aviso "Desfazer" na tela — exclusão acidental deixa de ser irreversível.
-  const rec=(db[ent]||[]).find(x=>x.id===i);
-  db[ent]=db[ent].filter(x=>x.id!==i);closeModal();save();
   if(rec)mostrarUndoExclusao(ent,rec);
 }
 let _undoTimer=null;
-function mostrarUndoExclusao(ent,rec){
+function mostrarUndoExclusao(ent,rec,logico){
   document.getElementById('undoToast')?.remove();
   clearTimeout(_undoTimer);
   const t=document.createElement('div');
@@ -7698,12 +7717,20 @@ function mostrarUndoExclusao(ent,rec){
   t.style.cssText='position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#0E2A44;color:#fff;padding:10px 16px;border-radius:12px;font-size:13px;z-index:10000;display:flex;gap:12px;align-items:center;box-shadow:0 8px 22px rgba(16,24,40,.35)';
   t.innerHTML=`Registro excluído. <button style="background:#fff;color:#0E2A44;border:0;border-radius:8px;padding:5px 12px;font-weight:800;cursor:pointer" id="undoBtn">Desfazer</button>`;
   document.body.appendChild(t);
-  window._undoDel={ent,rec};
+  window._undoDel={ent,rec,logico};
   document.getElementById('undoBtn').onclick=()=>{
-    const u=window._undoDel; if(u){db[u.ent]=db[u.ent]||[];db[u.ent].push(u.rec);window._undoDel=null;save()}
+    const u=window._undoDel;
+    if(u){
+      if(u.logico){ const atual=(db[u.ent]||[]).find(x=>x.id===u.rec.id); if(atual){atual.excluido=false;delete atual.excluidoEm;delete atual.excluidoPor;} }
+      else { db[u.ent]=db[u.ent]||[];db[u.ent].push(u.rec); }
+      window._undoDel=null;save();
+    }
     t.remove(); clearTimeout(_undoTimer);
   };
-  _undoTimer=setTimeout(()=>{t.remove();window._undoDel=null},10000);
+  // Exclusão lógica ('locais'): não precisa de timer que "esquece" a possibilidade de desfazer —
+  // o registro continua recuperável indefinidamente via "Restaurar loja cadastrada". Só o toast
+  // visual some depois de 10s; a reversibilidade em si não expira mais para 'locais'.
+  _undoTimer=setTimeout(()=>{t.remove();if(!logico)window._undoDel=null},10000);
 }
 async function restoreBackupFile(file){if(!file)return; if(!isMaster(currentUserSafe())){alert('Somente o perfil Master pode restaurar um backup.');return} if(!confirm('Restaurar este backup local e substituir a base atual do navegador?'))return; const txt=await file.text(); try{const parsed=JSON.parse(txt); const camposLista=['falhas','planos','equipamentos','flms','locais','paineis','lacos','portas','plantas','historico','testes','cftv','acessoPontos','ambienteEquip']; for(const key of camposLista){ if(parsed&&parsed[key]!==undefined&&parsed[key]!==null&&!Array.isArray(parsed[key])){ alert('Arquivo de backup inválido: campo \''+key+'\' deveria ser uma lista. Restauração cancelada, nenhum dado foi alterado.'); return; } } db=normalizeAllStatuses(Object.assign(emptyDB(),parsed)); persistLocal(); markDirty('backup restaurado'); render(); alert('Backup restaurado localmente. Use Sincronizar agora para enviar ao Google.');}catch(e){alert('Arquivo de backup inválido: '+e.message)}}
 function exportJson(){if(!isMaster(currentUserSafe())){alert('Somente o perfil Master pode exportar a base.');return} download(JSON.stringify(db,null,2),'base_sdai_bosch_completa.json','application/json')}
@@ -10678,6 +10705,7 @@ function lucCorrigirBaseAtual(){
    - Não permite salvar Base LUC duplicada nem loja cadastrada vinculada a duas LUCs. */
 function lucLocalDisponivelParaBase(local,base,currentLocalId=''){
   if(!local||!base)return false;
+  if(local.excluido)return false; // excluídas só aparecem via "Restaurar loja cadastrada"
   if(local.baseLojaId && local.baseLojaId!==base.id)return false;
   const usadoPorOutraBase=(db.baseLojas||[]).some(b=>b.id!==base.id && b.localId===local.id && b.statusAssociacao==='Vinculada');
   if(usadoPorOutraBase)return false;
@@ -10691,11 +10719,86 @@ function lucLocaisDisponiveisSelect(conflito){
     .filter(l=>lucLocalDisponivelParaBase(l,base,conflito.localId))
     .sort((a,b)=>String(a.piso||'').localeCompare(String(b.piso||''),'pt-BR') || lucOfficialName(a).localeCompare(lucOfficialName(b),'pt-BR'));
   const selected=locais.some(l=>l.id===conflito.localId)?conflito.localId:'';
-  if(!locais.length)return '<span class="pill bad">Sem loja disponível</span>';
-  return `<select id="lucLocalSel_${conflito.id}" style="min-width:240px;border:1px solid var(--l3a-border);border-radius:8px;padding:7px;background:#fff">
-    <option value="">Selecione a loja cadastrada</option>
-    ${locais.map(l=>`<option value="${esc(l.id)}" ${l.id===selected?'selected':''}>${esc((l.nomeOriginalCadastro||l.nome||lucOfficialName(l))+' • '+(l.piso||'Sem piso'))}</option>`).join('')}
-  </select>`;
+  if(locais.length){
+    return `<select id="lucLocalSel_${conflito.id}" style="min-width:240px;border:1px solid var(--l3a-border);border-radius:8px;padding:7px;background:#fff">
+      <option value="">Selecione a loja cadastrada</option>
+      ${locais.map(l=>`<option value="${esc(l.id)}" ${l.id===selected?'selected':''}>${esc((l.nomeOriginalCadastro||l.nome||lucOfficialName(l))+' • '+(l.piso||'Sem piso'))}</option>`).join('')}
+    </select>`;
+  }
+  // BUGFIX (item 1/8 do pedido — caso BELEZA NA WEB): antes, "nenhum local disponível" mostrava
+  // só "Sem loja disponível", sem diferenciar "existe mas está excluída/inativa" de "nunca foi
+  // cadastrada". Agora procura entre TODOS os locais (inclusive excluídos) por nome normalizado ou
+  // LUC igual, antes de admitir que não há nada — nunca sugere criar uma loja nova sem antes
+  // checar isso.
+  const candidatos=lucBuscarCandidatosLocal(base);
+  if(candidatos.length){
+    return `<div class="msg warn" style="margin:0;padding:8px">Loja cadastrada não encontrada disponível, mas há candidato(s) possivelmente correspondente(s):</div>
+      ${candidatos.map(l=>`<div style="margin-top:4px">${esc(lucOfficialName(l)||l.nome)} ${l.excluido?'<span class="pill bad">excluída</span>':''} — ${esc(l.piso||'Sem piso')}
+        ${l.excluido?`<button class="btn small secondary" onclick="lucRestaurarLocal('${l.id}','${conflito.id}')">Restaurar loja cadastrada</button>`:`<button class="btn small secondary" onclick="lucAtribuirManual('${base.id}','${l.id}')">Usar esta loja</button>`}
+      </div>`).join('')}
+      <button class="btn small" style="margin-top:6px" onclick="lucCadastrarLojaAPartirDaBase('${base.id}')">Cadastrar loja a partir da Base LUC mesmo assim</button>`;
+  }
+  return `<span class="pill bad">Loja cadastrada não encontrada</span> <button class="btn small" onclick="lucCadastrarLojaAPartirDaBase('${base.id}')">Cadastrar a partir da Base LUC</button>`;
+}
+// Item 1/5/6 do pedido: procura por nome normalizado OU LUC igual em TODOS os locais (inclusive
+// excluídos) antes de admitir que não há candidato — nunca cria duplicidade sem checar antes.
+function lucBuscarCandidatosLocal(base){
+  if(!base)return [];
+  const nomeAlvo=lucNormText(base.nome||'');
+  return (db.locais||[]).filter(l=>{
+    if(l.id===base.localId)return false;
+    const mesmoNome = nomeAlvo && lucNormText(l.nomeOficial||l.nome||l.nomeOriginalCadastro||'')===nomeAlvo;
+    const mesmoLuc = base.luc && l.luc && String(l.luc)===String(base.luc);
+    return mesmoNome||mesmoLuc;
+  });
+}
+// Item 7: restaura um cadastro excluído/inativo SEM criar novo ID nem perder histórico — só
+// remove o estado de exclusão. Depois, segue o fluxo normal de confirmação de conflito.
+function lucRestaurarLocal(localId,conflitoId){
+  const local=(db.locais||[]).find(l=>l.id===localId); if(!local){alert('Registro não encontrado.');return}
+  local.excluido=false; delete local.excluidoEm; delete local.excluidoPor; local.ultimaAtualizacao=isoNow();
+  logLocal('local',local.id,'restaurar','Loja/área restaurada (estava excluída) a partir do fluxo de associação Base LUC.');
+  markDirty('restaurar loja cadastrada');
+  if(conflitoId) lucConfirmarConflito(conflitoId); else renderImportacao();
+}
+// Item 4: "Cadastrar loja a partir da Base LUC" — NUNCA salva sozinho; sempre exige confirmação
+// explícita do usuário revisando os campos antes.
+function lucCadastrarLojaAPartirDaBase(baseLojaId){
+  ensureLucSchema();
+  const base=(db.baseLojas||[]).find(b=>b.id===baseLojaId); if(!base){alert('Base LUC não encontrada.');return}
+  const candidatos=lucBuscarCandidatosLocal(base);
+  openModal(`<h2>Cadastrar loja a partir da Base LUC</h2>
+    ${candidatos.length?`<div class="msg warn">Possível loja já cadastrada encontrada — confira antes de criar uma nova:<br>${candidatos.map(l=>esc(lucOfficialName(l)||l.nome)+(l.excluido?' (excluída)':'')).join(', ')}</div>`:''}
+    <p class="compactHelp" style="margin-top:8px">
+      <b>Nome:</b> ${esc(base.nome||'—')}<br>
+      <b>LUC:</b> ${esc(base.luc||'—')}<br>
+      <b>Piso:</b> ${esc(exibirPiso(base.piso)||base.piso||'—')}<br>
+      <b>Tipo:</b> ${esc(base.tipo||'—')}<br>
+      <b>Área de contrato:</b> ${esc(base.areaContrato||'—')}<br>
+      <b>Sistema sugerido:</b> SDAI<br>
+      <b>Origem:</b> Base LUC
+    </p>
+    <div class="premiumActions" style="margin-top:12px">
+      <button class="btn" onclick="confirmarCadastroLojaAPartirDaBase('${base.id}')">Confirmar cadastro</button>
+      ${candidatos.length?`<button class="btn secondary" onclick="closeModal();lucCadastrarLojaAPartirDaBase('${base.id}')">Comparar registros</button>`:''}
+      <button class="btn secondary" onclick="closeModal()">Cancelar</button>
+    </div>`);
+}
+function confirmarCadastroLojaAPartirDaBase(baseLojaId){
+  const base=(db.baseLojas||[]).find(b=>b.id===baseLojaId); if(!base)return;
+  // Item 5: última checagem de duplicidade, mesmo após revisão manual — não cria se já existir
+  // um vínculo ativo idêntico por LUC.
+  const jaExiste=(db.locais||[]).find(l=>!l.excluido && l.luc && base.luc && String(l.luc)===String(base.luc));
+  if(jaExiste && !confirm('Já existe uma loja cadastrada ativa com o mesmo LUC ("'+(lucOfficialName(jaExiste)||jaExiste.nome)+'"). Criar mesmo assim uma nova loja (duplicidade)?'))return;
+  const novo={id:id(), nome:base.nome||'', nomeOficial:base.nome||'', luc:base.luc||'', tipoLojaBaseLuc:base.tipo||'', piso:base.piso||'', areaContrato:base.areaContrato||'', sistema:'SDAI', origem:'Base LUC', origemNome:'Base LUC', statusAssociacao:'Vinculado', baseLojaId:base.id, ultimaAtualizacao:isoNow(), excluido:false};
+  db.locais.push(novo);
+  applyLucToLocal(novo,base,100,false,'Manual');
+  db.conflitosAssociacao=(db.conflitosAssociacao||[]).filter(x=>x.baseLojaId!==base.id);
+  logLocal('local',novo.id,'criar_a_partir_de_base_luc','Loja cadastrada a partir da Base LUC — LUC '+(base.luc||'—')+' — '+(base.nome||'—'));
+  markDirty('loja cadastrada a partir da Base LUC');
+  closeModal();
+  renderImportacao();
+  alert('Loja cadastrada e associada com sucesso a partir da Base LUC.');
 }
 function lucValidarSemDuplicidade(base,local){
   if(!base||!local)return 'Selecione uma Base LUC e uma loja cadastrada válida.';
@@ -10818,6 +10921,14 @@ function confirmarDesassociacaoLuc(baseLojaId){
     logLocal('base_luc', base.id, 'DESASSOCIACAO_BASE_LUC',
       'LUC: '+(base.luc||'—')+' — Loja da base: '+(base.nome||'—')+' — Loja anteriormente associada: '+nomeLocalAnterior+
       ' — Origem da associação anterior: '+origemAnterior+' — Motivo: '+motivoCompleto+' — Nova situação: sem associação.');
+
+    // BUGFIX (Base LUC desassociada some da aba Conflitos): esta função nunca recriava uma entrada
+    // em db.conflitosAssociacao — a aba Conflitos só lê essa lista, então uma Base LUC desassociada
+    // ficava "invisível" ali até alguém clicar "Reexecutar associação automática" (perdendo o
+    // registro de por que foi desassociada). Agora já reaparece na hora, com o motivo da
+    // desassociação visível, para permitir reassociar imediatamente.
+    db.conflitosAssociacao=(db.conflitosAssociacao||[]).filter(x=>x.baseLojaId!==base.id);
+    db.conflitosAssociacao.push({id:id(), lojaCadastrada:nomeLocalAnterior, lojaCadastradaAtual:nomeLocalAnterior, lojaBaseLuc:base.nome, motivo:'Desassociada manualmente: '+motivoCompleto, percentualSimilaridade:0, data:isoNow(), localId:'', baseLojaId:base.id, pisoCadastro:'', pisoBaseLuc:base.piso||''});
 
     markDirty('desassociação LUC/Loja: '+(base.luc||base.nome||''));
     closeModal();
