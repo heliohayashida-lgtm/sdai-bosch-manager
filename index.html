@@ -2974,15 +2974,36 @@ function registrarLogSincronizacao(dados){
   logLocal('sistema','','sincronizacao',linhas);
 }
 function exibirResultadoSincronizacaoSimples(ok, erro, data){
+  const NOME_CHECK={'Painéis':'Painéis','Laços':'Laços','FLMs':'FLMs','Portas':'Portas','Lojas':'Lojas','Equipamentos':'Equipamentos','Falhas':'Falhas','Planos':'Planos','Plantas':'Plantas','Base LUC':'Base LUC'};
+  const listaColecoes=(data&&data.colecoesSincronizadas)||[];
+  const avisos=(data&&data.avisos)||[];
+  const listaChecklist = listaColecoes.length ? listaColecoes.map(c=>'✓ '+esc(c)).join('<br>') : '';
+  const listaAvisos = avisos.length ? avisos.map(a=>'⚠ '+esc(a.mensagem)).join('<br>') : '';
   const corpo = ok
-    ? `<div class="msg ok">Sincronização concluída com sucesso.</div>
-       <p class="compactHelp">${data&&data.recordsSaved!=null?(data.recordsSaved+' registro(s) em '+data.collectionsSaved+' coleção(ões).'):''}</p>`
+    ? `<div class="msg ok"><b>SINCRONIZAÇÃO CONCLUÍDA</b></div>
+       ${listaChecklist?`<p class="compactHelp" style="margin-top:8px"><b>Coleções sincronizadas:</b><br>${listaChecklist}</p>`:''}
+       ${avisos.length?`<div class="msg warn" style="margin-top:8px"><b>Avisos</b><br>${listaAvisos}<br><span style="font-weight:600">O funcionamento do sistema NÃO foi afetado.</span></div>`:''}
+       <p class="compactHelp" style="margin-top:8px">${data&&data.recordsSaved!=null?(data.recordsSaved+' registro(s) em '+data.collectionsSaved+' coleção(ões).'):''}</p>`
     : `<div class="msg err">Sincronização não concluída: ${esc(erro||'')}</div>
        <p class="compactHelp">A base local não foi alterada.${data&&data.backupId?' O backup já tinha sido criado — nada foi perdido.':''}</p>`;
   const linhasLog = (data&&data.logs||[]).map(l=>`<tr><td>${esc(l.passo)}</td><td>${l.ok?'✅':'❌'}</td><td>${esc(l.detalhe||'')}</td></tr>`).join('');
+  // Diagnóstico completo por aviso (item "descobrir a causa da falha"): quantidade de registros,
+  // cabeçalhos, primeiro/último registro e o erro real do Apps Script — nunca só "falha em X".
+  const blocoDiagnosticoAvisos = avisos.length ? avisos.map(a=>{
+    const d=a.diagnostico||{};
+    return `<div style="margin-top:8px;padding:8px;border:1px solid var(--l3a-border);border-radius:8px">
+      <b>${esc(a.colecao)}</b><br>
+      Quantidade de registros: ${d.quantidade!=null?d.quantidade:'—'}<br>
+      Cabeçalhos encontrados: ${esc((d.cabecalhos||[]).join(', ')||'—')}<br>
+      Primeiro registro: <code style="font-size:11px">${esc(JSON.stringify(d.primeiroRegistro))}</code><br>
+      Último registro: <code style="font-size:11px">${esc(JSON.stringify(d.ultimoRegistro))}</code><br>
+      Erro completo do Apps Script: <code style="font-size:11px;white-space:pre-wrap">${esc(a.erro||'—')}</code>
+    </div>`;
+  }).join('') : '';
   openModal(`<h2>${ok?'Tudo sincronizado':'Sincronização não concluída'}</h2>${corpo}
-    <details style="margin-top:10px"><summary style="cursor:pointer;color:#666">Detalhes técnicos</summary>
+    <details style="margin-top:10px" ${avisos.length?'open':''}><summary style="cursor:pointer;color:#666">Detalhes técnicos</summary>
       <p class="compactHelp" style="margin-top:6px">${data&&data.backupUrl?('Backup: <a href="'+esc(data.backupUrl)+'" target="_blank">abrir</a> · '):''}${data&&data.updatedAt?('Atualizado em: '+esc(data.updatedAt)):''}</p>
+      ${blocoDiagnosticoAvisos}
       <table class="tbl" style="margin-top:6px"><thead><tr><th>Etapa</th><th>OK</th><th>Detalhe</th></tr></thead><tbody>${linhasLog||'<tr><td colspan=3>Sem logs.</td></tr>'}</tbody></table>
     </details>
     <div class="premiumActions" style="margin-top:10px"><button class="btn secondary" onclick="closeModal()">Fechar</button></div>`);
