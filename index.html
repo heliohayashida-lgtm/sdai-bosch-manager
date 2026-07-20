@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <!-- saved from url=(0076)file:///C:/Users/helio.hayashida/Desktop/SDAI_PAN/Develops/Claude/index.html -->
+<!-- build: 2026-07-20 00:11 - bump para forçar novo deploy no GitHub Pages -->
 <html lang="pt-BR"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1285,7 +1286,7 @@ function viewLocation(view){
 
 const API_URL='https://script.google.com/macros/s/AKfycby45dTdw4g-pkcvY9sys3_gmvVcmnSyf6PZzJbRsbSFjhtuWbV1D5XSBEc-J1UtOBYftA/exec';
 const SYNC_KEY=KEY+':syncConfig';
-const emptyDB=()=>({empreendimento:{nome:'Empreendimento',cliente:'Cliente'},config:{appName:'Contratos L3A',subtitle:'Gestão operacional • SDAI • Contratos',logoData:''},usuarios:[{id:'admin-default',nome:'Administrador',email:'admin@local',perfil:'Administrador',senha:'1234',ativo:'Sim',criadoEm:''}],paineis:[],lacos:[],flms:[],portas:[],locais:[],equipamentos:[],falhas:[],planos:[],testes:[],inconsistencias:[],imports:[],plantas:[],notificacoes:[],cftv:[],acessoPontos:[],ambienteEquip:[]});
+const emptyDB=()=>({empreendimento:{nome:'Empreendimento',cliente:'Cliente'},config:{appName:'Contratos L3A',subtitle:'Gestão operacional • SDAI • Contratos',logoData:''},usuarios:[{id:'admin-default',nome:'Administrador',email:'admin@local',perfil:'Administrador',senha:'1234',ativo:'Sim',criadoEm:''}],paineis:[],lacos:[],flms:[],portas:[],locais:[],equipamentos:[],falhas:[],planos:[],testes:[],inconsistencias:[],imports:[],plantas:[],notificacoes:[],cftv:[],acessoPontos:[],ambienteEquip:[],relatorios:[]});
 
 /* ── MULTI-CLIENTE ─────────────────────────────────────────────────────── */
 const MODULOS_DISPONIVEIS=['sdai','cftv','acesso','ambiente'];
@@ -6318,21 +6319,204 @@ function criarPlanoDaFalhaEAbrir(falhaId){
 function lastImportHtml(){let r=db.imports.at(-1); if(!r)return '<p class="msg warn">Nenhuma importação executada.</p>'; let cards=Object.entries(r.stats).map(([k,v])=>`<div class="diagItem"><small>${esc(k)}</small><b>${esc(v)}</b></div>`).join(''); let rom=r.romannel?`<div class="msg ${r.romannel.ok?'ok':'err'}">ROMANNEL: ${esc(r.romannel.msg)}</div>`:''; return `${rom}<div class="diag">${cards}</div><h4>Erros / ignorados</h4>${table(r.errors||[],[['Linha','linha'],['Motivo','motivo'],['Registro','registro']])}`}
 function renderExportacao(){if(!isMaster(currentUserSafe())){document.getElementById('exportacao').innerHTML='<div class="card"><h3 class="sectionTitle">Acesso restrito</h3><p class="msg warn">Somente o perfil Master pode exportar a base.</p></div>';return}document.getElementById('exportacao').innerHTML=`<div class="card"><h3 class="sectionTitle">Exportações</h3><div class="toolbar"><button class="btn" onclick="exportJson()">Base completa JSON</button><button class="btn" onclick="exportAllCsv()">Base completa CSV</button><button class="btn secondary" onclick="exportEntity('locais')">Lojas / Áreas</button><button class="btn secondary" onclick="exportEntity('flms')">FLMs</button><button class="btn secondary" onclick="exportEntity('equipamentos')">Equipamentos</button><button class="btn secondary" onclick="exportEntity('planos')">Plano de ação</button><button class="btn secondary" onclick="exportEntity('inconsistencias')">Inconsistências</button><button class="btn danger" onclick="if(confirm('Apagar toda base local?'))clearAll()">Limpar base local</button></div></div>`}
 function reportData(){let ini=document.getElementById('repIni')?.value||'',fim=document.getElementById('repFim')?.value||'',painel=document.getElementById('repPainel')?.value||''; let fal=(db.falhas||[]).filter(f=>!f.excluida&&(!painel||paiName(f.painelId)===painel)&&(!ini||f.data>=ini)&&(!fim||f.data<=fim+'T23:59')); let lanc=fal.filter(f=>isFalhaStatus(f.status)).length; let resol=fal.filter(f=>up(f.status).includes('OPER')||f.resolvidaEm).length; let byPainel={}; db.paineis.filter(p=>!painel||p.nome===painel).forEach(p=>{byPainel[p.nome]={op:0,falha:0,tipos:{}}}); db.equipamentos.forEach(e=>{let pn=paiName(e.painelId); if(!byPainel[pn])return; let st=isFalhaStatus(e.status)?'falha':'op'; byPainel[pn][st]++; byPainel[pn].tipos[e.tipo]=(byPainel[pn].tipos[e.tipo]||{op:0,falha:0}); byPainel[pn].tipos[e.tipo][st]++}); db.flms.forEach(f=>{let pn=paiName(f.painelId); if(!byPainel[pn])return; let st=isFalhaStatus(f.status)?'falha':'op'; byPainel[pn][st]++; byPainel[pn].tipos['Módulo']=(byPainel[pn].tipos['Módulo']||{op:0,falha:0}); byPainel[pn].tipos['Módulo'][st]++}); return {ini,fim,painel,fal,lanc,resol,byPainel}}
+// ── CONSTRUTOR DE RELATÓRIO TÉCNICO GERENCIAL SDAI ──────────────────────────────────────────
+// Estado da tela (não persiste no db até "Salvar rascunho" — é só o rascunho em edição corrente).
+// A tela é somente leitura sobre a base operacional: nada aqui altera falhas/testes/planos/
+// status/vínculos/marcadores, nem marca dirty por conta própria (só ao salvar o RELATÓRIO em si,
+// que é uma coleção separada, db.relatorios).
+const SECOES_RELATORIO_LABELS={capa:'Capa',resumo:'Resumo Executivo',dashboard:'Dashboard Operacional',inventario:'Inventário do Sistema',lacos:'Detalhamento dos Laços',dispositivos:'Dispositivos',lojas:'Lojas / Áreas',falhas:'Falhas',testes:'Testes Realizados',planoAcao:'Plano de Ação',diagnostico:'Diagnóstico Técnico',historico:'Histórico',conclusao:'Conclusão',assinaturas:'Assinaturas'};
+const RELATORIO_ORDEM_PADRAO=['capa','resumo','dashboard','inventario','lacos','dispositivos','lojas','falhas','testes','planoAcao','diagnostico','historico','conclusao','assinaturas'];
+const RELATORIO_TIPOS_PRESET={
+  'Relatório Executivo':['capa','resumo','dashboard','inventario','falhas','planoAcao','conclusao','assinaturas'],
+  'Relatório Técnico Detalhado':['capa','resumo','dashboard','inventario','lacos','dispositivos','lojas','falhas','testes','planoAcao','diagnostico','conclusao','assinaturas'],
+  'Relatório Mensal de Manutenção':['capa','resumo','falhas','planoAcao','testes','conclusao','assinaturas'],
+  'Relatório de Inspeção':['capa','resumo','inventario','dispositivos','testes','diagnostico','conclusao','assinaturas'],
+  'Relatório de Falhas':['capa','resumo','falhas','historico','conclusao','assinaturas'],
+  'Relatório de Testes':['capa','resumo','testes','conclusao','assinaturas'],
+  'Relatório de Plano de Ação':['capa','resumo','planoAcao','conclusao','assinaturas'],
+  'Relatório de Infraestrutura':['capa','resumo','inventario','lacos','dispositivos','conclusao','assinaturas'],
+  'Relatório de Evolução do Sistema':['capa','resumo','dashboard','historico','conclusao','assinaturas'],
+  'Relatório Personalizado':null
+};
+const relatorioUI={
+  tipo:'Relatório Executivo',
+  secoesAtivas:Object.fromEntries(RELATORIO_ORDEM_PADRAO.map(k=>[k,RELATORIO_TIPOS_PRESET['Relatório Executivo'].includes(k)])),
+  ordem:RELATORIO_ORDEM_PADRAO.slice(),
+  meta:{titulo:'',numero:'',responsavelTecnico:'',cargo:'',empresa:'L3A Engenharia',fiscal:'',observacoes:''},
+  textos:{diagnostico:{valor:'',editadoPor:null,editadoEm:null},conclusao:{valor:'',editadoPor:null,editadoEm:null}},
+  verSalvos:false, relatorioAbertoId:null
+};
+function relatorioNumeroAutomatico(){
+  const cli=up((clienteAtivoObj()?.nome)||'CLIENTE').replace(/[^A-Z0-9]/g,'').slice(0,14);
+  const ano=new Date().getFullYear();
+  const seq=((db.relatorios||[]).filter(r=>String(r.numero||'').includes(cli)&&String(r.numero||'').includes(String(ano))).length+1);
+  return `RT-SDAI-${cli}-${ano}-${String(seq).padStart(3,'0')}`;
+}
+// Item 16 do pedido — Testes: resumo executivo lido direto de db.testes (somente leitura).
+function relTestesResumo(){
+  const testes=(db.testes||[]).filter(t=>relNoPeriodo(t.data));
+  const aprovados=testes.filter(t=>/funcionou|aprovado/i.test(t.resultado||'')).length;
+  const reprovados=testes.filter(t=>/não funcionou|nao funcionou|reprovado/i.test(t.resultado||'')).length;
+  return {
+    total:testes.length, aprovados, reprovados,
+    taxaAprovacao: testes.length ? Math.round(aprovados/testes.length*100) : 0,
+    porTipo: relPorCampoGenerico(testes,t=>t.tipoTeste,'Não classificado'),
+    porResponsavel: relPorCampoGenerico(testes,t=>t.responsavel,'Não atribuído'),
+    porLoja: relPorCampoGenerico(testes,t=>locName(t.localId),'Sem loja/área').slice(0,10)
+  };
+}
+// Item 20 — texto sugerido a partir de uma regra simples e auditável (concentração de falhas por
+// laço); nunca afirma diagnóstico definitivo, sempre convida à revisão humana antes de emitir.
+function relatorioTextoDiagnosticoSugerido(falhasR){
+  if(!falhasR.total) return 'Não foram identificadas falhas no período/filtro selecionado para compor um diagnóstico técnico automático.';
+  const pior=(falhasR.porLaco||[]).slice().sort((a,b)=>b.value-a.value)[0];
+  let texto=`Foram registradas ${falhasR.total} ocorrência(s) de falha no período analisado, sendo ${falhasR.abertas} ainda em aberto e ${falhasR.concluidas} já solucionadas.`;
+  if(pior && pior.value>=3){
+    texto+=` Foi identificada concentração de falhas no laço "${pior.label}" (${pior.value} ocorrência(s)), recomendando-se inspeção de cabeamento, conexões e infraestrutura desse laço.`;
+  }
+  texto+=' Esta sugestão é gerada automaticamente a partir dos dados registrados no sistema e deve ser revisada pelo responsável técnico antes da emissão do relatório.';
+  return texto;
+}
+function relatorioTextoConclusaoSugerido(resumo,falhasR,planoR){
+  return `A base técnica monitorada conta atualmente com ${resumo.c.paineis} painel(is), ${resumo.c.lacos} laço(s) e ${resumo.c.equipamentos} equipamento(s), com disponibilidade operacional de ${resumo.disponibilidade}%. No período analisado foram registradas ${falhasR.total} falha(s) (${falhasR.abertas} em aberto) e ${planoR.total} plano(s) de ação (${planoR.concluidos} concluído(s), ${planoR.atrasados} em atraso). Recomenda-se acompanhamento contínuo dos pontos em aberto e priorização dos planos atrasados. Este texto é gerado automaticamente a partir dos indicadores acima e pode ser editado antes da emissão.`;
+}
+
+
 function renderRelatorios(){
+  const el=document.getElementById('relatorios'); if(!el)return;
+  if(relatorioUI.verSalvos){ renderRelatoriosSalvosLista(); return; }
+  if(!relatorioUI.meta.numero) relatorioUI.meta.numero=relatorioNumeroAutomatico();
+  if(!relatorioUI.meta.titulo) relatorioUI.meta.titulo='Relatório Gerencial SDAI';
+  if(!relatorioUI.meta.responsavelTecnico) relatorioUI.meta.responsavelTecnico=(db.config&&db.config.responsavelTecnico)||currentUser().nome||'';
   let pain=unique(db.paineis.map(p=>p.nome));
   // Preserva os valores dos filtros entre re-renders (a tela é recriada do zero a cada render()).
   const vIni=document.getElementById('repIni')?.value||'',vFim=document.getElementById('repFim')?.value||'',vPai=document.getElementById('repPainel')?.value||'';
-  document.getElementById('relatorios').innerHTML=`<div class="card hidePrint planoToolbarCard">
-    <h3 class="sectionTitle" style="margin:0 0 8px">Relatório Gerencial Executivo SDAI</h3>
-    <div class="planoFiltrosRow">
-      <input class="planoDate" type="date" id="repIni" title="Período inicial" value="${esc(vIni)}">
-      <input class="planoDate" type="date" id="repFim" title="Período final" value="${esc(vFim)}">
-      <select class="planoSelect" id="repPainel" title="Painel">${selectOpts(pain,vPai,'Todos os painéis')}</select>
-      <button class="btn small" onclick="renderRelatorioExecutivoSDAI()">Gerar relatório</button>
-      <button class="btn secondary small" onclick="renderRelatorioExecutivoSDAI();setTimeout(()=>window.print(),350)">📄 Gerar PDF (A4)</button>
+  el.innerHTML=`<div class="card hidePrint planoToolbarCard">
+    <h3 class="sectionTitle" style="margin:0 0 8px">Construtor de Relatório Técnico Gerencial — SDAI</h3>
+    <div class="formGrid">
+      <div class="field"><label>Tipo de relatório</label><select id="repTipo" onchange="relatorioAplicarTipo(this.value)">${Object.keys(RELATORIO_TIPOS_PRESET).map(t=>`<option ${relatorioUI.tipo===t?'selected':''}>${esc(t)}</option>`).join('')}</select></div>
+      <div class="field"><label>Título</label><input id="repTitulo" value="${esc(relatorioUI.meta.titulo)}" onchange="relatorioUI.meta.titulo=this.value"></div>
+      <div class="field"><label>Número do relatório</label><input id="repNumero" value="${esc(relatorioUI.meta.numero)}" onchange="relatorioUI.meta.numero=this.value"></div>
+      <div class="field"><label>Responsável técnico</label><input id="repResp" value="${esc(relatorioUI.meta.responsavelTecnico)}" onchange="relatorioUI.meta.responsavelTecnico=this.value"></div>
+      <div class="field"><label>Cargo</label><input id="repCargo" value="${esc(relatorioUI.meta.cargo)}" onchange="relatorioUI.meta.cargo=this.value"></div>
+      <div class="field"><label>Empresa responsável</label><input id="repEmpresa" value="${esc(relatorioUI.meta.empresa)}" onchange="relatorioUI.meta.empresa=this.value"></div>
+      <div class="field"><label>Fiscal/responsável do cliente</label><input id="repFiscal" value="${esc(relatorioUI.meta.fiscal)}" onchange="relatorioUI.meta.fiscal=this.value"></div>
+      <div class="field"><label>Período inicial</label><input class="planoDate" type="date" id="repIni" value="${esc(vIni)}"></div>
+      <div class="field"><label>Período final</label><input class="planoDate" type="date" id="repFim" value="${esc(vFim)}"></div>
+      <div class="field"><label>Painel</label><select id="repPainel">${selectOpts(pain,vPai,'Todos os painéis')}</select></div>
     </div>
-    <p class="mutedLine" style="margin:8px 0 0;font-size:12px">Indicadores calculados com os mesmos cálculos do Dashboard. Período vazio = base completa. As seções de Falhas e Plano de Ação respeitam o período; o inventário físico (painéis, laços, equipamentos) é sempre a foto atual.</p>
+    <div class="field" style="margin-top:8px"><label>Observações gerais</label><textarea id="repObs" onchange="relatorioUI.meta.observacoes=this.value">${esc(relatorioUI.meta.observacoes)}</textarea></div>
+    <details style="margin-top:10px" open><summary style="cursor:pointer"><b>Seções do relatório</b> (marque para incluir, use as setas para reordenar)</summary>
+      <div style="margin-top:8px">
+        ${relatorioUI.ordem.map(k=>`<div style="display:flex;align-items:center;gap:8px;padding:4px 0">
+          <label class="check" style="flex:1"><input type="checkbox" ${relatorioUI.secoesAtivas[k]?'checked':''} onchange="relatorioUI.secoesAtivas['${k}']=this.checked"> ${esc(SECOES_RELATORIO_LABELS[k]||k)}</label>
+          <button class="dsIco" onclick="relatorioMoverSecao('${k}',-1)" title="Mover para cima">▲</button>
+          <button class="dsIco" onclick="relatorioMoverSecao('${k}',1)" title="Mover para baixo">▼</button>
+        </div>`).join('')}
+      </div>
+    </details>
+    <div class="field" style="margin-top:8px"><label>Diagnóstico técnico (editável — deixe em branco para usar o texto sugerido)</label><textarea id="repDiagnostico" placeholder="Deixe em branco para gerar automaticamente" onchange="relatorioUI.textos.diagnostico={valor:this.value,editadoPor:this.value?(currentUser().nome||'usuário'):null,editadoEm:this.value?now():null}">${esc(relatorioUI.textos.diagnostico.valor)}</textarea></div>
+    <div class="field" style="margin-top:8px"><label>Conclusão (editável — deixe em branco para usar o texto sugerido)</label><textarea id="repConclusao" placeholder="Deixe em branco para gerar automaticamente" onchange="relatorioUI.textos.conclusao={valor:this.value,editadoPor:this.value?(currentUser().nome||'usuário'):null,editadoEm:this.value?now():null}">${esc(relatorioUI.textos.conclusao.valor)}</textarea></div>
+    <div class="planoFiltrosRow" style="margin-top:10px">
+      <button class="btn small" onclick="renderRelatorioExecutivoSDAI()">Gerar prévia</button>
+      <button class="btn secondary small" onclick="renderRelatorioExecutivoSDAI();setTimeout(()=>window.print(),350)">📄 Gerar PDF (A4)</button>
+      <button class="btn secondary small" onclick="salvarRascunhoRelatorio()">💾 Salvar rascunho</button>
+      <button class="btn secondary small" onclick="relatorioUI.verSalvos=true;renderRelatorios()">📁 Relatórios salvos (${(db.relatorios||[]).length})</button>
+    </div>
+    <p class="mutedLine" style="margin:8px 0 0;font-size:12px">Indicadores calculados a partir da base técnica atual — esta tela é somente leitura sobre falhas/testes/planos/status/vínculos/marcadores (nada aqui altera a operação). As seções de Falhas, Testes e Plano de Ação respeitam o período; o inventário físico (painéis, laços, equipamentos) é sempre a foto atual.</p>
   </div><div id="reportOut" class="printArea"></div>`;
+}
+function relatorioMoverSecao(chave,delta){
+  const i=relatorioUI.ordem.indexOf(chave), j=i+delta;
+  if(i<0||j<0||j>=relatorioUI.ordem.length)return;
+  [relatorioUI.ordem[i],relatorioUI.ordem[j]]=[relatorioUI.ordem[j],relatorioUI.ordem[i]];
+  renderRelatorios();
+}
+function relatorioAplicarTipo(tipo){
+  relatorioUI.tipo=tipo;
+  const preset=RELATORIO_TIPOS_PRESET[tipo];
+  if(preset) Object.keys(relatorioUI.secoesAtivas).forEach(k=>relatorioUI.secoesAtivas[k]=preset.includes(k));
+  renderRelatorios();
+}
+// ── PERSISTÊNCIA (item 34/35): rascunhos salvos em db.relatorios, com snapshot dos indicadores
+// usados — o relatório salvo NÃO muda sozinho quando a base é alterada depois. ─────────────────
+function salvarRascunhoRelatorio(){
+  db.relatorios=db.relatorios||[];
+  const painelFiltro=document.getElementById('repPainel')?.value||'';
+  const periodoIni=document.getElementById('repIni')?.value||'', periodoFim=document.getElementById('repFim')?.value||'';
+  const resumo=relResumoGeral(), falhasR=relFalhasResumo(), planoR=relPlanoResumo(), testesR=relTestesResumo();
+  const existente=relatorioUI.relatorioAbertoId?(db.relatorios||[]).find(r=>r.id===relatorioUI.relatorioAbertoId):null;
+  const rec=existente||{id:id(), criadoEm:isoNow(), criadoPor:(currentUser().nome||currentUser().email||'usuário'), versao:1, status:'Rascunho'};
+  if(existente) rec.versao=(rec.versao||1)+1;
+  Object.assign(rec,{
+    numero:relatorioUI.meta.numero, titulo:relatorioUI.meta.titulo, tipo:relatorioUI.tipo,
+    cliente:(clienteAtivoObj()?.nome)||'', clienteId:clienteAtivo(),
+    periodoIni, periodoFim, painelFiltro,
+    meta:JSON.parse(JSON.stringify(relatorioUI.meta)),
+    secoesAtivas:JSON.parse(JSON.stringify(relatorioUI.secoesAtivas)),
+    ordem:relatorioUI.ordem.slice(),
+    textos:JSON.parse(JSON.stringify(relatorioUI.textos)),
+    ultimaAtualizacao:isoNow(),
+    // Item 34: snapshot — os NÚMEROS usados no momento de salvar, não a base inteira.
+    snapshot:{quando:isoNow(), paineis:resumo.c.paineis, lacos:resumo.c.lacos, equipamentos:resumo.c.equipamentos, locais:resumo.c.locais, disponibilidade:resumo.disponibilidade, falhasTotal:falhasR.total, falhasAbertas:falhasR.abertas, planosTotal:planoR.total, planosConcluidos:planoR.concluidos, testesTotal:testesR.total, testesTaxaAprovacao:testesR.taxaAprovacao}
+  });
+  if(!existente) db.relatorios.push(rec);
+  relatorioUI.relatorioAbertoId=rec.id;
+  logLocal('sistema',rec.id,'relatorio_salvo','Relatório "'+rec.titulo+'" ('+rec.numero+') salvo como rascunho — versão '+rec.versao+'.');
+  markDirty('relatório salvo: '+rec.numero);
+  alert('Rascunho salvo: '+rec.numero+' (versão '+rec.versao+'). Os números desta versão ficaram "congelados" no snapshot — use "Atualizar com dados atuais" na lista de relatórios salvos se quiser recalcular.');
+}
+function renderRelatoriosSalvosLista(){
+  const el=document.getElementById('relatorios'); if(!el)return;
+  const lista=(db.relatorios||[]).slice().sort((a,b)=>String(b.ultimaAtualizacao||'').localeCompare(String(a.ultimaAtualizacao||'')));
+  el.innerHTML=`<div class="card hidePrint">
+    <div class="systemHeaderSlim"><div class="titleBlock"><h3>Relatórios Salvos</h3><p>Rascunhos e versões congeladas do Construtor de Relatório.</p></div><button class="btn secondary small" onclick="relatorioUI.verSalvos=false;renderRelatorios()">← Voltar ao construtor</button></div>
+    ${lista.length?`<div class="softTable" style="margin-top:14px">${table(lista,[
+      ['Número','numero'],['Título','titulo'],['Cliente','cliente'],['Tipo','tipo'],
+      ['Período','periodoIni',r=>(r.periodoIni||r.periodoFim)?((r.periodoIni||'—')+' a '+(r.periodoFim||'—')):'Base completa'],
+      ['Criado por','criadoPor'],['Data','criadoEm',r=>formatarDataHoraAmigavel(r.criadoEm)],['Versão','versao'],
+      ['Status','status',r=>`<span class="pill ${r.status==='Emitido'?'ok':r.status==='Cancelado'?'bad':''}">${esc(r.status)}</span>`]
+    ])}</div>`:'<div class="emptyState" style="margin-top:14px">Nenhum relatório salvo ainda.</div>'}
+  </div>`;
+  // Ações por linha (Abrir/Duplicar/Excluir) — item 35.
+  const tabela=el.querySelector('table'); if(!tabela)return;
+  const thead=tabela.querySelector('thead tr'); if(thead){const th=document.createElement('th'); th.textContent='Ações'; thead.appendChild(th);}
+  tabela.querySelectorAll('tbody tr').forEach((tr,i)=>{
+    const rec=lista[i]; if(!rec)return;
+    const td=document.createElement('td');
+    td.innerHTML=`<button class="btn small secondary" onclick="abrirRelatorioSalvo('${rec.id}')">Abrir</button>
+      <button class="btn small secondary" onclick="duplicarRelatorioSalvo('${rec.id}')">Duplicar</button>
+      <button class="btn small secondary" onclick="excluirRelatorioSalvo('${rec.id}')">Excluir</button>`;
+    tr.appendChild(td);
+  });
+}
+function abrirRelatorioSalvo(idRel){
+  const rec=(db.relatorios||[]).find(r=>r.id===idRel); if(!rec){alert('Relatório não encontrado.');return}
+  relatorioUI.tipo=rec.tipo||'Relatório Personalizado';
+  relatorioUI.meta=JSON.parse(JSON.stringify(rec.meta||relatorioUI.meta));
+  relatorioUI.secoesAtivas=JSON.parse(JSON.stringify(rec.secoesAtivas||relatorioUI.secoesAtivas));
+  relatorioUI.ordem=(rec.ordem||RELATORIO_ORDEM_PADRAO).slice();
+  relatorioUI.textos=JSON.parse(JSON.stringify(rec.textos||relatorioUI.textos));
+  relatorioUI.relatorioAbertoId=rec.id;
+  relatorioUI.verSalvos=false;
+  renderRelatorios();
+  setTimeout(()=>{ if(document.getElementById('repIni'))document.getElementById('repIni').value=rec.periodoIni||''; if(document.getElementById('repFim'))document.getElementById('repFim').value=rec.periodoFim||''; if(document.getElementById('repPainel'))document.getElementById('repPainel').value=rec.painelFiltro||''; },0);
+}
+function duplicarRelatorioSalvo(idRel){
+  const rec=(db.relatorios||[]).find(r=>r.id===idRel); if(!rec)return;
+  const copia=JSON.parse(JSON.stringify(rec));
+  copia.id=id(); copia.numero=rec.numero+'-COPIA'; copia.status='Rascunho'; copia.versao=1;
+  copia.criadoEm=isoNow(); copia.criadoPor=(currentUser().nome||currentUser().email||'usuário'); copia.ultimaAtualizacao=isoNow();
+  db.relatorios=db.relatorios||[]; db.relatorios.push(copia);
+  logLocal('sistema',copia.id,'relatorio_duplicado','Relatório "'+rec.titulo+'" duplicado a partir de '+rec.numero+'.');
+  markDirty('relatório duplicado'); renderRelatoriosSalvosLista();
+}
+function excluirRelatorioSalvo(idRel){
+  const rec=(db.relatorios||[]).find(r=>r.id===idRel); if(!rec)return;
+  if(!confirm('Excluir o relatório "'+rec.titulo+'" ('+rec.numero+')? Esta ação não afeta falhas, testes, planos ou nenhum outro dado operacional.'))return;
+  db.relatorios=(db.relatorios||[]).filter(r=>r.id!==idRel);
+  logLocal('sistema',idRel,'relatorio_excluido','Relatório "'+rec.titulo+'" ('+rec.numero+') excluído.');
+  markDirty('relatório excluído'); renderRelatoriosSalvosLista();
 }
 function pct(v,t){return t?Math.round((v/t)*100):0}
 function chartBarRows(rows,max){return `<div class="chartBars">${rows.map(r=>`<div class="chartLine"><b>${esc(r.label)}</b><div class="chartTrack"><i class="${r.cls||''}" style="width:${Math.max(2,pct(r.value,max))}%"></i></div><strong>${r.value}</strong></div>`).join('')}</div>`}
@@ -10357,16 +10541,17 @@ function renderRelatorioExecutivoSDAI(){
     <div class="execCoverTop">
       <div class="execCoverLogos">
         <div class="execCoverLogoBox">${cfg.logoData?`<img src="${esc(cfg.logoData)}" alt="Logo">`:'<span>L3A</span>'}</div>
-        <div><p class="execCoverKicker">Relatório Gerencial Executivo • SDAI</p><h2 class="execCoverTitle">${esc(emp.nome||cfg.empreendimento||'Empreendimento')}</h2><p class="execCoverSub">${esc(emp.cliente||cfg.cliente||'Cliente')} • Sistema de Detecção e Alarme de Incêndio</p></div>
+        <div><p class="execCoverKicker">${esc(relatorioUI.meta.empresa||'L3A Engenharia')} • ${esc(relatorioUI.tipo||'Relatório Executivo')}</p><h2 class="execCoverTitle">${esc(relatorioUI.meta.titulo||emp.nome||cfg.empreendimento||'Relatório Gerencial SDAI')}</h2><p class="execCoverSub">${esc(emp.cliente||cfg.cliente||'Cliente')} • Sistema de Detecção e Alarme de Incêndio</p></div>
       </div>
     </div>
     <div class="execCoverMetaGrid">
+      <div class="execCoverMetaItem"><small>Número do relatório</small><b>${esc(relatorioUI.meta.numero||'—')}</b></div>
       <div class="execCoverMetaItem"><small>Referência</small><b>${new Date().toLocaleDateString('pt-BR',{month:'long',year:'numeric'})}</b></div>
       <div class="execCoverMetaItem"><small>Painel filtrado</small><b>${esc(painelFiltro||'Todos')}</b></div>
-      <div class="execCoverMetaItem"><small>Responsável técnico</small><b>${esc(cfg.responsavelTecnico||'—')}</b></div>
-      <div class="execCoverMetaItem"><small>Responsável pelo contrato</small><b>${esc(currentUser().nome||'—')}</b></div>
+      <div class="execCoverMetaItem"><small>Responsável técnico</small><b>${esc(relatorioUI.meta.responsavelTecnico||cfg.responsavelTecnico||'—')}</b></div>
       <div class="execCoverMetaItem"><small>Data de emissão</small><b>${now()}</b></div>
     </div>
+    ${relatorioUI.meta.observacoes?`<p class="mutedLine" style="margin-top:10px">${esc(relatorioUI.meta.observacoes)}</p>`:''}
   </div>`;
 
   // ----- Resumo executivo (reaproveita dsKpiStrip, já usado em Falhas/Equipamentos) -----
@@ -10478,11 +10663,38 @@ function renderRelatorioExecutivoSDAI(){
   const historico=`<div class="execSectionHead execPageBreak"><p class="execSectionKicker">Auditoria</p><h2>Histórico</h2><p>Linha do tempo das alterações já registradas pelo sistema, separadas por entidade — nenhum dado novo foi criado para esta seção.</p></div>
     <div class="execChartGrid execChartGrid3">${histBlocos||'<div class="emptyState">Nenhum evento de histórico registrado ainda.</div>'}</div>`;
 
-  const conclusao=`<div class="execConclusao"><h3>Conclusão técnica</h3><p>Relatório gerado automaticamente a partir da base técnica vigente do SDAI (Painel → Laço → Módulo → Porta → Loja/Área → Equipamento → Falha → Plano de Ação), com os mesmos cálculos utilizados no Dashboard operacional do sistema. Este documento cobre exclusivamente o subsistema SDAI — CFTV, Sonorização, Controle de Acesso, organograma e dados contratuais serão incorporados em fases seguintes.</p></div>
-    <div class="reportFooter"><span>L3A Engenharia</span><span>Relatório Gerencial Executivo SDAI • Gerado em ${now()} por ${esc(currentUser().nome||'usuário')}</span></div>
-    <div class="execRunningFooter"><span>L3A Engenharia • Relatório Gerencial Executivo SDAI</span><span>${esc(emp.nome||cfg.empreendimento||'')} • ${now()}</span></div>`;
+  const conclusao=`<div class="execConclusao"><h3>Conclusão técnica</h3><p>${esc(relatorioUI.textos.conclusao.valor||relatorioTextoConclusaoSugerido(resumo,falhasR,planoR))}</p>${relatorioUI.textos.conclusao.editadoPor?`<p class="mutedLine" style="font-size:11px">Editado por ${esc(relatorioUI.textos.conclusao.editadoPor)} em ${esc(relatorioUI.textos.conclusao.editadoEm||'')}</p>`:'<p class="mutedLine" style="font-size:11px">Gerado automaticamente</p>'}</div>
+    <div class="reportFooter"><span>${esc(relatorioUI.meta.empresa||'L3A Engenharia')}</span><span>${esc(relatorioUI.meta.titulo||'Relatório Gerencial Executivo SDAI')} • Gerado em ${now()} por ${esc(currentUser().nome||'usuário')}</span></div>
+    <div class="execRunningFooter"><span>${esc(relatorioUI.meta.empresa||'L3A Engenharia')} • ${esc(relatorioUI.meta.titulo||'Relatório Gerencial Executivo SDAI')}</span><span>${esc(emp.nome||cfg.empreendimento||'')} • ${now()}</span></div>`;
 
-  out.innerHTML=`<div class="card">${capa}${resumoExecutivo}${dashboardOperacional}${inventario}${detalhamentoLacos}${dispositivos}${lojas}${falhas}${planoAcao}${historico}${conclusao}</div>`;
+  // ----- Testes (nova seção — item 16 do pedido; lê db.testes, somente leitura) -----
+  const testesR=relTestesResumo();
+  const testes=`<div class="execSectionHead execPageBreak"><p class="execSectionKicker">Operação</p><h2>Testes Realizados</h2><p>Resultados de testes registrados no período selecionado.</p></div>
+    ${dsKpiStrip([['Total',testesR.total,''],['Aprovados',testesR.aprovados,'ok'],['Reprovados',testesR.reprovados,testesR.reprovados>0?'bad':'ok'],['Taxa de aprovação',testesR.taxaAprovacao+'%',testesR.taxaAprovacao>=90?'ok':testesR.taxaAprovacao>=70?'warn':'bad']])}
+    ${testesR.total? `<div class="execChartGrid execChartGrid3">
+      <div class="execChartBox"><h4>Por tipo</h4>${table(testesR.porTipo,[['Tipo','label'],['Qtd.','value']])}</div>
+      <div class="execChartBox"><h4>Por responsável</h4>${table(testesR.porResponsavel,[['Responsável','label'],['Qtd.','value']])}</div>
+      <div class="execChartBox"><h4>Por loja/área</h4>${table(testesR.porLoja,[['Loja/Área','label'],['Qtd.','value']])}</div>
+    </div>` : '<div class="emptyState">Não foram registrados testes no período selecionado.</div>'}`;
+
+  // ----- Diagnóstico Técnico (item 20 — sugestão baseada em regra simples sobre concentração de
+  // falhas por laço; texto permanece editável, nunca é afirmado como definitivo sem dados) -----
+  const diagnostico=`<div class="execSectionHead execPageBreak"><p class="execSectionKicker">Análise</p><h2>Diagnóstico Técnico</h2><p>Texto sugerido automaticamente a partir da concentração de falhas — revise antes da emissão.</p></div>
+    <p style="white-space:pre-line">${esc(relatorioUI.textos.diagnostico.valor||relatorioTextoDiagnosticoSugerido(falhasR))}</p>
+    ${relatorioUI.textos.diagnostico.editadoPor?`<p class="mutedLine" style="font-size:11px">Editado por ${esc(relatorioUI.textos.diagnostico.editadoPor)} em ${esc(relatorioUI.textos.diagnostico.editadoEm||'')}</p>`:'<p class="mutedLine" style="font-size:11px">Gerado automaticamente</p>'}`;
+
+  // ----- Assinaturas (item 26) -----
+  const assinaturas=`<div class="execSectionHead execPageBreak"><p class="execSectionKicker">Encerramento</p><h2>Assinaturas</h2></div>
+    <div class="execChartGrid">
+      <div class="execChartBox"><p><b>Responsável técnico:</b> ${esc(relatorioUI.meta.responsavelTecnico||'—')}<br><b>Cargo:</b> ${esc(relatorioUI.meta.cargo||'—')}<br><b>Empresa:</b> ${esc(relatorioUI.meta.empresa||'—')}<br><b>Data:</b> ${now()}</p><div style="border-top:1px solid #999;margin-top:40px;padding-top:4px">Assinatura</div></div>
+      <div class="execChartBox"><p><b>Fiscal/responsável do cliente:</b> ${esc(relatorioUI.meta.fiscal||'—')}<br><b>Cliente:</b> ${esc(emp.cliente||cfg.cliente||'—')}<br><b>Data:</b> ${now()}</p><div style="border-top:1px solid #999;margin-top:40px;padding-top:4px">Assinatura / Aceite</div></div>
+    </div>`;
+
+  // ----- Montagem final (item 27/28 — respeita seções ligadas/desligadas e a ordem escolhida
+  // pelo usuário; nunca uma concatenação fixa) -----
+  const SECOES_HTML={capa,resumo:resumoExecutivo,dashboard:dashboardOperacional,inventario,lacos:detalhamentoLacos,dispositivos,lojas,falhas,testes,planoAcao,diagnostico,historico,conclusao,assinaturas};
+  const corpo=relatorioUI.ordem.filter(k=>relatorioUI.secoesAtivas[k]&&SECOES_HTML[k]).map(k=>SECOES_HTML[k]).join('');
+  out.innerHTML=`<div class="card">${corpo}</div>`;
 
   if(!el.classList.contains('active'))return; // evita desenhar Chart.js em canvas oculto (largura zero), igual ao Dashboard
   relFlushCharts();
