@@ -1015,6 +1015,14 @@ table{font-size:13px}
 .navSubsysHead:not(.open) .navChevron,.navGrpHead:not(.open) .navChevron{transform:rotate(-90deg)}
 @media(max-width:768px){.navTree{overflow-y:auto;-webkit-overflow-scrolling:touch}}
 </style>
+<!-- BUGFIX (gráficos do Dashboard e do Relatório SDAI vazios): esta tag nunca existia no arquivo.
+     O código já assumia um global `Chart` (new Chart(...) em vários pontos) e já tinha uma
+     proteção silenciosa (if(typeof Chart==='undefined') return/limpa a fila) para não quebrar a
+     tela quando a biblioteca não estava presente — mas isso significava que TODO gráfico, em
+     TODA tela (Dashboard normal e Relatórios SDAI), sempre desenhava a caixa vazia, com só o
+     título, e nunca o gráfico em si. Os números (KPIs) continuavam certos porque não dependem
+     do Chart.js — só a parte visual dos gráficos ficava sempre em branco. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 </head>
 <body>
 <div class="app">
