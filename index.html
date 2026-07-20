@@ -7385,6 +7385,36 @@ async function processFotoQueue(){
     _fotoUploadBusy=false; processFotoQueue();
   }
 }
+// ── DIMENSÕES NATURAIS DA IMAGEM DA PLANTA (causa raiz real de "marcador torto/deslocado") ──
+// .plantaCanvas usa `aspect-ratio: pl.imagemW||4 / pl.imagemH||3` para que o contêiner tenha
+// EXATAMENTE a proporção da imagem original (sem isso, object-fit:fill dentro dele distorceria a
+// planta inteira, e os marcadores — posicionados em % sobre esse mesmo contêiner — pareceriam
+// deslocados mesmo com o cálculo de clique correto). Esta sonda mede naturalWidth/naturalHeight;
+// se falhar (rede, CORS momentâneo do link do Drive logo após o upload), tenta de novo até 3x antes
+// de marcar pl.dimensoesInvalidas=true — nunca falha em silêncio.
+function plantaCarregarDimensoesComRetry_(pl, tentativa){
+  const im=new Image();
+  im.onload=function(){
+    pl.imagemW=im.naturalWidth; pl.imagemH=im.naturalHeight; pl.dimensoesInvalidas=false;
+    markDirty('dimensões da planta baixa');
+    if(currentView==='plantas') renderPlantas();
+  };
+  im.onerror=function(){
+    if(tentativa<2){ setTimeout(()=>plantaCarregarDimensoesComRetry_(pl, tentativa+1), 800*(tentativa+1)); return; }
+    pl.dimensoesInvalidas=true;
+    markDirty('falha ao medir dimensões da planta baixa');
+    if(currentView==='plantas') renderPlantas();
+  };
+  im.src=pl.imagemUrl;
+}
+// Botão manual "Recalcular dimensões" (para plantas antigas já cadastradas antes desta correção,
+// sem precisar reenviar a imagem) — só remede a proporção, nunca move nenhum marcador.
+function plantaRecalcularDimensoes(plantaId){
+  const pl=(db.plantas||[]).find(p=>p.id===plantaId); if(!pl||!pl.imagemUrl){alert('Esta planta não tem imagem para medir.');return}
+  plantaCarregarDimensoesComRetry_(pl, 0);
+  alert('Recalculando dimensões da imagem — a planta será atualizada em instantes, sem mover nenhum marcador.');
+}
+
 function handleFotoUploadResult(data){
   _fotoUploadBusy=false;
   const pend=_fotoUploadPending[data.reqId];
@@ -7397,9 +7427,19 @@ function handleFotoUploadResult(data){
           pl.imagemUrl=String(data.url).replace(/sz=w\d+/,'sz=w2000');
           pl.atualizadoEm=isoNow();
           // Dimensões naturais: carrega a imagem uma vez só para gravar imagemW/H (aspect-ratio).
-          const im=new Image();
-          im.onload=()=>{pl.imagemW=im.naturalWidth;pl.imagemH=im.naturalHeight;markDirty('dimensões da planta baixa');if(currentView==='plantas')renderPlantas()};
-          im.src=pl.imagemUrl;
+          // BUGFIX (marcadores "tortos"/deslocados — causa raiz real encontrada): esta sonda nunca
+          // tinha um onerror. Se a imagem falhasse ao carregar aqui (CORS/timing do link do Drive
+          // logo após o upload, rede lenta, etc.), pl.imagemW/imagemH ficavam PERMANENTEMENTE
+          // undefined — e o CSS de .plantaCanvas usa `aspect-ratio: pl.imagemW||4 / pl.imagemH||3`
+          // como fallback. Como a imagem real quase nunca é 4:3, isso fazia o contêiner (e a imagem
+          // dentro dele, com object-fit:fill) ficar com a proporção ERRADA — a planta inteira
+          // renderizava esticada/torta, e os marcadores (posicionados em % sobre esse mesmo
+          // contêiner) pareciam "deslocados", mesmo com o cálculo de clique em si estando correto.
+          // Corrigido com: (1) retry automático (até 3 tentativas) antes de desistir; (2) marca
+          // explícita `pl.dimensoesInvalidas=true` se mesmo assim falhar (não fica mais em silêncio);
+          // (3) botão manual "Recalcular dimensões" na tela (ver plantaRecalcularDimensoes) para
+          // corrigir plantas antigas já cadastradas com esse problema, sem precisar reenviar a imagem.
+          plantaCarregarDimensoesComRetry_(pl, 0);
           markDirty('imagem da planta baixa enviada');
           if(currentView==='plantas')renderPlantas();
         }
@@ -11881,6 +11921,7 @@ function renderPlantas(){
           ${podeEditarPlantas()&&pl.imagemUrl?`<button class="btn small" onclick="plantaMostrarTodosMarcadores('${esc(pl.id)}')" title="Ajustar zoom para mostrar todos os marcadores">🔍 Ajustar à tela</button>`:''}
           ${podeEditarPlantas()?`<button class="btn small${modoPosAtivoAqui?' plantaModoPosBtnAtivo':''}" onclick="plantaToggleModoPosicionamento('${esc(pl.id)}')" title="Ativa arrastar itens da lista, selecionar e redimensionar marcadores nesta planta">${modoPosAtivoAqui?'● Posicionamento ativo':'✏ Modo posicionamento'}</button>`:''}
           ${podeEditarPlantas()&&pl.imagemUrl?`<label class="iconBtn" title="Trocar imagem" style="cursor:pointer">🖼<input type="file" accept="image/*,.pdf" style="display:none" onchange="uploadPlantaArquivo('${esc(pl.id)}',this.files[0]);this.value=''"></label>`:''}
+          ${podeEditarPlantas()&&pl.imagemUrl&&(pl.dimensoesInvalidas||!pl.imagemW||!pl.imagemH)?`<button class="btn small danger" onclick="plantaRecalcularDimensoes('${esc(pl.id)}')" title="Esta planta pode estar exibida com proporção incorreta — marcadores podem parecer deslocados">⚠ Recalcular dimensões</button>`:''}
           ${podeEditarPlantas()&&pl.imagemUrl?(plantasUI.modoInserir&&plantasUI.modoInserirPlantaId===pl.id?`<button class="btn small danger" onclick="plantaSairModoInserir()">✕ Cancelar inserção</button>`:`<button class="btn small" onclick="plantaToggleModoInserir('${esc(pl.id)}')">📍 Adicionar marcador</button>`):''}
           ${podeEditarPlantas()?`<button class="btn small plantaCfgBtn${plantasUI.cfgAberto===pl.id?' plantaCfgBtnAtivo':''}" onclick="plantaToggleConfigPopover(event,'${esc(pl.id)}')" title="Configurações desta planta (escala, legenda, agrupamentos)">⚙ Configurações</button>`:''}
           ${isMaster(currentUserSafe())?`<button class="iconBtn" title="Editar planta" onclick="formPlantaBaixa('${esc(pl.id)}')">✏</button>`:''}
