@@ -6595,86 +6595,95 @@ function formPorta(flmId,pid=''){
 //    de vincular a nova.
 // 3) faltava validar que a loja selecionada realmente existe/não está excluída antes de gravar
 //    (item 4 do pedido) e faltava updatedAt/updatedBy no registro (item 2).
-// Item 4/8 do pedido "dois modos de associação": resolve qual localId usar quando o modo Base LUC
-// é escolhido — reaproveita o cadastro já existente (via base.localId ou por LUC/nome
-// normalizado), oferece restaurar se estiver excluído, e NUNCA cria um cadastro novo sozinho aqui
-// (isso continua exigindo confirmação explícita na aba Conflitos — item 4/8 do pedido anterior).
-function lucResolverLocalParaPorta(baseLojaId){
+// ── ASSOCIAÇÃO POR BASE LUC — FLUXO NÃO-BLOQUEANTE (substitui o antigo bloqueio) ────────────
+// Antes: se a Base LUC não tivesse Loja/Área técnica, o sistema RECUSAVA salvar e mandava o
+// usuário para Importação SDAI → Conflitos. Isso quebrava o fluxo de trabalho diário. Agora:
+// 1) reaproveita loja existente automaticamente, se houver; 2) oferece restaurar se estiver
+// excluída; 3) oferece criar automaticamente a partir da Base LUC — tudo dentro do próprio modal
+// "Editar Porta", sem navegar para nenhuma outra tela. Nunca cria nada sozinho durante
+// importações — só quando o usuário está aqui, editando a porta, e confirma explicitamente.
+function resolverBaseLucEContinuar(baseLojaId, params){
   const base=(db.baseLojas||[]).find(b=>b.id===baseLojaId);
-  if(!base)return {ok:false, mensagem:'Base LUC não encontrada.'};
+  if(!base){ alert('Base LUC não encontrada.'); window._portaSaving=false; return; }
   let local=base.localId?(db.locais||[]).find(l=>l.id===base.localId):null;
-  if(local && !local.excluido)return {ok:true, local, base};
-  if(local && local.excluido){
-    if(!confirm('A loja cadastrada para esta Base LUC ("'+(lucOfficialName(local)||local.nome)+'") está excluída. Deseja restaurá-la para usar nesta porta?'))return {ok:false, mensagem:'Operação cancelada.'};
-    local.excluido=false; delete local.excluidoEm; delete local.excluidoPor; local.ultimaAtualizacao=isoNow();
-    logLocal('local',local.id,'restaurar','Loja/área restaurada a partir da edição de porta (modo Base LUC).');
-    return {ok:true, local, base, restaurado:true};
-  }
+  if(local && !local.excluido){ continuarSavePorta(params, local.id, 'BASE_LUC', base, false, false); return; }
+  if(local && local.excluido){ abrirConfirmacaoRestaurarOuCriar(local, base, params); return; }
   const candidatos=lucBuscarCandidatosLocal(base);
   const ativo=candidatos.find(l=>!l.excluido);
-  if(ativo)return {ok:true, local:ativo, base};
+  if(ativo){ continuarSavePorta(params, ativo.id, 'BASE_LUC', base, false, false); return; }
   const excluido=candidatos.find(l=>l.excluido);
-  if(excluido){
-    if(!confirm('Encontrada uma loja cadastrada excluída possivelmente correspondente ("'+(lucOfficialName(excluido)||excluido.nome)+'"). Deseja restaurá-la?'))return {ok:false, mensagem:'Operação cancelada.'};
-    excluido.excluido=false; delete excluido.excluidoEm; delete excluido.excluidoPor; excluido.ultimaAtualizacao=isoNow();
-    logLocal('local',excluido.id,'restaurar','Loja/área restaurada a partir da edição de porta (modo Base LUC).');
-    return {ok:true, local:excluido, base, restaurado:true};
-  }
-  return {ok:false, mensagem:'Esta Base LUC ainda não tem loja/área cadastrada correspondente. Vá em Importação SDAI → Conflitos e use "Cadastrar a partir da Base LUC" primeiro — o sistema nunca cria o cadastro sozinho a partir daqui.'};
+  if(excluido){ abrirConfirmacaoRestaurarOuCriar(excluido, base, params); return; }
+  abrirConfirmacaoCriarLojaAutomatica(base, params);
 }
-function savePorta(flmId,pid){
-  if(window._portaSaving)return; // item 10: impede duplo clique/reenvio
-  const btn=document.getElementById('btnSalvarPorta');
-  const formaAssoc=document.querySelector('input[name="mFormaAssoc"]:checked')?.value||'LOJA_AREA';
-  let localIdSelecionado='', baseLojaUsada=null, restauradaAgora=false;
-  if(formaAssoc==='BASE_LUC'){
-    const baseLojaId=document.getElementById('mBaseLuc')?.value||'';
-    if(!baseLojaId){alert('Selecione uma Base LUC antes de salvar.');return}
-    const resolucao=lucResolverLocalParaPorta(baseLojaId);
-    if(!resolucao.ok){alert(resolucao.mensagem);return}
-    localIdSelecionado=resolucao.local.id; baseLojaUsada=resolucao.base; restauradaAgora=!!resolucao.restaurado;
-  } else {
-    localIdSelecionado=document.getElementById('mLocal')?.value||'';
-  }
-  // Item 4: valida a loja selecionada ANTES de gravar qualquer coisa.
-  if(localIdSelecionado){
-    const lojaSelecionada=db.locais.find(l=>l.id===localIdSelecionado);
-    if(!lojaSelecionada||(lojaSelecionada.excluido&&!restauradaAgora)){
-      alert('Não foi possível salvar: a loja/área selecionada não existe ou não pertence ao cliente atual.');
-      return;
-    }
-  }
+function abrirConfirmacaoRestaurarOuCriar(localExcluido, base, params){
+  window._portaParamsPendentes=params;
+  openModal(`<h2>Loja/Área excluída encontrada</h2>
+    <p class="note">Foi encontrada uma Loja/Área anteriormente excluída.<br>Deseja restaurá-la?</p>
+    <p class="compactHelp">${esc(lucOfficialName(localExcluido)||localExcluido.nome)} — ${esc(exibirPiso(localExcluido.piso)||localExcluido.piso||'—')}</p>
+    <div class="premiumActions" style="margin-top:12px">
+      <button class="btn" onclick="confirmarRestaurarParaPorta('${esc(localExcluido.id)}','${esc(base.id)}')">Restaurar</button>
+      <button class="btn secondary" onclick="abrirConfirmacaoCriarLojaAutomatica(window._portaBaseLucAtual, window._portaParamsPendentes)">Criar nova</button>
+    </div>`);
+  window._portaBaseLucAtual=base;
+}
+function confirmarRestaurarParaPorta(localId, baseLojaId){
+  const local=(db.locais||[]).find(l=>l.id===localId); const base=(db.baseLojas||[]).find(b=>b.id===baseLojaId);
+  if(!local||!base){alert('Registro não encontrado.');return}
+  local.excluido=false; delete local.excluidoEm; delete local.excluidoPor; local.ultimaAtualizacao=isoNow();
+  logLocal('local',local.id,'restaurar','Loja/área restaurada durante a edição de porta (modo Base LUC).');
+  const params=window._portaParamsPendentes; window._portaParamsPendentes=null;
+  continuarSavePorta(params, local.id, 'BASE_LUC', base, true, false);
+}
+function abrirConfirmacaoCriarLojaAutomatica(base, params){
+  window._portaParamsPendentes=params; window._portaBaseLucAtual=base;
+  openModal(`<h2>Criar Loja/Área automaticamente</h2>
+    <p class="note">Esta Base LUC ainda não possui uma Loja/Área técnica.<br>Deseja criá-la automaticamente utilizando os dados da Base LUC?</p>
+    <p class="compactHelp">Nome: ${esc(base.nome||'—')} · LUC: ${esc(base.luc||'—')} · Piso: ${esc(exibirPiso(base.piso)||base.piso||'—')} · Tipo: ${esc(base.tipo||'—')} · Área: ${esc(base.areaContrato||'—')}</p>
+    <div class="premiumActions" style="margin-top:12px">
+      <button class="btn" onclick="confirmarCriarLojaAutomatica('${esc(base.id)}')">Criar e Associar</button>
+      <button class="btn secondary" onclick="window._portaParamsPendentes=null;window._portaSaving=false;closeModal()">Cancelar</button>
+    </div>`);
+}
+function confirmarCriarLojaAutomatica(baseLojaId){
+  const base=(db.baseLojas||[]).find(b=>b.id===baseLojaId); if(!base){alert('Base LUC não encontrada.');return}
+  // Copia da Base LUC: nome oficial, LUC, piso, tipo, área, baseLojaId — gera localId novo.
+  const novo={id:id(), nome:base.nome||'', nomeOficial:base.nome||'', luc:base.luc||'', tipoLojaBaseLuc:base.tipo||'', piso:base.piso||'', areaContrato:base.areaContrato||'', sistema:'SDAI', origem:'Base LUC', origemNome:'Base LUC', statusAssociacao:'Vinculado', baseLojaId:base.id, ultimaAtualizacao:isoNow(), excluido:false};
+  db.locais.push(novo);
+  // Reaproveita applyLucToLocal (já existente) para manter statusAssociacao/origemAssociacao da
+  // Base LUC consistentes com o resto do sistema — nunca duplica a lógica de associação.
+  applyLucToLocal(novo, base, 100, false, 'Manual');
+  db.conflitosAssociacao=(db.conflitosAssociacao||[]).filter(x=>x.baseLojaId!==base.id);
+  logLocal('local',novo.id,'criar_a_partir_de_base_luc','Loja/Área criada automaticamente a partir da Base LUC durante a edição de porta — LUC '+(base.luc||'—')+' — '+(base.nome||'—')+'.');
+  const params=window._portaParamsPendentes; window._portaParamsPendentes=null;
+  continuarSavePorta(params, novo.id, 'BASE_LUC', base, false, true);
+}
+// Continuação única do salvamento da porta — chamada tanto pelo modo Loja/Área (direto) quanto
+// pelo modo Base LUC (depois de resolver/restaurar/criar), garantindo que TODA a operação
+// termine dentro do modal "Editar Porta", sem navegação adicional.
+function continuarSavePorta(params, localIdSelecionado, formaAssoc, baseLojaUsada, restauradaAgora, criouNova){
+  const {flmId, pid, numero, ligacao, statusBruto} = params;
   const pAtualParaConfirmar=pid?db.portas.find(x=>x.id===pid):null;
-  // Item 7: ponto ocupado — nunca substitui silenciosamente.
+  // Item 7 (pedido anterior): ponto ocupado — nunca substitui silenciosamente.
   if(pAtualParaConfirmar && pAtualParaConfirmar.localId && pAtualParaConfirmar.localId!==localIdSelecionado){
     const lojaAtualNome=locName(pAtualParaConfirmar.localId)||'—';
     const lojaNovaNome=localIdSelecionado?(lucOfficialName(db.locais.find(l=>l.id===localIdSelecionado))||locName(localIdSelecionado)):'Sem vínculo';
-    if(!confirm('Esta porta já está associada a "'+lojaAtualNome+'".\n\nNova loja: '+lojaNovaNome+'\nOrigem da nova associação: '+(formaAssoc==='BASE_LUC'?'Base LUC oficial':'Loja/Área cadastrada')+'\n\nConfirma a substituição?'))return;
+    if(!confirm('Esta porta já está associada a "'+lojaAtualNome+'".\n\nNova loja: '+lojaNovaNome+'\nOrigem da nova associação: '+(formaAssoc==='BASE_LUC'?'Base LUC oficial':'Loja/Área cadastrada')+'\n\nConfirma a substituição?')){ window._portaSaving=false; return; }
   }
-  window._portaSaving=true;
-  if(btn){btn.disabled=true;btn.textContent='Salvando...'}
-  document.querySelectorAll('#modal .btn').forEach(b=>b.disabled=true);
   try{
     let p=pid?db.portas.find(x=>x.id===pid):{id:id(),flmId};
     const localIdAnterior=p.localId||'';
-    p.numero=mNum.value;
-    // Item 2 do pedido: o ID da loja é a fonte do vínculo — nunca o texto exibido no select.
+    p.numero=numero;
+    // Item 2 (pedido anterior): o ID da loja é a fonte do vínculo — nunca o texto exibido no select.
     p.localId=localIdSelecionado;
-    // Item 6: registra qual forma de associação foi usada nesta porta.
     p.origemAssociacao=localIdSelecionado?formaAssoc:null;
-    p.ligacao=mLig.value;
+    p.ligacao=ligacao;
     p.atualizadoEm=isoNow();
     p.atualizadoPor=(currentUser().nome||currentUser().email||'usuário');
-    const novoStatusBruto=document.getElementById('mPortaStatus')?.value||'';
-    // BUGFIX: compara os dois lados já normalizados — antes uma diferença só de formatação entre
-    // o valor canônico do select e o valor cru gravado em p.status desviava silenciosamente o fluxo
-    // para quickStatusChange() mesmo sem o usuário ter mexido no campo Status.
-    const statusRealmenteMudou = novoStatusBruto && normalizeStatus(novoStatusBruto)!==normalizeStatus(p.status);
+    const statusRealmenteMudou = statusBruto && normalizeStatus(statusBruto)!==normalizeStatus(p.status);
+    const origemTexto=formaAssoc==='BASE_LUC'?('Base LUC oficial ('+(baseLojaUsada?('LUC '+(baseLojaUsada.luc||'—')):'')+')'):'Loja/Área cadastrada';
     if(!pid){db.portas.push(p); logLocal('porta',p.id,'criar','Porta criada manualmente: nº '+p.numero+' (FLM '+(flmById(flmId)?.endereco||flmId)+')')}
-    else{ logLocal('porta',p.id,'editar_vinculo','Vínculo da porta nº '+p.numero+' (FLM '+(flmById(flmId)?.endereco||flmId)+') alterado — loja/área: '+(localIdAnterior?locName(localIdAnterior):'sem vínculo')+' → '+(p.localId?locName(p.localId):'sem vínculo')+' — origem: '+(formaAssoc==='BASE_LUC'?'Base LUC oficial ('+(baseLojaUsada?('LUC '+(baseLojaUsada.luc||'—')):'')+')':'Loja/Área cadastrada')+(restauradaAgora?' — loja restaurada nesta operação':'')+'.'); }
-    // BUGFIX (item 7/8 — evitar vínculo órfão): limpa a referência técnica (flmId/portaId) da loja
-    // ANTERIOR quando o vínculo muda para outra loja (ou para "sem vínculo") — antes só a loja NOVA
-    // era atualizada, deixando a antiga apontando para uma porta que não é mais dela.
+    else{ logLocal('porta',p.id,'editar_vinculo','Vínculo da porta nº '+p.numero+' (FLM '+(flmById(flmId)?.endereco||flmId)+') alterado — loja/área: '+(localIdAnterior?locName(localIdAnterior):'sem vínculo')+' → '+(p.localId?locName(p.localId):'sem vínculo')+' — origem: '+origemTexto+(criouNova?' — loja criada automaticamente nesta operação':'')+(restauradaAgora?' — loja restaurada nesta operação':'')+'.'); }
+    // Evita vínculo órfão: limpa a referência técnica da loja ANTERIOR quando o vínculo muda.
     if(localIdAnterior && localIdAnterior!==p.localId){
       const locAnterior=localById(localIdAnterior);
       if(locAnterior && locAnterior.portaId===p.id){ locAnterior.flmId=null; locAnterior.portaId=null; }
@@ -6682,18 +6691,44 @@ function savePorta(flmId,pid){
     let loc=localById(p.localId);
     if(loc){loc.flmId=flmId;loc.portaId=p.id}
     closeModal();
-    // Item 9: nunca dispara sincronização automaticamente aqui — só markDirty via save() (o
-    // autosync com debounce de 25s, já corrigido em outra rodada, cuida do resto sozinho).
-    if(statusRealmenteMudou){ quickStatusChange(`flm:${flmId}:porta:${p.id}`,novoStatusBruto); }
-    else{ save(); if(typeof mostrarToastSync==='function') mostrarToastSync('Vínculo da porta atualizado com sucesso.','ok'); else alert('Vínculo da porta atualizado com sucesso.'); }
+    if(statusRealmenteMudou){ quickStatusChange(`flm:${flmId}:porta:${p.id}`,statusBruto); }
+    else{
+      save(); // markDirty + persistLocalThrottled + render() — atualiza módulos, Lojas/Áreas, mapa,
+               // índices e busca automaticamente, sem navegação adicional.
+      if(criouNova){ alert('✔ Loja técnica criada.\n✔ Porta vinculada.\n✔ Base LUC associada.'); }
+      else if(typeof mostrarToastSync==='function'){ mostrarToastSync('Vínculo da porta atualizado com sucesso.','ok'); }
+      else { alert('Vínculo da porta atualizado com sucesso.'); }
+    }
   }catch(e){
-    // Item 10: em caso de erro, mantém o modal aberto (não fechamos antes de garantir sucesso) e
-    // mostra a mensagem real — aqui reabrimos o formulário para não perder o contexto.
     alert('Falha ao salvar a porta: '+e.message);
-    document.querySelectorAll('#modal .btn').forEach(b=>b.disabled=false);
   }finally{
     window._portaSaving=false;
   }
+}
+function savePorta(flmId,pid){
+  if(window._portaSaving)return; // impede duplo clique/reenvio
+  window._portaSaving=true;
+  const btn=document.getElementById('btnSalvarPorta'); if(btn){btn.disabled=true;btn.textContent='Salvando...'}
+  const formaAssoc=document.querySelector('input[name="mFormaAssoc"]:checked')?.value||'LOJA_AREA';
+  const params={flmId, pid, numero:mNum.value, ligacao:mLig.value, statusBruto:document.getElementById('mPortaStatus')?.value||''};
+  if(formaAssoc==='LOJA_AREA'){
+    const localIdSelecionado=document.getElementById('mLocal')?.value||'';
+    if(localIdSelecionado){
+      const lojaSelecionada=db.locais.find(l=>l.id===localIdSelecionado);
+      if(!lojaSelecionada||lojaSelecionada.excluido){
+        alert('Não foi possível salvar: a loja/área selecionada não existe ou não pertence ao cliente atual.');
+        window._portaSaving=false; if(btn){btn.disabled=false;btn.textContent='Salvar'}
+        return;
+      }
+    }
+    continuarSavePorta(params, localIdSelecionado, 'LOJA_AREA', null, false, false);
+    return;
+  }
+  // Modo Base LUC — nunca bloqueia mais; resolve/restaura/cria automaticamente, com confirmação
+  // do usuário quando necessário, tudo dentro deste mesmo modal.
+  const baseLojaId=document.getElementById('mBaseLuc')?.value||'';
+  if(!baseLojaId){ alert('Selecione uma Base LUC antes de salvar.'); window._portaSaving=false; if(btn){btn.disabled=false;btn.textContent='Salvar'} return; }
+  resolverBaseLucEContinuar(baseLojaId, params);
 }
 /* [removido na limpeza 2026-07: versão antiga substituída pela declaração final desta função] */
 /* [removido na limpeza 2026-07: versão antiga substituída pela declaração final desta função] */
