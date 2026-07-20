@@ -8080,6 +8080,7 @@ function renderSistema(){
    <div class="premiumActions" style="margin-top:10px">
      <button class="btn" id="btnSincronizarAgora" ${manut?'disabled title="Bloqueado pelo Modo Manutenção"':''} onclick="sincronizarBaseSimplificada()" style="font-weight:700">SINCRONIZAR AGORA</button>
      <button class="btn secondary" ${manut?'disabled title="Bloqueado pelo Modo Manutenção"':''} onclick="acionarBackupGoogle()">Criar backup</button>
+     <button class="btn secondary" onclick="navigate('backup')">Ver backups</button>
      <button class="btn secondary" ${manut?'disabled title="Bloqueado pelo Modo Manutenção"':''} onclick="loadGoogle()">Carregar base do Google</button>
      ${c.sheetUrl?`<button class="btn secondary" onclick="window.open('${esc(c.sheetUrl)}','_blank')">Abrir planilha</button>`:''}
    </div>
@@ -8660,7 +8661,154 @@ function renderConfiguracoes(){
  const el=document.getElementById('configuracoes'); if(!el)return; const cfg=db.config||{};
  el.innerHTML=`<div class="premiumPanel"><div class="identityCard"><div class="logoPreviewBox">${cfg.logoData?`<img src="${cfg.logoData}" alt="Logo">`:'<span>L3A</span>'}</div><div><h3>Identidade visual</h3><p class="mutedLine">Padronize logotipo, nome do sistema e dados do contrato SDAI.</p><div class="formGrid" style="margin-top:14px"><div class="field"><label>Nome do sistema</label><input id="cfgAppName" value="${esc(cfg.appName||'Contratos L3A')}"></div><div class="field"><label>Subtítulo</label><input id="cfgSub" value="${esc(cfg.subtitle||'Gestão técnica SDAI • Bosch FPA/AVENAR')}"></div><div class="field"><label>Logo</label><input type="file" id="cfgLogo" accept="image/*"></div><div class="field"><label>&nbsp;</label><button class="btn" onclick="saveIdentity()">Aplicar</button></div></div></div></div></div><div class="premiumPanel"><h3>Dados corporativos</h3><div class="formGrid"><div class="field"><label>Cliente</label><input id="cfgCliente" value="${esc(cfg.cliente||'Shopping Pantanal')}"></div><div class="field"><label>Empreendimento</label><input id="cfgEmpreendimento" value="${esc(cfg.empreendimento||'Pantanal Shopping')}"></div><div class="field"><label>Responsável técnico</label><input id="cfgRespTecnico" value="${esc(cfg.responsavelTecnico||'Eng. Hélio Hayashida')}"></div><div class="field"><label>&nbsp;</label><button class="btn secondary" onclick="saveEmpresaCfg()">Salvar</button></div></div></div>`;
 }
-function renderBackup(){const el=document.getElementById('backup'); if(!el)return; if(!isMaster(currentUserSafe())){el.innerHTML='<div class="premiumPanel"><p style="color:var(--l3a-text-muted)">Acesso restrito ao perfil Master.</p></div>';return} el.innerHTML=`<div class="premiumPanel"><div class="systemHeaderSlim"><div class="titleBlock"><h3>Backup local</h3><p>Exportação e restauração de segurança.</p></div></div><div class="premiumGrid">${premiumStat('Painéis',db.paineis.length)}${premiumStat('Equipamentos',db.equipamentos.length)}${premiumStat('Falhas',db.falhas.length)}${premiumStat('Planos',db.planos.length)}</div><div class="premiumActions"><button class="btn" onclick="exportJson()">Exportar JSON</button><button class="btn secondary" onclick="exportAllCsv()">Exportar CSV</button><button class="btn secondary" onclick="document.getElementById('restoreJsonInput').click()">Restaurar JSON</button><input type="file" id="restoreJsonInput" accept="application/json,.json" style="display:none" onchange="restoreBackupFile(this.files[0])"></div></div>`}
+// ── TELA "BACKUP DO CLIENTE" (reescrita) ────────────────────────────────────────────────────
+// Formato real do backup automático/manual criado antes de cada sincronização: CÓPIA INTEGRAL DA
+// PLANILHA GOOGLE (Spreadsheet.copy) — não é XLS/XLSX nem um arquivo baixável diretamente (é uma
+// planilha Google própria, com URL). O "Exportar JSON" abaixo é um formato DIFERENTE (arquivo
+// baixado para o computador), útil como cópia externa/offline.
+function renderBackup(){
+  const el=document.getElementById('backup'); if(!el)return;
+  if(!isMaster(currentUserSafe())){el.innerHTML='<div class="premiumPanel"><p style="color:var(--l3a-text-muted)">Acesso restrito ao perfil Master.</p></div>';return}
+  const cid=(typeof clienteAtivo==='function')?clienteAtivo():'';
+  el.innerHTML=`<div class="premiumPanel"><div class="systemHeaderSlim"><div class="titleBlock"><h3>Backup do Cliente</h3><p>Cópias integrais da planilha Google criadas automaticamente antes de cada sincronização, mais backup em arquivo (JSON) para guardar fora do sistema.</p></div></div>
+    <div id="backupResumoRecente" class="premiumGrid">${premiumStat('Backup mais recente','Carregando...')}</div>
+    <div class="premiumActions" style="margin-top:10px">
+      <button class="btn secondary" onclick="acionarBackupGoogle()">Criar backup agora</button>
+      <button class="btn secondary" onclick="document.getElementById('backupArquivoInput').click()">Importar arquivo de backup (.json)</button>
+      <input type="file" id="backupArquivoInput" accept="application/json,.json" style="display:none" onchange="importarArquivoBackup(this.files[0])">
+    </div>
+  </div>
+  <div class="premiumPanel"><h3>Cópias da planilha Google</h3><p class="compactHelp">Formato: <b>Cópia da planilha Google</b> — restaurada pelo Apps Script (nunca precisa baixar/reenviar nada).</p>
+    <div id="backupListaGoogle">Carregando lista de backups...</div>
+  </div>
+  <div class="premiumPanel"><h3>Arquivo JSON da base</h3><p class="compactHelp">Formato: <b>Arquivo JSON</b> — cópia completa da base local, baixada para o computador. Restaurada pelo importador JSON (abaixo), nunca diretamente.</p>
+    <div class="premiumActions"><button class="btn" onclick="exportJson()">Exportar JSON</button><button class="btn secondary" onclick="exportAllCsv()">Exportar CSV</button></div>
+    <p class="compactHelp" style="margin-top:8px"><i>Importador de XLSX ainda não implementado nesta versão — por enquanto, use JSON para backup/restauração em arquivo.</i></p>
+  </div>`;
+  if(!cid){ document.getElementById('backupListaGoogle').innerHTML='<div class="emptyState">Nenhum cliente ativo selecionado.</div>'; return; }
+  jsonp('listarBackupsGoogle',{clienteId:cid}).then(function(r){
+    const lista=document.getElementById('backupListaGoogle'); if(!lista)return;
+    const resumo=document.getElementById('backupResumoRecente');
+    if(!r||!r.ok){ lista.innerHTML=`<div class="msg err">Não foi possível carregar a lista de backups: ${esc((r&&r.error)||'erro desconhecido')}</div>`; return; }
+    const backups=r.backups||[];
+    if(resumo){
+      const maisRecente=backups[0];
+      resumo.innerHTML = maisRecente
+        ? premiumStat('Data',formatarDataHoraAmigavel(maisRecente.quando))+premiumStat('Tipo',maisRecente.formato)+premiumStat('Registros',maisRecente.totalRegistros)+premiumStat('Status',maisRecente.status)
+        : premiumStat('Backup mais recente','Nenhum backup ainda');
+    }
+    if(!backups.length){ lista.innerHTML='<div class="emptyState">Nenhum backup encontrado para este cliente ainda.</div>'; return; }
+    lista.innerHTML=`<table class="tbl"><thead><tr><th>Data</th><th>Usuário</th><th>Formato</th><th>Abas</th><th>Registros</th><th>Origem</th><th>Status</th><th>Ações</th></tr></thead><tbody>
+      ${backups.map(b=>`<tr>
+        <td>${esc(formatarDataHoraAmigavel(b.quando))}</td>
+        <td>${esc(b.usuario)}</td>
+        <td>${esc(b.formato)}</td>
+        <td>${b.totalAbas}</td>
+        <td>${b.totalRegistros}</td>
+        <td>${esc({automatica:'Sincronização automática',manual:'Backup manual',recuperacao:'Recuperação','':'Sincronização manual'}[b.origem]||b.origem)}</td>
+        <td><span class="pill ${b.status==='disponível'?'ok':'bad'}">${esc(b.status)}</span></td>
+        <td>
+          <button class="btn small secondary" onclick="window.open('${esc(b.url)}','_blank')">Abrir</button>
+          ${b.status==='disponível'?`<button class="btn small danger" onclick="abrirConfirmacaoRestauracaoGoogle('${esc(b.backupId)}','${esc(b.quando)}','${b.totalRegistros}')">Restaurar</button>`:''}
+        </td>
+      </tr>`).join('')}
+    </tbody></table>`;
+  }).catch(function(e){
+    const lista=document.getElementById('backupListaGoogle'); if(lista) lista.innerHTML=`<div class="msg err">Falha ao consultar backups: ${esc(e.message)}</div>`;
+  });
+}
+// Item 5/6: prévia simples (contagem agregada) + confirmação reforçada antes de restaurar uma
+// cópia da planilha Google. Não exige SHA-256 nem staging — só compara números, de forma amigável.
+function abrirConfirmacaoRestauracaoGoogle(backupId, quando, totalRegistrosBackup){
+  const totalAtual = db.paineis.length+db.lacos.length+db.flms.length+db.portas.length+db.locais.length+db.equipamentos.length+db.falhas.length+db.planos.length+(db.plantas||[]).length+(db.baseLojas||[]).length;
+  openModal(`<h2>Restaurar cópia da planilha</h2>
+    <p class="note">Será restaurada a base do backup de ${esc(formatarDataHoraAmigavel(quando))}.<br>Antes da restauração, o sistema cria uma nova cópia de segurança do estado atual da planilha oficial.</p>
+    <div class="premiumGrid" style="margin-top:10px">${premiumStat('Registros na base atual (local)',totalAtual)}${premiumStat('Registros no backup (planilha)',totalRegistrosBackup)}</div>
+    <p class="compactHelp" style="margin-top:8px">A base local nesta sessão continua intacta até você clicar em "Carregar base do Google" depois da restauração — nada é sobrescrito automaticamente.</p>
+    <div class="premiumActions" style="margin-top:12px">
+      <button class="btn danger" id="btnRestaurarGoogle" onclick="executarRestauracaoGoogle('${esc(backupId)}')">Restaurar</button>
+      <button class="btn secondary" onclick="closeModal()">Cancelar</button>
+    </div>`);
+}
+async function executarRestauracaoGoogle(backupId){
+  if(window._adocaoEmAndamento||window.syncInProgress){alert('Já existe uma operação em andamento.');return}
+  const cid=(typeof clienteAtivo==='function')?clienteAtivo():''; if(!cid){alert('Nenhum cliente ativo.');return}
+  const btn=document.getElementById('btnRestaurarGoogle'); if(btn){btn.disabled=true;btn.textContent='Restaurando...'}
+  try{
+    const resp=await apiPost('restaurarCopiaDaPlanilha',{backupId});
+    const data=resp&&resp.data;
+    if(!data||!data.ok){
+      alert('Restauração não concluída: '+((data&&data.error)||'erro desconhecido')+(data&&data.snapshotUrl?(' Snapshot de segurança: '+data.snapshotUrl):''));
+      logLocal('sistema','','BACKUP_RESTAURADO','Falha ao restaurar backup '+backupId+' — '+((data&&data.error)||'erro desconhecido'));
+      return;
+    }
+    logLocal('sistema','','BACKUP_RESTAURADO','Backup '+backupId+' restaurado com sucesso — '+data.abasRestauradas+' aba(s) — snapshot de segurança criado antes: '+data.snapshotUrl);
+    markDirty('backup restaurado (planilha Google)');
+    closeModal();
+    alert('Cópia da planilha restaurada com sucesso. Clique em "Carregar base do Google" (Gestão de Dados) para trazer o conteúdo restaurado para a base local.');
+    renderBackup();
+  }catch(e){
+    alert('Falha inesperada ao restaurar: '+e.message);
+  }
+}
+// Item 4/7/9: importar arquivo de backup — só JSON nesta versão. Valida antes de qualquer troca,
+// mostra prévia (contagens) e exige confirmação explícita; nunca importa automaticamente.
+async function importarArquivoBackup(file){
+  if(!file)return;
+  if(!isMaster(currentUserSafe())){alert('Somente o perfil Master pode importar um arquivo de backup.');document.getElementById('backupArquivoInput').value='';return}
+  const nome=(file.name||'').toLowerCase();
+  if(!nome.endsWith('.json')){
+    alert('Não foi possível validar este backup. Nenhuma informação foi alterada.\n\nMotivo: apenas arquivos .json são aceitos nesta versão (importador de .xlsx/.xls ainda não implementado).');
+    document.getElementById('backupArquivoInput').value=''; return;
+  }
+  let parsed;
+  try{
+    const txt=await file.text();
+    parsed=JSON.parse(txt);
+  }catch(e){
+    alert('Não foi possível validar este backup. Nenhuma informação foi alterada.\n\nMotivo: '+e.message);
+    document.getElementById('backupArquivoInput').value=''; return;
+  }
+  const camposLista=['falhas','planos','equipamentos','flms','locais','paineis','lacos','portas','plantas','historico','testes','cftv','acessoPontos','ambienteEquip'];
+  for(const key of camposLista){
+    if(parsed&&parsed[key]!==undefined&&parsed[key]!==null&&!Array.isArray(parsed[key])){
+      alert('Não foi possível validar este backup. Nenhuma informação foi alterada.\n\nMotivo: o campo "'+key+'" deveria ser uma lista.');
+      document.getElementById('backupArquivoInput').value=''; return;
+    }
+  }
+  if(!camposLista.some(k=>Array.isArray(parsed[k])&&parsed[k].length)){
+    alert('Não foi possível validar este backup. Nenhuma informação foi alterada.\n\nMotivo: o arquivo não contém nenhuma coleção com registros.');
+    document.getElementById('backupArquivoInput').value=''; return;
+  }
+  // Item 5: prévia BASE ATUAL x BACKUP antes de qualquer restauração.
+  const contagem=k=>(db[k]||[]).length, contagemNovo=k=>Array.isArray(parsed[k])?parsed[k].length:0;
+  const linhas=['paineis','lacos','flms','portas','locais','equipamentos','falhas','planos','testes'].map(k=>
+    `<tr><td>${esc(k)}</td><td>${contagem(k)}</td><td>${contagemNovo(k)}</td></tr>`
+  ).join('');
+  openModal(`<h2>Prévia da restauração — arquivo JSON</h2>
+    <table class="tbl"><thead><tr><th>Coleção</th><th>Base atual</th><th>Backup (arquivo)</th></tr></thead><tbody>${linhas}</tbody></table>
+    <p class="compactHelp" style="margin-top:8px">Um snapshot da base atual será criado automaticamente antes de qualquer substituição.</p>
+    <div class="premiumActions" style="margin-top:10px">
+      <button class="btn danger" onclick="confirmarRestauracaoArquivoJson()">Restaurar</button>
+      <button class="btn secondary" onclick="closeModal();document.getElementById('backupArquivoInput').value=''">Cancelar</button>
+    </div>`);
+  window._backupJsonPendente=parsed;
+}
+function confirmarRestauracaoArquivoJson(){
+  const parsed=window._backupJsonPendente; if(!parsed){alert('Nada para restaurar.');return}
+  if(typeof criarSnapshotLocal==='function') criarSnapshotLocal('antes de restaurar arquivo JSON de backup');
+  db=normalizeAllStatuses(Object.assign(emptyDB(),parsed));
+  persistLocal();
+  logLocal('sistema','','BACKUP_RESTAURADO','Base restaurada a partir de arquivo JSON importado.');
+  markDirty('backup JSON restaurado');
+  window._backupJsonPendente=null;
+  closeModal();
+  render();
+  alert('Backup restaurado localmente. Use "Sincronizar agora" para enviar ao Google.');
+  const input=document.getElementById('backupArquivoInput'); if(input)input.value='';
+}
+
+
 function renderLogs(){
   const el=document.getElementById('logs'); if(!el)return;
   const somenteBackup=!!window._logsFiltroBackup;
